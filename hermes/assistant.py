@@ -6,10 +6,12 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from .config import Config
 from .llm import DAY_NAMES, LLMError
 from .store import Store, Task
+from .websearch import SearchError
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +40,12 @@ TIME_HINT = re.compile(
     r"mediod[íi]a|medianoche|noche|tarde|a las|a la una|horas?|minutos?)\b",
     re.IGNORECASE,
 )
+UPCOMING_HINT = re.compile(
+    r"\b(cu[áa]ndo|pr[óo]xim[oa]s?|siguientes?|calendario|agenda|horarios?|fechas?|juega|juegan)\b", re.IGNORECASE
+)
+LIVE_INFO_HINT = re.compile(
+    r"\b(juega|juegan|partidos?|marcador|clima|pron[óo]stico|noticias|d[óo]lar)\b", re.IGNORECASE
+)
 MEMORY_FACTS = 6
 MEMORY_MESSAGES = 3
 FALLBACK_FACTS = 8
@@ -58,10 +66,18 @@ def reminder_buttons(task_id: int) -> list[list[tuple[str, str]]]:
 
 
 class Assistant:
-    def __init__(self, store: Store, llm: Any, config: Config, now: Callable[[], datetime] | None = None):
+    def __init__(
+        self,
+        store: Store,
+        llm: Any,
+        config: Config,
+        now: Callable[[], datetime] | None = None,
+        search: Any = None,
+    ):
         self.store = store
         self.llm = llm
         self.config = config
+        self.search = search
         self._now = now or (lambda: datetime.now().astimezone())
 
     # --- Presentación ---
@@ -225,6 +241,25 @@ class Assistant:
         fact_id = self.store.add_fact(fact, int(self._now().timestamp()))
         return Reply(f"🧠 Lo recordaré: {fact}", [[("🗑 Olvidar", f"forget:{fact_id}")]])
 
+    def _web_search(self, data: dict[str, Any], text: str, reference: datetime) -> Reply:
+        if self.search is None:
+            return Reply("Todavía no tengo acceso a internet configurado.")
+        query = str(data.get("title") or text).strip()[:300]
+        upcoming_from = reference.date() if UPCOMING_HINT.search(f"{text} {query}") else None
+        try:
+            results = self.search.search(query, upcoming_from)
+        except SearchError as exc:
+            log.warning("La búsqueda falló: %s", exc)
+            return Reply("No pude buscar en internet en este momento. Inténtalo otra vez en un rato.")
+        if not results:
+            return Reply("No encontré resultados sobre eso.")
+        answer = self.llm.answer_from_web(text, query, results, reference)
+        domains = dict.fromkeys(
+            (urlsplit(r.url).hostname or "").removeprefix("www.") for r in results[:2]
+        )
+        sources = ", ".join(d for d in domains if d)
+        return Reply(f"{answer}\n\nFuente: {sources}" if sources else answer)
+
     def _memory_for_chat(self, text: str) -> str:
         """Reúne lo relacionado con la pregunta; el historial reciente ya va aparte."""
         facts = [fact for _, fact in self.store.search_facts(text, MEMORY_FACTS)]
@@ -245,12 +280,18 @@ class Assistant:
             return self._edit(data, reference)
         if intent == "remember_fact":
             return self._remember(data, text)
+        if intent == "web_search":
+            return self._web_search(data, text, reference)
         if intent == "complete_task":
             return self._finish(data.get("task_id"), "done")
         if intent == "cancel_task":
             return self._finish(data.get("task_id"), "cancelled")
         if intent == "list_tasks":
             return Reply(self._list_text())
+        if self.search is not None and LIVE_INFO_HINT.search(text):
+            # El modelo a veces trata esto como conversación y contesta que no lo sabe.
+            facts = "; ".join(fact for _, fact in self.store.search_facts(text, 3))
+            return self._web_search({"title": f"{text} ({facts})" if facts else text}, text, reference)
         return Reply(self.llm.reply(text, self.store.recent_messages(HISTORY_TURNS), self._memory_for_chat(text)))
 
     def _command(self, text: str) -> Reply:

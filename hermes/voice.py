@@ -9,6 +9,8 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
+# Orienta a Whisper hacia las frases habituales; sin esto confundía "cuándo" con "cuánto".
+VOCABULARY_HINT = "Hermes, recuérdame esto. ¿Cuándo juega mi equipo? ¿Cuándo es? ¿Qué pendientes tengo?"
 
 
 class TranscriptionError(Exception):
@@ -52,18 +54,34 @@ class WhisperTranscriber:
             )
         return self._model
 
+    def preload(self) -> None:
+        with self._lock:
+            self._load()
+
+    def _run(self, audio: Any) -> str:
+        if audio.size == 0:
+            return ""
+        with self._lock:
+            segments, _ = self._load().transcribe(
+                audio,
+                language="es",
+                vad_filter=True,
+                condition_on_previous_text=False,
+                initial_prompt=VOCABULARY_HINT,
+            )
+            return " ".join(segment.text.strip() for segment in segments).strip()
+
     def transcribe(self, audio_path: Path) -> str:
         try:
-            with self._lock:
-                audio = decode_audio(audio_path)
-                if audio.size == 0:
-                    return ""
-                segments, _ = self._load().transcribe(
-                    audio,
-                    language="es",
-                    vad_filter=True,
-                    condition_on_previous_text=False,
-                )
-                return " ".join(segment.text.strip() for segment in segments).strip()
+            return self._run(decode_audio(audio_path))
+        except Exception as exc:
+            raise TranscriptionError(str(exc)) from exc
+
+    def transcribe_pcm(self, pcm: bytes) -> str:
+        """Transcribe audio crudo de 16 bits, mono y 16 kHz, directo del micrófono."""
+        import numpy as np
+
+        try:
+            return self._run(np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0)
         except Exception as exc:
             raise TranscriptionError(str(exc)) from exc

@@ -47,6 +47,12 @@ class Config:
     azure_backup_sas_url: str = ""
     backup_password: str = ""
     backup_time: time = time(3, 0)
+    home_voice_enabled: bool = True
+    vosk_model_dir: Path | None = None
+    piper_voice_path: Path | None = None
+    wake_word: str = "hermes"
+    status_port: int = 47822
+    tavily_api_key: str = ""
 
     @classmethod
     def load(cls) -> "Config":
@@ -78,4 +84,12 @@ class Config:
             azure_backup_sas_url=get("AZURE_BACKUP_SAS_URL"),
             backup_password=get("HERMES_BACKUP_PASSWORD"),
             backup_time=_parse_time(get("HERMES_BACKUP_TIME", "03:00")),
+            home_voice_enabled=get("HERMES_HOME_VOICE", "on").lower() != "off",
+            vosk_model_dir=home / "models" / "vosk-small-es",
+            piper_voice_path=Path(
+                get("HERMES_PIPER_VOICE", str(home / "models" / "piper" / "es_MX-claude-high.onnx"))
+            ),
+            wake_word=get("HERMES_WAKE_WORD", "hermes").lower(),
+            status_port=int(get("HERMES_STATUS_PORT", "47822")),
+            tavily_api_key=get("TAVILY_API_KEY"),
         )

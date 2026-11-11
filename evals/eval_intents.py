@@ -55,6 +55,10 @@ CASES = [
     ("cómo se llama mi contador", dict(intent="chat")),
     ("qué come mi gecko", dict(intent="chat")),
     ("recuérdame llamar a Luis mañana a las 9", dict(intent="create_task", date=day(1), time="09:00")),
+    ("cuándo juega el Barcelona", dict(intent="web_search")),
+    ("cómo va a estar el clima hoy en Guatemala", dict(intent="web_search")),
+    ("cuánto está el dólar hoy", dict(intent="web_search")),
+    ("qué noticias hay de tecnología", dict(intent="web_search")),
 ]
 
 MEMORY = "- Mi contador se llama Luis Pérez\n- Mi gecko se llama Rocky y come grillos"

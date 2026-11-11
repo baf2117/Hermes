@@ -14,11 +14,14 @@ from typing import Any, Callable
 from .assistant import Assistant
 from .backup import MIN_PASSWORD_LENGTH, BackupError, BackupService, restore_backup, upload_to_azure
 from .config import Config, hermes_home
+from .homevoice import HomeVoice, PiperSpeaker, WakeWordDetector, run_microphone_loop
 from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
+from .status import VoiceStatus, start_status_server
 from .store import Store
 from .telegram import TelegramBot, TelegramClient, TelegramError
 from .voice import WhisperTranscriber
+from .websearch import SearchError, TavilySearch
 
 SINGLE_INSTANCE_PORT = 47821
 
@@ -66,7 +69,54 @@ def check(config: Config) -> int:
     print(f"Chat autorizado: {'configurado' if config.allowed_chat_id else 'sin configurar'}")
     print(f"Modelo de voz: {'instalado' if build_transcriber(config) else 'no disponible'}")
     print(f"Respaldo: {backup_problem(config) or 'configurado'}")
+    print(f"Voz en casa: {home_voice_problem(config) or 'instalada'}")
+    if not config.tavily_api_key:
+        print("Internet: falta TAVILY_API_KEY en .env")
+    else:
+        try:
+            print(f"Internet: Tavily responde ({len(TavilySearch(config.tavily_api_key).search('hora actual'))} resultados)")
+        except SearchError as exc:
+            ok = False
+            print(f"Internet: ERROR: {exc}")
     return 0 if ok else 1
+
+
+def home_voice_problem(config: Config) -> str | None:
+    if not config.home_voice_enabled:
+        return "desactivada en .env"
+    for module in ("vosk", "sounddevice", "piper", "faster_whisper"):
+        if importlib.util.find_spec(module) is None:
+            return f"falta el paquete {module}"
+    if config.vosk_model_dir is None or not config.vosk_model_dir.exists():
+        return "falta el modelo de Vosk"
+    if config.piper_voice_path is None or not config.piper_voice_path.exists():
+        return "falta la voz de Piper"
+    if config.whisper_model_dir is None or not (config.whisper_model_dir / "model.bin").exists():
+        return "falta el modelo de voz a texto"
+    return None
+
+
+def start_home_voice(
+    config: Config,
+    assistant: Assistant,
+    transcriber: WhisperTranscriber,
+    status: VoiceStatus,
+    stop: threading.Event,
+) -> None:
+    def build(read: Callable[[], bytes], flush: Callable[[], None]) -> HomeVoice:
+        transcriber.preload()
+        return HomeVoice(
+            WakeWordDetector(config.vosk_model_dir, config.wake_word),
+            transcriber,
+            assistant,
+            PiperSpeaker(config.piper_voice_path),
+            read,
+            flush,
+            status,
+            config.wake_word,
+        )
+
+    threading.Thread(target=run_microphone_loop, args=(build, stop), daemon=True, name="home-voice").start()
 
 
 def backup_problem(config: Config) -> str | None:
@@ -131,7 +181,8 @@ def run(config: Config) -> int:
     configure_logging(config)
     store = Store(config.db_path)
     llm = OllamaClient(config.ollama_url, config.ollama_model)
-    assistant = Assistant(store, llm, config)
+    search = TavilySearch(config.tavily_api_key) if config.tavily_api_key else None
+    assistant = Assistant(store, llm, config, search=search)
     client = TelegramClient(config.telegram_token)
     transcriber = build_transcriber(config)
     if transcriber is None:
@@ -154,6 +205,13 @@ def run(config: Config) -> int:
             threading.Thread(target=service.run_forever, args=(stop,), daemon=True, name="backup").start()
     else:
         logging.warning("Sin chat autorizado: modo de emparejamiento, sin recordatorios")
+
+    status = VoiceStatus()
+    start_status_server(status, config.status_port)
+    if problem := home_voice_problem(config):
+        logging.warning("Voz en casa no disponible: %s", problem)
+    else:
+        start_home_voice(config, assistant, transcriber, status, stop)
 
     logging.info("Hermes en marcha desde %s", datetime.now().astimezone().isoformat(timespec="seconds"))
     try:
