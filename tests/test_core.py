@@ -1,6 +1,9 @@
+import os
+import sqlite3
+import tempfile
 import unittest
-from dataclasses import replace
 from datetime import datetime, time, timedelta, timezone
+from pathlib import Path
 
 from hermes.assistant import Assistant
 from hermes.config import DEFAULT_CATEGORIES, Config
@@ -31,6 +34,17 @@ class FakeLLM:
 
     def reply(self, *_):
         return "hola"
+
+
+class FakeTranscriber:
+    def __init__(self, text="", error=None):
+        self.text = text
+        self.error = error
+
+    def transcribe(self, path):
+        if self.error:
+            raise self.error
+        return self.text
 
 
 class Harness(unittest.TestCase):
@@ -90,8 +104,16 @@ class TaskTests(Harness):
         self.assertEqual(self.store.pending_tasks()[0].due_at, int(datetime(2026, 11, 11, 8, 0, tzinfo=TZ).timestamp()))
 
     def test_date_only_today_after_default_time(self):
-        self.say("x", title="A", date="2026-11-10")
+        self.say("hoy", title="A", date="2026-11-10")
         self.assertEqual(self.store.pending_tasks()[0].due_at, int((self.moment + timedelta(hours=1)).timestamp()))
+
+    def test_invented_date_is_dropped_when_message_mentions_no_time(self):
+        self.say("comprar grillos para los geckos", title="Comprar grillos", date="2026-11-10")
+        self.assertIsNone(self.store.pending_tasks()[0].due_at)
+
+    def test_date_is_kept_when_message_mentions_a_day(self):
+        self.say("pagar el viernes", title="Pagar", date="2026-11-13")
+        self.assertIsNotNone(self.store.pending_tasks()[0].due_at)
 
     def test_edit_applies_only_to_last_task_and_only_changed_fields(self):
         self.say("x", title="Primera", category="casa")
@@ -220,13 +242,110 @@ class ReminderTests(Harness):
         self.assertNotIn("Luego", summary)
 
 
+class SendTimeTests(Harness):
+    def test_message_read_late_still_counts_from_send_time(self):
+        self.llm.next = intent("create_task", title="A", relative_minutes=20)
+        sent = self.moment - timedelta(hours=2)
+        self.assistant.handle_text("x", sent)
+        self.scheduler.tick()
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("Atrasado", self.sent[0])
+
+    def test_time_valid_when_sent_is_not_rejected_when_read_late(self):
+        self.llm.next = intent("create_task", title="A", date="2026-11-10", time="09:30")
+        reply = self.assistant.handle_text("x", self.moment - timedelta(hours=2))
+        self.assertNotIn("ya pasó", reply.text)
+        self.assertIsNotNone(self.store.pending_tasks()[0].due_at)
+
+    def test_future_send_time_is_clamped_to_now(self):
+        self.llm.next = intent("create_task", title="A", relative_minutes=20)
+        self.assistant.handle_text("x", self.moment + timedelta(days=1))
+        self.assertEqual(self.store.pending_tasks()[0].due_at, int((self.moment + timedelta(minutes=20)).timestamp()))
+
+
+class MemoryTests(Harness):
+    def test_remember_and_list_and_forget(self):
+        reply = self.say("mi contador es Luis", name="remember_fact", title="Mi contador es Luis")
+        self.assertIn("Lo recordaré", reply.text)
+        self.assertEqual(self.store.pending_tasks(), [])
+        self.assertIn("Luis", self.assistant.handle_text("/memoria").text)
+        fact_id = self.store.list_facts()[0][0]
+        self.assistant.handle_text(f"/olvidar {fact_id}")
+        self.assertEqual(self.store.list_facts(), [])
+        self.assertEqual(self.store.search_facts("contador", 5), [])
+
+    def test_forget_button(self):
+        self.say("x", name="remember_fact", title="Dato")
+        self.assistant.handle_button(f"forget:{self.store.list_facts()[0][0]}")
+        self.assertEqual(self.store.list_facts(), [])
+
+    def test_duplicate_fact_is_not_stored_twice(self):
+        self.say("x", name="remember_fact", title="Mi gecko es Rocky")
+        self.say("x", name="remember_fact", title="mi gecko es rocky")
+        self.assertEqual(len(self.store.list_facts()), 1)
+
+    def test_search_ignores_accents_and_stopwords(self):
+        self.store.add_fact("El veterinario atendió a Rocky en León", 1)
+        self.assertEqual(len(self.store.search_facts("cuándo atendio leon", 5)), 1)
+        self.assertEqual(self.store.search_facts("qué es lo que", 5), [])
+
+    def test_search_survives_fts_operators_in_user_text(self):
+        for text in ('AND OR NOT "', "a* (b) NEAR", "col:valor -x ^y", "'; DROP TABLE facts; --"):
+            self.store.search_facts(text, 5)
+            self.store.search_messages(text, 5, 0)
+
+    def test_chat_receives_relevant_memory(self):
+        self.store.add_fact("Mi contador se llama Luis", 1)
+        seen = []
+        self.llm.reply = lambda text, history, memory: seen.append(memory) or "Luis"
+        self.say("cómo se llama mi contador", name="chat")
+        self.assertIn("Luis", seen[0])
+
+    def test_chat_finds_older_conversation_but_not_recent_duplicates(self):
+        self.say("x", name="chat")
+        self.store.log_message("user", "compré un termostato nuevo", 100)
+        for i in range(8):
+            self.store.log_message("user", f"relleno {i}", 200 + i)
+        found = self.store.search_messages("termostato", 3, 6)
+        self.assertEqual([text for _, text in found], ["compré un termostato nuevo"])
+        self.assertEqual(self.store.search_messages("relleno", 10, 6), [(200, "relleno 0"), (201, "relleno 1")])
+
+    def test_commands_are_not_searchable(self):
+        self.store.log_message("user", "/olvidar termostato", 1)
+        for i in range(7):
+            self.store.log_message("hermes", "x", 2 + i)
+        self.assertEqual(self.store.search_messages("termostato", 3, 6), [])
+
+    def test_existing_messages_are_indexed_on_upgrade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "h.db"
+            conn = sqlite3.connect(path)
+            conn.executescript(
+                "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL,"
+                " role TEXT NOT NULL, text TEXT NOT NULL);"
+                "INSERT INTO messages (ts, role, text) VALUES (1, 'user', 'mensaje antiguo');"
+            )
+            conn.close()
+            store = Store(path)
+            self.assertEqual(store.search_messages("antiguo", 3, 0), [(1, "mensaje antiguo")])
+            store._conn.close()
+
+
 class FakeClient:
     def __init__(self):
         self.sent = []
         self.updates = []
+        self.downloads = 0
 
     def send_message(self, chat_id, text, buttons=None):
         self.sent.append((chat_id, text))
+
+    def send_typing(self, _):
+        pass
+
+    def download_file(self, _, destination):
+        self.downloads += 1
+        destination.write_bytes(b"audio")
 
     def answer_button(self, _):
         pass
@@ -271,9 +390,58 @@ class TelegramTests(Harness):
         }})
         self.assertEqual(len(self.store.pending_tasks()), 1)
 
-    def test_voice_is_declined_politely(self):
+    def test_voice_without_transcriber_is_declined(self):
         self.bot.handle_update(self.message(OWNER, voice={"file_id": "a"}))
-        self.assertIn("solo entiendo texto", self.client.sent[0][1])
+        self.assertIn("no están disponibles", self.client.sent[0][1])
+
+    def voice_bot(self, tmp, transcriber):
+        return TelegramBot(self.client, self.assistant, self.store, OWNER, transcriber, Path(tmp))
+
+    def test_voice_note_becomes_a_task_and_audio_is_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = self.voice_bot(tmp, FakeTranscriber("pagar la luz"))
+            bot.handle_update(self.message(OWNER, voice={"file_id": "a", "duration": 3}))
+            self.assertEqual(os.listdir(tmp), [])
+        self.assertEqual(self.store.pending_tasks()[0].title, "A")
+        self.assertIn("Entendí: «pagar la luz»", self.client.sent[0][1])
+
+    def test_failed_transcription_is_reported_and_cleans_up(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = self.voice_bot(tmp, FakeTranscriber(error=RuntimeError("roto")))
+            with self.assertLogs("hermes.telegram", level="WARNING"):
+                bot.handle_update(self.message(OWNER, voice={"file_id": "a", "duration": 3}))
+            self.assertEqual(os.listdir(tmp), [])
+        self.assertIn("No pude procesar", self.client.sent[0][1])
+        self.assertEqual(self.store.pending_tasks(), [])
+
+    def test_silent_audio_creates_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.voice_bot(tmp, FakeTranscriber("")).handle_update(
+                self.message(OWNER, voice={"file_id": "a", "duration": 3})
+            )
+        self.assertEqual(self.store.pending_tasks(), [])
+
+    def test_long_audio_is_rejected_before_download(self):
+        transcriber = FakeTranscriber("x")
+        with tempfile.TemporaryDirectory() as tmp:
+            self.voice_bot(tmp, transcriber).handle_update(
+                self.message(OWNER, voice={"file_id": "a", "duration": 900})
+            )
+        self.assertEqual(self.client.downloads, 0)
+
+    def test_stranger_voice_is_not_downloaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.voice_bot(tmp, FakeTranscriber("x")).handle_update(
+                self.message(999, voice={"file_id": "a", "duration": 3})
+            )
+        self.assertEqual(self.client.downloads, 0)
+        self.assertEqual(self.store.pending_tasks(), [])
+
+    def test_uses_real_send_time_of_message(self):
+        self.llm.next = intent("create_task", title="A", relative_minutes=20)
+        sent = self.moment - timedelta(hours=2)
+        self.bot.handle_update(self.message(OWNER, text="en 20 minutos", date=int(sent.timestamp())))
+        self.assertEqual(self.store.pending_tasks()[0].due_at, int((sent + timedelta(minutes=20)).timestamp()))
 
     def test_pairing_mode_only_reveals_chat_id(self):
         bot = TelegramBot(self.client, self.assistant, self.store, None)
@@ -283,7 +451,7 @@ class TelegramTests(Harness):
 
     def test_offset_advances_even_if_handler_crashes(self):
         self.client.updates = [{"update_id": 7, **self.message(OWNER, text="hola")}]
-        self.assistant.handle_text = lambda _: 1 / 0
+        self.assistant.handle_text = lambda *_: 1 / 0
         with self.assertLogs("hermes.telegram", level="ERROR"):
             self.bot.poll_once()
         self.assertEqual(self.store.kv_get("telegram_offset"), "8")

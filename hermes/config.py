@@ -42,6 +42,8 @@ class Config:
     summary_time: time
     default_task_time: time
     categories: tuple[str, ...]
+    whisper_model_dir: Path | None = None
+    tmp_dir: Path | None = None
 
     @classmethod
     def load(cls) -> "Config":
@@ -68,4 +70,6 @@ class Config:
             summary_time=_parse_time(get("HERMES_SUMMARY_TIME", "07:30")),
             default_task_time=_parse_time(get("HERMES_DEFAULT_TASK_TIME", "09:00")),
             categories=categories,
+            whisper_model_dir=Path(get("HERMES_WHISPER_MODEL", str(home / "models" / "whisper-small"))),
+            tmp_dir=home / "tmp",
         )

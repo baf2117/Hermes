@@ -6,11 +6,16 @@ import logging
 import time
 import urllib.error
 import urllib.request
+import uuid
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 4000
+MAX_AUDIO_BYTES = 20_000_000  # Límite de descarga de la API de bots.
+MAX_AUDIO_SECONDS = 300
 OFFSET_KEY = "telegram_offset"
 
 
@@ -21,6 +26,7 @@ class TelegramError(Exception):
 class TelegramClient:
     def __init__(self, token: str):
         self._base = f"https://api.telegram.org/bot{token}"
+        self._file_base = f"https://api.telegram.org/file/bot{token}"
 
     def call(self, method: str, payload: dict[str, Any], timeout: float = 30.0) -> Any:
         request = urllib.request.Request(
@@ -64,6 +70,22 @@ class TelegramClient:
                 }
             self.call("sendMessage", payload)
 
+    def send_typing(self, chat_id: int) -> None:
+        self.call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
+
+    def download_file(self, file_id: str, destination: Path) -> None:
+        info = self.call("getFile", {"file_id": file_id})
+        if int(info.get("file_size") or 0) > MAX_AUDIO_BYTES:
+            raise TelegramError("getFile: archivo demasiado grande")
+        try:
+            with urllib.request.urlopen(f"{self._file_base}/{info['file_path']}", timeout=60) as response:
+                data = response.read(MAX_AUDIO_BYTES + 1)
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise TelegramError(f"descarga: {type(exc).__name__}") from None
+        if len(data) > MAX_AUDIO_BYTES:
+            raise TelegramError("descarga: archivo demasiado grande")
+        destination.write_bytes(data)
+
     def answer_button(self, callback_id: str) -> None:
         self.call("answerCallbackQuery", {"callback_query_id": callback_id})
 
@@ -77,11 +99,21 @@ class TelegramClient:
 class TelegramBot:
     """Recibe mensajes y los entrega al asistente, solo si vienen del usuario autorizado."""
 
-    def __init__(self, client: Any, assistant: Any, store: Any, allowed_chat_id: int | None):
+    def __init__(
+        self,
+        client: Any,
+        assistant: Any,
+        store: Any,
+        allowed_chat_id: int | None,
+        transcriber: Any = None,
+        tmp_dir: Path | None = None,
+    ):
         self.client = client
         self.assistant = assistant
         self.store = store
         self.allowed_chat_id = allowed_chat_id
+        self.transcriber = transcriber
+        self.tmp_dir = tmp_dir
 
     def _is_allowed(self, user_id: Any, chat: dict[str, Any]) -> bool:
         return (
@@ -107,11 +139,44 @@ class TelegramBot:
         if not self._is_allowed(user_id, chat):
             log.warning("Mensaje ignorado de un chat no autorizado")
             return
-        if "text" not in message:
-            self.client.send_message(chat["id"], "Por ahora solo entiendo texto. Las notas de voz llegan pronto.")
+        sent_at = datetime.fromtimestamp(message["date"]).astimezone() if "date" in message else None
+        audio = message.get("voice") or message.get("audio")
+        if audio:
+            self._handle_audio(chat["id"], audio, sent_at)
+        elif "text" in message:
+            reply = self.assistant.handle_text(message["text"], sent_at)
+            self.client.send_message(chat["id"], reply.text, reply.buttons)
+        else:
+            self.client.send_message(chat["id"], "Solo entiendo texto y notas de voz.")
+
+    def _transcribe(self, audio: dict[str, Any]) -> str:
+        self.tmp_dir.mkdir(parents=True, exist_ok=True)
+        path = self.tmp_dir / f"{uuid.uuid4().hex}.audio"
+        try:
+            self.client.download_file(audio["file_id"], path)
+            return self.transcriber.transcribe(path)
+        finally:
+            path.unlink(missing_ok=True)  # El audio no se conserva; solo su transcripción.
+
+    def _handle_audio(self, chat_id: int, audio: dict[str, Any], sent_at: datetime | None) -> None:
+        if self.transcriber is None or self.tmp_dir is None:
+            self.client.send_message(chat_id, "Las notas de voz no están disponibles en este momento.")
             return
-        reply = self.assistant.handle_text(message["text"])
-        self.client.send_message(chat["id"], reply.text, reply.buttons)
+        if int(audio.get("duration") or 0) > MAX_AUDIO_SECONDS:
+            self.client.send_message(chat_id, "Ese audio es muy largo. Mándame uno de menos de 5 minutos.")
+            return
+        self.client.send_typing(chat_id)
+        try:
+            text = self._transcribe(audio)
+        except Exception as exc:
+            log.warning("No se pudo transcribir el audio: %s", exc)
+            self.client.send_message(chat_id, "No pude procesar ese audio. ¿Me lo escribes o lo intentas de nuevo?")
+            return
+        if not text:
+            self.client.send_message(chat_id, "No logré escuchar nada en ese audio.")
+            return
+        reply = self.assistant.handle_text(text, sent_at)
+        self.client.send_message(chat_id, f"🎙️ Entendí: «{text}»\n\n{reply.text}", reply.buttons)
 
     def _handle_button(self, query: dict[str, Any]) -> None:
         message = query.get("message", {})

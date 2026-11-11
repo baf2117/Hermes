@@ -1,8 +1,10 @@
 """Persistencia en SQLite: tareas, historial de mensajes y estado."""
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,9 +30,48 @@ CREATE TABLE IF NOT EXISTS messages (
     text TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    text, content='messages', content_rowid='id', tokenize='unicode61 remove_diacritics 2'
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
+    text, content='facts', content_rowid='id', tokenize='unicode61 remove_diacritics 2'
+);
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts (rowid, text) VALUES (new.id, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS facts_ai AFTER INSERT ON facts BEGIN
+    INSERT INTO facts_fts (rowid, text) VALUES (new.id, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
+    INSERT INTO facts_fts (facts_fts, rowid, text) VALUES ('delete', old.id, old.text);
+END;
 """
 
 EDITABLE_FIELDS = {"title", "category", "urgency", "due_at", "notified_at"}
+
+FTS_READY_KEY = "fts_ready"
+STOPWORDS = frozenset(
+    """
+    que cual cuales como cuando donde quien quienes cuanto cuanta cuantos cuantas por para con sin
+    una uno unos unas los las del mis tus sus mio mia hay esta este estos estas esa ese esos esas
+    soy eres son era fue tengo tiene tienes tenia sabes sabe dime decir recuerdas acuerdas llama
+    llaman hermes favor algo sobre pero porque muy mas
+    """.split()
+)
+
+
+def fts_query(text: str) -> str:
+    """Convierte una frase en una consulta FTS5 segura: solo palabras, unidas con OR."""
+    plain = "".join(
+        c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn"
+    )
+    words = dict.fromkeys(w for w in re.findall(r"\w{3,}", plain) if w not in STOPWORDS)
+    return " OR ".join(f'"{w}"*' for w in words)
 
 
 @dataclass(frozen=True)
@@ -54,6 +95,10 @@ class Store:
         with self._lock, self._conn:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(SCHEMA)
+            if self.kv_get(FTS_READY_KEY) is None:
+                # Indexa los mensajes guardados antes de que existiera la búsqueda.
+                self._conn.execute("INSERT INTO messages_fts (messages_fts) VALUES ('rebuild')")
+                self.kv_set(FTS_READY_KEY, "1")
 
     @staticmethod
     def _task(row: sqlite3.Row) -> Task:
@@ -139,6 +184,54 @@ class Store:
                 "SELECT role, text FROM messages ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [(r["role"], r["text"]) for r in reversed(rows)]
+
+    def add_fact(self, text: str, now: int) -> int:
+        with self._lock, self._conn:
+            existing = self._conn.execute(
+                "SELECT id FROM facts WHERE lower(text) = lower(?)", (text,)
+            ).fetchone()
+            if existing:
+                return int(existing["id"])
+            cursor = self._conn.execute("INSERT INTO facts (text, created_at) VALUES (?, ?)", (text, now))
+            return int(cursor.lastrowid)
+
+    def list_facts(self, limit: int = 50) -> list[tuple[int, str]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, text FROM facts ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [(r["id"], r["text"]) for r in rows]
+
+    def delete_fact(self, fact_id: int) -> bool:
+        with self._lock, self._conn:
+            return self._conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,)).rowcount > 0
+
+    def search_facts(self, text: str, limit: int) -> list[tuple[int, str]]:
+        query = fts_query(text)
+        if not query:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT f.id, f.text FROM facts_fts JOIN facts f ON f.id = facts_fts.rowid"
+                " WHERE facts_fts MATCH ? ORDER BY bm25(facts_fts) LIMIT ?",
+                (query, limit),
+            ).fetchall()
+        return [(r["id"], r["text"]) for r in rows]
+
+    def search_messages(self, text: str, limit: int, skip_latest: int) -> list[tuple[int, str]]:
+        """Busca en lo que dijo el usuario; omite lo más reciente, que ya va en el historial."""
+        query = fts_query(text)
+        if not query:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT m.ts, m.text FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid"
+                " WHERE messages_fts MATCH ? AND m.role = 'user' AND m.text NOT LIKE '/%'"
+                " AND m.id NOT IN (SELECT id FROM messages ORDER BY id DESC LIMIT ?)"
+                " ORDER BY bm25(messages_fts) LIMIT ?",
+                (query, skip_latest, limit),
+            ).fetchall()
+        return [(r["ts"], r["text"]) for r in rows]
 
     def kv_get(self, key: str) -> str | None:
         with self._lock:

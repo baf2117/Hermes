@@ -50,6 +50,19 @@ CASES = [
     ("cuáles son mis pendientes", dict(intent="list_tasks")),
     ("hola hermes, cómo estás", dict(intent="chat")),
     ("cuál es la capital de Francia", dict(intent="chat")),
+    ("mi contador se llama Luis Pérez", dict(intent="remember_fact")),
+    ("mi gecko se llama Rocky y come grillos", dict(intent="remember_fact")),
+    ("cómo se llama mi contador", dict(intent="chat")),
+    ("qué come mi gecko", dict(intent="chat")),
+    ("recuérdame llamar a Luis mañana a las 9", dict(intent="create_task", date=day(1), time="09:00")),
+]
+
+MEMORY = "- Mi contador se llama Luis Pérez\n- Mi gecko se llama Rocky y come grillos"
+# (pregunta, palabra que debe aparecer, palabra que no debe aparecer)
+MEMORY_CASES = [
+    ("cómo se llama mi contador", "luis", None),
+    ("qué come mi gecko", "grillos", None),
+    ("cómo se llama mi dentista", None, "dentista se llama"),
 ]
 
 
@@ -76,7 +89,15 @@ def main() -> int:
     if durations:
         ordered = sorted(durations)
         print(f"\n{passed}/{len(CASES)} correctas. Mediana {ordered[len(ordered) // 2]:.1f} s, máximo {ordered[-1]:.1f} s")
-    return 0 if passed == len(CASES) else 1
+    memory_passed = 0
+    for question, must, must_not in MEMORY_CASES:
+        answer = client.reply(question, [], MEMORY)
+        lowered = answer.lower()
+        good = (must is None or must in lowered) and (must_not is None or must_not not in lowered)
+        memory_passed += good
+        print(f"{'ok    ' if good else 'FALLA '} memoria: {question} -> {answer[:120]}")
+    print(f"Memoria: {memory_passed}/{len(MEMORY_CASES)} correctas")
+    return 0 if passed == len(CASES) and memory_passed == len(MEMORY_CASES) else 1
 
 
 if __name__ == "__main__":

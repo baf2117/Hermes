@@ -1,6 +1,7 @@
 """Punto de entrada: `python -m hermes` arranca el bot y `python -m hermes check` revisa la configuración."""
 from __future__ import annotations
 
+import importlib.util
 import logging
 import logging.handlers
 import socket
@@ -14,6 +15,7 @@ from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
 from .store import Store
 from .telegram import TelegramBot, TelegramClient, TelegramError
+from .voice import WhisperTranscriber
 
 SINGLE_INSTANCE_PORT = 47821
 
@@ -28,6 +30,15 @@ def configure_logging(config: Config) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=[handler, logging.StreamHandler()],
     )
+
+
+def build_transcriber(config: Config) -> WhisperTranscriber | None:
+    model_dir = config.whisper_model_dir
+    if model_dir is None or not (model_dir / "model.bin").exists():
+        return None
+    if importlib.util.find_spec("faster_whisper") is None:
+        return None
+    return WhisperTranscriber(model_dir)
 
 
 def check(config: Config) -> int:
@@ -50,6 +61,7 @@ def check(config: Config) -> int:
             ok = False
             print(f"Telegram: ERROR: {exc}")
     print(f"Chat autorizado: {'configurado' if config.allowed_chat_id else 'sin configurar'}")
+    print(f"Modelo de voz: {'instalado' if build_transcriber(config) else 'no disponible'}")
     return 0 if ok else 1
 
 
@@ -71,7 +83,10 @@ def run(config: Config) -> int:
     llm = OllamaClient(config.ollama_url, config.ollama_model)
     assistant = Assistant(store, llm, config)
     client = TelegramClient(config.telegram_token)
-    bot = TelegramBot(client, assistant, store, config.allowed_chat_id)
+    transcriber = build_transcriber(config)
+    if transcriber is None:
+        logging.warning("Notas de voz desactivadas: falta faster-whisper o su modelo")
+    bot = TelegramBot(client, assistant, store, config.allowed_chat_id, transcriber, config.tmp_dir)
     stop = threading.Event()
 
     if config.allowed_chat_id is not None:
