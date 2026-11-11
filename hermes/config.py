@@ -44,6 +44,9 @@ class Config:
     categories: tuple[str, ...]
     whisper_model_dir: Path | None = None
     tmp_dir: Path | None = None
+    azure_backup_sas_url: str = ""
+    backup_password: str = ""
+    backup_time: time = time(3, 0)
 
     @classmethod
     def load(cls) -> "Config":
@@ -72,4 +75,7 @@ class Config:
             categories=categories,
             whisper_model_dir=Path(get("HERMES_WHISPER_MODEL", str(home / "models" / "whisper-small"))),
             tmp_dir=home / "tmp",
+            azure_backup_sas_url=get("AZURE_BACKUP_SAS_URL"),
+            backup_password=get("HERMES_BACKUP_PASSWORD"),
+            backup_time=_parse_time(get("HERMES_BACKUP_TIME", "03:00")),
         )

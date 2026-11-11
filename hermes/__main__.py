@@ -8,8 +8,11 @@ import socket
 import sys
 import threading
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable
 
 from .assistant import Assistant
+from .backup import MIN_PASSWORD_LENGTH, BackupError, BackupService, restore_backup, upload_to_azure
 from .config import Config, hermes_home
 from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
@@ -62,7 +65,54 @@ def check(config: Config) -> int:
             print(f"Telegram: ERROR: {exc}")
     print(f"Chat autorizado: {'configurado' if config.allowed_chat_id else 'sin configurar'}")
     print(f"Modelo de voz: {'instalado' if build_transcriber(config) else 'no disponible'}")
+    print(f"Respaldo: {backup_problem(config) or 'configurado'}")
     return 0 if ok else 1
+
+
+def backup_problem(config: Config) -> str | None:
+    if not config.azure_backup_sas_url:
+        return "falta AZURE_BACKUP_SAS_URL en .env"
+    if len(config.backup_password) < MIN_PASSWORD_LENGTH:
+        return f"HERMES_BACKUP_PASSWORD debe tener al menos {MIN_PASSWORD_LENGTH} caracteres"
+    if importlib.util.find_spec("cryptography") is None:
+        return "falta el paquete cryptography"
+    return None
+
+
+def build_backup(config: Config, store: Store, send: Callable[[str, list], Any]) -> BackupService:
+    def upload(name: str, data: bytes) -> None:
+        upload_to_azure(config.azure_backup_sas_url, name, data)
+
+    return BackupService(
+        store, config.db_path, config.tmp_dir, config.backup_password, config.backup_time, send, upload
+    )
+
+
+def backup_now(config: Config) -> int:
+    if problem := backup_problem(config):
+        print(f"Respaldo: {problem}")
+        return 1
+    service = build_backup(config, Store(config.db_path), lambda *_: None)
+    try:
+        name, size = service.backup()
+    except BackupError as exc:
+        print(f"Respaldo: ERROR: {exc}")
+        return 1
+    print(f"Respaldo subido: {name} ({size / 1024:.1f} KB)")
+    return 0
+
+
+def restore(config: Config, arguments: list[str]) -> int:
+    if len(arguments) != 2:
+        print("Uso: python -m hermes restore <respaldo.enc> <destino.db>")
+        return 2
+    try:
+        restore_backup(Path(arguments[0]), Path(arguments[1]), config.backup_password)
+    except (BackupError, OSError) as exc:
+        print(f"Restauración: ERROR: {exc}")
+        return 1
+    print(f"Restaurado en {arguments[1]}")
+    return 0
 
 
 def run(config: Config) -> int:
@@ -97,6 +147,11 @@ def run(config: Config) -> int:
 
         scheduler = Scheduler(store, assistant, config, send)
         threading.Thread(target=scheduler.run_forever, args=(stop,), daemon=True, name="scheduler").start()
+        if problem := backup_problem(config):
+            logging.warning("Respaldo desactivado: %s", problem)
+        else:
+            service = build_backup(config, store, send)
+            threading.Thread(target=service.run_forever, args=(stop,), daemon=True, name="backup").start()
     else:
         logging.warning("Sin chat autorizado: modo de emparejamiento, sin recordatorios")
 
@@ -113,8 +168,13 @@ def run(config: Config) -> int:
 
 def main() -> int:
     config = Config.load()
-    if len(sys.argv) > 1 and sys.argv[1] == "check":
+    command = sys.argv[1] if len(sys.argv) > 1 else "run"
+    if command == "check":
         return check(config)
+    if command == "backup":
+        return backup_now(config)
+    if command == "restore":
+        return restore(config, sys.argv[2:])
     return run(config)
 
 
