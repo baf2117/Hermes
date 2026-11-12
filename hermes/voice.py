@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +12,28 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 # Orienta a Whisper hacia las frases habituales; sin esto confundía "cuándo" con "cuánto".
-VOCABULARY_HINT = "Hermes, recuérdame esto. ¿Cuándo juega mi equipo? ¿Cuándo es? ¿Qué pendientes tengo?"
+# Mezcla órdenes y preguntas: con solo preguntas, convertía las órdenes en preguntas.
+VOCABULARY_HINT = (
+    "Recuérdame pagar la luz mañana. Cambia la tarea a urgente. Márcala como hecha. "
+    "Cancela mis pendientes. ¿Cuándo juega mi equipo?"
+)
+
+
+_HALLUCINATION = re.compile(
+    r"(suscribete|suscribanse|suscribite)( al canal| a mi canal| a nuestro canal)?( y dale like)?"
+    r"|gracias por ver( el video| este video)?"
+    r"|(subtitulos|subtitulado)\b.*",
+)
 
 
 class TranscriptionError(Exception):
     pass
+
+
+def is_hallucination(text: str) -> bool:
+    """Whisper aprendió de videos y ante ruido a veces inventa sus despedidas típicas."""
+    plain = "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
+    return _HALLUCINATION.fullmatch(plain.strip(" ¡!¿?.,…")) is not None
 
 
 def decode_audio(path: Path) -> Any:
@@ -69,7 +88,11 @@ class WhisperTranscriber:
                 condition_on_previous_text=False,
                 initial_prompt=VOCABULARY_HINT,
             )
-            return " ".join(segment.text.strip() for segment in segments).strip()
+            text = " ".join(segment.text.strip() for segment in segments).strip()
+        if is_hallucination(text):
+            log.info("Transcripción descartada por parecer inventada")
+            return ""
+        return text
 
     def transcribe(self, audio_path: Path) -> str:
         try:

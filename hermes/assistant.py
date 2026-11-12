@@ -1,8 +1,10 @@
 """Lógica de Hermes: convierte mensajes en acciones validadas sobre las tareas."""
 from __future__ import annotations
 
+import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -46,6 +48,11 @@ UPCOMING_HINT = re.compile(
 LIVE_INFO_HINT = re.compile(
     r"\b(juega|juegan|partidos?|marcador|clima|pron[óo]stico|noticias|d[óo]lar)\b", re.IGNORECASE
 )
+BULK_CANCEL_KEY = "bulk_cancel_request"
+BULK_CANCEL_SECONDS = 300
+BULK_CANCEL_REQUEST = re.compile(r"\b(cancel\w*|borr\w*|elimin\w*|quit\w*)\b.*\b(pendientes|tareas|todas|todos|todo)\b")
+CONFIRM_YES = re.compile(r"si|si,? (cancelalas?|borralas?|confirmo|dale|por favor)|confirmo|dale|hazlo|adelante")
+CONFIRM_NO = re.compile(r"no|no,? (gracias|las cancelas?)|mejor no|dejalo|dejalas")
 MEMORY_FACTS = 6
 MEMORY_MESSAGES = 3
 FALLBACK_FACTS = 8
@@ -260,6 +267,51 @@ class Assistant:
         sources = ", ".join(d for d in domains if d)
         return Reply(f"{answer}\n\nFuente: {sources}" if sources else answer)
 
+    # --- Cancelar varias tareas: siempre con confirmación y decidido por código ---
+
+    def _request_bulk_cancel(self, now: datetime) -> Reply:
+        pending = self.store.pending_tasks()
+        if not pending:
+            return Reply("No tienes tareas pendientes.")
+        self.store.kv_set(
+            BULK_CANCEL_KEY,
+            json.dumps({"ids": [t.id for t in pending], "expires": int(now.timestamp()) + BULK_CANCEL_SECONDS}),
+        )
+        question = "¿Cancelo esta tarea?" if len(pending) == 1 else f"¿Cancelo estas {len(pending)} tareas?"
+        listing = "\n".join(self.format_task(t) for t in pending)
+        return Reply(
+            f"{question}\n{listing}\n\nResponde «sí» para confirmar.",
+            [[("✅ Sí, cancelar", "bulk:yes"), ("✖ No", "bulk:no")]],
+        )
+
+    def _take_bulk_cancel(self, now: datetime) -> list[int] | None:
+        """Devuelve y consume la solicitud pendiente, si sigue vigente."""
+        raw = self.store.kv_get(BULK_CANCEL_KEY)
+        if not raw:
+            return None
+        self.store.kv_set(BULK_CANCEL_KEY, "")
+        request = json.loads(raw)
+        return request["ids"] if int(now.timestamp()) <= request["expires"] else None
+
+    def _confirm_bulk_cancel(self, ids: list[int], now: datetime) -> Reply:
+        cancelled = [task for task_id in ids if (task := self._pending_by_id(task_id))]
+        for task in cancelled:
+            self.store.set_status(task.id, "cancelled", int(now.timestamp()))
+        if not cancelled:
+            return Reply("Esas tareas ya no estaban pendientes.")
+        return Reply("🗑 Cancelada: " + cancelled[0].title if len(cancelled) == 1 else f"🗑 Cancelé {len(cancelled)} tareas.")
+
+    def _bulk_cancel_flow(self, text: str, now: datetime) -> Reply | None:
+        ids = self._take_bulk_cancel(now)
+        plain = "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
+        plain = plain.strip(" ¡!¿?.,…")
+        if ids is not None:
+            if CONFIRM_YES.fullmatch(plain):
+                return self._confirm_bulk_cancel(ids, now)
+            if CONFIRM_NO.fullmatch(plain):
+                return Reply("Listo, no cancelé nada.")
+        return self._request_bulk_cancel(now) if BULK_CANCEL_REQUEST.search(plain) else None
+
     def _memory_for_chat(self, text: str) -> str:
         """Reúne lo relacionado con la pregunta; el historial reciente ya va aparte."""
         facts = [fact for _, fact in self.store.search_facts(text, MEMORY_FACTS)]
@@ -327,6 +379,8 @@ class Assistant:
         now_ts = int(reference.timestamp())
         if text.startswith("/"):
             reply = self._command(text)
+        elif (bulk := self._bulk_cancel_flow(text, now)) is not None:
+            reply = bulk
         else:
             try:
                 pending = self.store.pending_tasks()
@@ -347,6 +401,12 @@ class Assistant:
         return reply
 
     def handle_button(self, data: str) -> Reply:
+        if data in ("bulk:yes", "bulk:no"):
+            now = self._now()
+            ids = self._take_bulk_cancel(now)
+            if ids is None:
+                return Reply("Esa solicitud ya venció. Pídemelo otra vez si quieres.")
+            return self._confirm_bulk_cancel(ids, now) if data == "bulk:yes" else Reply("Listo, no cancelé nada.")
         action, _, raw_id = data.partition(":")
         if not raw_id.isdigit():
             return Reply("No entendí ese botón.")

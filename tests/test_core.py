@@ -242,6 +242,87 @@ class ReminderTests(Harness):
         self.assertNotIn("Luego", summary)
 
 
+class BulkCancelTests(Harness):
+    def setUp(self):
+        super().setUp()
+        self.say("x", title="Uno")
+        self.say("x", title="Dos")
+
+    def ask(self):
+        return self.assistant.handle_text("Puedes cancelar los pendientes que tenga próximamente.")
+
+    def test_asks_before_cancelling_anything(self):
+        reply = self.ask()
+        self.assertIn("¿Cancelo estas 2 tareas?", reply.text)
+        self.assertEqual(len(self.store.pending_tasks()), 2)
+
+    def test_yes_cancels_all(self):
+        self.ask()
+        reply = self.assistant.handle_text("Sí.")
+        self.assertEqual(self.store.pending_tasks(), [])
+        self.assertIn("Cancelé 2", reply.text)
+
+    def test_no_keeps_them(self):
+        self.ask()
+        self.assertIn("no cancelé", self.assistant.handle_text("no").text)
+        self.assertEqual(len(self.store.pending_tasks()), 2)
+
+    def test_confirmation_expires(self):
+        self.ask()
+        self.moment += timedelta(minutes=6)
+        self.llm.next = intent("chat")
+        self.assistant.handle_text("sí")
+        self.assertEqual(len(self.store.pending_tasks()), 2)
+
+    def test_another_message_clears_the_request(self):
+        self.ask()
+        self.llm.next = intent("chat")
+        self.assistant.handle_text("cómo estás")
+        self.assistant.handle_text("sí")
+        self.assertEqual(len(self.store.pending_tasks()), 2)
+
+    def test_task_created_after_asking_is_not_cancelled(self):
+        self.ask()
+        now = int(self.moment.timestamp())
+        self.store.add_task("Nueva", "casa", "media", None, "x", now)
+        self.assistant.handle_text("sí")
+        self.assertEqual([t.title for t in self.store.pending_tasks()], ["Nueva"])
+
+    def test_buttons(self):
+        reply = self.ask()
+        self.assertEqual(reply.buttons[0][0][1], "bulk:yes")
+        self.assistant.handle_button("bulk:no")
+        self.assertEqual(len(self.store.pending_tasks()), 2)
+        self.ask()
+        self.assistant.handle_button("bulk:yes")
+        self.assertEqual(self.store.pending_tasks(), [])
+
+    def test_button_after_expiry(self):
+        self.ask()
+        self.moment += timedelta(minutes=6)
+        self.assertIn("venció", self.assistant.handle_button("bulk:yes").text)
+        self.assertEqual(len(self.store.pending_tasks()), 2)
+
+    def test_bare_yes_without_request_goes_to_the_model(self):
+        self.llm.next = intent("chat")
+        self.assertEqual(self.assistant.handle_text("sí").text, "hola")
+        self.assertEqual(len(self.store.pending_tasks()), 2)
+
+    def test_listing_and_single_cancel_are_not_bulk(self):
+        for text in ("qué pendientes tengo", "borra lo de limpiar"):
+            self.llm.next = intent("list_tasks")
+            self.assertNotIn("¿Cancelo", self.assistant.handle_text(text).text)
+
+    def test_no_pending_tasks(self):
+        self.ask()
+        self.assistant.handle_text("sí")
+        self.assertIn("No tienes", self.ask().text)
+
+    def test_singular_wording(self):
+        self.assistant.handle_text(f"/borrar {self.store.pending_tasks()[0].id}")
+        self.assertIn("¿Cancelo esta tarea?", self.ask().text)
+
+
 class SendTimeTests(Harness):
     def test_message_read_late_still_counts_from_send_time(self):
         self.llm.next = intent("create_task", title="A", relative_minutes=20)

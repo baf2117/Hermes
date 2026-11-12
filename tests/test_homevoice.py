@@ -11,6 +11,7 @@ from hermes.homevoice import (
     speakable,
     strip_wake_word,
 )
+from hermes.voice import is_hallucination
 
 SILENCE = array("h", [0] * FRAME_SAMPLES).tobytes()
 SPEECH = array("h", [3000, -3000] * (FRAME_SAMPLES // 2)).tobytes()
@@ -23,6 +24,16 @@ def reader(frames):
         return next(iterator, SILENCE)
 
     return read
+
+
+class HallucinationTests(unittest.TestCase):
+    def test_typical_inventions_are_detected(self):
+        for text in ("¡Suscríbete!", "Suscríbete al canal.", "Gracias por ver el video.", "Subtítulos realizados por la comunidad"):
+            self.assertTrue(is_hallucination(text), text)
+
+    def test_real_orders_are_kept(self):
+        for text in ("Recuérdame suscribirme a Netflix", "Suscríbete a Netflix mañana", "Gracias por avisarme", ""):
+            self.assertFalse(is_hallucination(text), text)
 
 
 class SpeakableTests(unittest.TestCase):
