@@ -1115,7 +1115,7 @@ function renderUsage(data) {
   $("u-claude-today-sub").textContent = num(today.claude ? today.claude.calls : 0) + " llamadas";
   $("u-claude-month").textContent = compact.format(tokensOf(month.claude));
   $("u-claude-month-sub").textContent = num(month.claude ? month.claude.calls : 0) + " llamadas";
-  $("u-cost").textContent = usd(month.claude ? month.claude.cost : 0).replace(/(\.\d\d)\d\d$/, "$1");
+  $("u-cost").textContent = usd(month.claude ? month.claude.cost : 0).replace(/(\\.\\d\\d)\\d\\d$/, "$1");
   $("u-local-month").textContent = compact.format(tokensOf(month.local));
   $("u-local-month-sub").textContent = num(month.local ? month.local.calls : 0) + " llamadas";
   renderChart(data);
