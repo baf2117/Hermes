@@ -155,6 +155,7 @@ def start_home_voice(
             flush,
             status,
             config.wake_word,
+            config.verify_wake_word,
         )
 
     threading.Thread(target=run_microphone_loop, args=(build, stop), daemon=True, name="home-voice").start()

@@ -991,6 +991,7 @@ const OUTCOMES = {
   sin_voz: ["No detectó tu voz después del pitido", true],
   sin_texto: ["No entendió palabras", true],
   solo_nombre: ["Solo oyó su nombre", true],
+  descartada: ["Ignorado: no oyó “Hermes”, no respondió", true],
   error: ["Ocurrió un error", true]
 };
 const SCALE = 3000;

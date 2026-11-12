@@ -51,6 +51,7 @@ class Config:
     vosk_model_dir: Path | None = None
     piper_voice_path: Path | None = None
     wake_word: str = "hermes"
+    verify_wake_word: bool = True
     status_port: int = 47822
     tavily_api_key: str = ""
     llm_mode: str = "local"
@@ -96,6 +97,7 @@ class Config:
                 get("HERMES_PIPER_VOICE", str(home / "models" / "piper" / "es_MX-claude-high.onnx"))
             ),
             wake_word=get("HERMES_WAKE_WORD", "hermes").lower(),
+            verify_wake_word=get("HERMES_WAKE_VERIFY", "on").lower() != "off",
             status_port=int(get("HERMES_STATUS_PORT", "47822")),
             tavily_api_key=get("TAVILY_API_KEY"),
             llm_mode=get("HERMES_LLM_MODE", "local").lower(),

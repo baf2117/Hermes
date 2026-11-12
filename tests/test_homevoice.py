@@ -9,6 +9,8 @@ from hermes.homevoice import (
     record_utterance,
     rms,
     speakable,
+    after_wake_word,
+    mentions_wake_word,
     strip_wake_word,
     wait_while_paused,
 )
@@ -109,9 +111,11 @@ class FakeTranscriber:
     def __init__(self, text="", error=None):
         self.text, self.error = text, error
         self.calls = 0
+        self.audio = []
 
     def transcribe_pcm(self, pcm):
         self.calls += 1
+        self.audio.append(pcm)
         if self.error:
             raise self.error
         return self.text
@@ -127,12 +131,12 @@ class FakeAssistant:
 
 
 class ConversationTests(unittest.TestCase):
-    def build(self, fires, transcriber, frames):
+    def build(self, fires, transcriber, frames, verify=False):
         self.speaker, self.assistant, self.flushes = FakeSpeaker(), FakeAssistant(), []
         self.detector = FakeDetector(fires)
         return HomeVoice(
             self.detector, transcriber, self.assistant, self.speaker, reader(frames),
-            lambda: self.flushes.append(1),
+            lambda: self.flushes.append(1), verify_wake=verify,
         )
 
     def spoken_frames(self):
@@ -234,6 +238,70 @@ class ConversationTests(unittest.TestCase):
         for _ in range(400):
             voice.step()
         self.assertGreater(voice.noise, start)
+
+
+class WakeVerificationTests(unittest.TestCase):
+    build = ConversationTests.build
+    spoken_frames = ConversationTests.spoken_frames
+
+    def test_name_variants_are_accepted(self):
+        for text in ("Hermes", "Hermes, apunta algo", "ermes", "Hermés.", "oye Herme", "Odilermes"):
+            self.assertTrue(mentions_wake_word(text, "hermes"), text)
+
+    def test_similar_words_are_rejected(self):
+        for text in ("eres muy amable", "este mes no", "hermosa mañana", "mi hermano", "permiso", "termes",
+                     "Ernesto me llamó", "las termas", ""):
+            self.assertFalse(mentions_wake_word(text, "hermes"), text)
+
+    def test_order_is_what_follows_the_name(self):
+        self.assertEqual(after_wake_word("bueno, oye Hermes, ¿qué hora es?", "hermes"), "¿qué hora es?")
+        self.assertEqual(after_wake_word("Hermés. Apunta pagar la luz", "hermes"), "Apunta pagar la luz")
+        self.assertEqual(after_wake_word("Hermes.", "hermes"), "")
+        self.assertIsNone(after_wake_word("y entonces le dije que sí", "hermes"))
+
+    def run_voice(self, heard, fires=(False, False, True)):
+        transcriber = FakeTranscriber(heard)
+        voice = self.build(list(fires), transcriber, [SPEECH] * 2 + [SILENCE] + self.spoken_frames(), verify=True)
+        for _ in fires:
+            voice.step()
+        return voice, transcriber
+
+    def test_conversation_without_the_name_gets_no_reply(self):
+        with self.assertLogs("hermes.homevoice", level="INFO"):
+            voice, _ = self.run_voice("y entonces le dije que mañana pagamos la luz")
+        self.assertEqual(self.assistant.heard, [])
+        self.assertEqual(self.speaker.said, [])
+        event = voice.status.snapshot()["events"][0]
+        self.assertEqual(event["outcome"], "descartada")
+        self.assertEqual(voice.status.snapshot()["state"], "escuchando")
+
+    def test_name_before_the_beep_is_heard_with_the_order(self):
+        _, transcriber = self.run_voice("Hermes. Pagar la luz")
+        self.assertEqual(self.assistant.heard, ["Pagar la luz"])
+        self.assertEqual(self.speaker.said, ["Listo"])
+        lead = 2 * len(SPEECH) + len(SILENCE)
+        self.assertEqual(transcriber.audio[0][:lead], b"".join([SPEECH, SPEECH, SILENCE]))  # Audio previo primero.
+
+    def test_only_the_name_is_reported(self):
+        voice, _ = self.run_voice("Hermes.")
+        self.assertEqual(self.assistant.heard, [])
+        self.assertEqual(voice.status.snapshot()["events"][0]["outcome"], "solo_nombre")
+
+    def test_lead_window_is_limited(self):
+        transcriber = FakeTranscriber("Hermes, hola")
+        quiet = array("h", [400, -400] * (FRAME_SAMPLES // 2)).tobytes()  # Charla de fondo: no sube tanto el umbral.
+        voice = self.build([False] * 40 + [True], transcriber, [quiet] * 41 + self.spoken_frames(), verify=True)
+        for _ in range(41):
+            voice.step()
+        self.assertEqual(len(transcriber.audio[0]), 20 * len(quiet) + 5 * len(SPEECH) + 8 * len(SILENCE))
+
+    def test_without_verification_only_the_order_is_transcribed(self):
+        transcriber = FakeTranscriber("hola")
+        voice = self.build([False, True], transcriber, [SPEECH] * 2 + self.spoken_frames())
+        voice.step()
+        voice.step()
+        self.assertEqual(self.assistant.heard, ["hola"])
+        self.assertEqual(len(transcriber.audio[0]), 5 * len(SPEECH) + 8 * len(SILENCE))
 
 
 class PauseLoopTests(unittest.TestCase):

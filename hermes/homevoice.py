@@ -12,8 +12,11 @@ import queue
 import re
 import threading
 import time
+import unicodedata
 from array import array
+from collections import deque
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,6 +26,15 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 FRAME_SAMPLES = 1600  # 0,1 segundos
+WAKE_WINDOW_FRAMES = 20  # Los 2 s previos a la activación: ahí está el "Hermes" que Vosk creyó oír.
+WAKE_MATCH = 0.85
+# Palabras comunes que suenan parecido o se dicen mucho. Con solo "hermes" en su vocabulario,
+# Vosk forzaba cualquier palabra parecida a "hermes"; con estas, tiene a dónde más asignarlas.
+DECOY_WORDS = (
+    "es mes eres este esta ese eso pues entonces hermano hermana hermosa hermoso permiso termina "
+    "tiene tienes tengo que de la el en y los se no me lo si por con para una un yo tu bueno oye mira "
+    "verdad gracias mesa entre ver hacer mercado"
+).split()
 MAX_SPOKEN_CHARS = 500
 
 _NOT_SPEAKABLE = re.compile(r"[^\w\s.,;:¿?¡!%/()-]", re.UNICODE)
@@ -68,6 +80,35 @@ def strip_wake_word(text: str, word: str) -> str:
     return re.sub(rf"^\W*{re.escape(word)}\b[\s,.:;!¡-]*", "", text, count=1, flags=re.IGNORECASE).strip()
 
 
+def _plain(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
+
+
+def _is_wake_token(token: str, target: str) -> bool:
+    if SequenceMatcher(None, token, target).ratio() >= WAKE_MATCH:
+        return True
+    # Whisper a veces pega el nombre a la palabra anterior: "Oye Hermes" -> "Odilermes".
+    return len(token) > len(target) and token.endswith(target[1:])
+
+
+def after_wake_word(text: str, word: str) -> str | None:
+    """Lo que dijiste después del nombre, o None si Whisper no oyó el nombre.
+
+    Tolera variantes como "Ermes" o "Hermés", no "eres" ni "mes".
+    """
+    plain, target = _plain(text), _plain(word)
+    if len(plain) != len(text):
+        plain = text.lower()  # Sin correspondencia exacta de posiciones, se compara sin quitar acentos.
+    for match in re.finditer(r"\w+", plain):
+        if _is_wake_token(match.group(), target):
+            return text[match.end():].lstrip(" ,.:;!¡-").strip()
+    return None
+
+
+def mentions_wake_word(text: str, word: str) -> bool:
+    return after_wake_word(text, word) is not None
+
+
 def record_utterance(read: Callable[[], bytes], noise: float, settings: RecordSettings = RecordSettings()) -> bytes | None:
     """Graba hasta que termines de hablar. Devuelve None si no dijiste nada."""
     threshold = speech_threshold(noise, settings)
@@ -97,9 +138,8 @@ class WakeWordDetector:
 
         vosk.SetLogLevel(-1)
         self.word = word
-        self._recognizer = vosk.KaldiRecognizer(
-            vosk.Model(str(model_dir)), SAMPLE_RATE, json.dumps([word, "[unk]"])
-        )
+        grammar = [word] + [w for w in DECOY_WORDS if w != word] + ["[unk]"]
+        self._recognizer = vosk.KaldiRecognizer(vosk.Model(str(model_dir)), SAMPLE_RATE, json.dumps(grammar))
 
     def feed(self, frame: bytes) -> bool:
         if self._recognizer.AcceptWaveform(frame):
@@ -151,6 +191,7 @@ class HomeVoice:
         flush: Callable[[], None],
         status: VoiceStatus | None = None,
         wake_word: str = "hermes",
+        verify_wake: bool = False,
     ):
         self.detector = detector
         self.transcriber = transcriber
@@ -160,8 +201,10 @@ class HomeVoice:
         self.flush = flush
         self.status = status or VoiceStatus()
         self.wake_word = wake_word
+        self.verify_wake = verify_wake
         self.noise = 100.0
         self._peak = 0.0
+        self._recent: deque[bytes] = deque(maxlen=WAKE_WINDOW_FRAMES)
         self.status.set_state("escuchando")
 
     def _read_measured(self) -> bytes:
@@ -173,12 +216,17 @@ class HomeVoice:
 
     def step(self) -> None:
         frame = self._read_measured()
+        self._recent.append(frame)
         if self.detector.feed(frame):
-            self._conversation()
+            lead = b"".join(self._recent)
+            self._recent.clear()
+            self._conversation(lead)
         else:
             self.noise = 0.98 * self.noise + 0.02 * rms(frame)
 
-    def _conversation(self) -> None:
+    def _conversation(self, lead: bytes = b"") -> None:
+        """Con verify_wake, Whisper transcribe juntos el audio previo (donde debería estar "Hermes") y la
+        orden: si no oye el nombre, era una conversación ajena y no se responde. No agrega espera."""
         log.info("Palabra de activación detectada")
         timings: dict[str, float] = {}
         heard = answer = ""
@@ -202,11 +250,19 @@ class HomeVoice:
             if pcm is None:
                 outcome = "sin_voz"  # Falsa activación o silencio: se vuelve a escuchar sin decir nada.
                 return
-            heard = stage("transcribir", "transcribiendo", lambda: self.transcriber.transcribe_pcm(pcm))
+            audio = lead + pcm if self.verify_wake else pcm
+            heard = stage("transcribir", "transcribiendo", lambda: self.transcriber.transcribe_pcm(audio))
             if not heard:
                 outcome = "sin_texto"
                 return
-            order = strip_wake_word(heard, self.wake_word)
+            if self.verify_wake:
+                order = after_wake_word(heard, self.wake_word)
+                if order is None:
+                    log.info("Activación descartada: no se oyó el nombre en %r", heard)
+                    outcome = "descartada"
+                    return
+            else:
+                order = strip_wake_word(heard, self.wake_word)
             if not order:
                 outcome = "solo_nombre"
                 return
