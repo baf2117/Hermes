@@ -53,6 +53,9 @@ class Config:
     wake_word: str = "hermes"
     status_port: int = 47822
     tavily_api_key: str = ""
+    llm_mode: str = "local"
+    claude_executable: str = "claude"
+    claude_model: str = "claude-opus-5-5"
 
     @classmethod
     def load(cls) -> "Config":
@@ -92,4 +95,7 @@ class Config:
             wake_word=get("HERMES_WAKE_WORD", "hermes").lower(),
             status_port=int(get("HERMES_STATUS_PORT", "47822")),
             tavily_api_key=get("TAVILY_API_KEY"),
+            llm_mode=get("HERMES_LLM_MODE", "local").lower(),
+            claude_executable=get("HERMES_CLAUDE_PATH", "claude"),
+            claude_model=get("HERMES_CLAUDE_MODEL", "claude-opus-5-5"),
         )

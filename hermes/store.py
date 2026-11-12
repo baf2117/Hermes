@@ -7,6 +7,7 @@ import threading
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -30,6 +31,19 @@ CREATE TABLE IF NOT EXISTS messages (
     text TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS llm_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cache_read_tokens INTEGER NOT NULL,
+    cache_write_tokens INTEGER NOT NULL,
+    cost_usd REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_ts ON llm_usage (ts);
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     text TEXT NOT NULL,
@@ -72,6 +86,18 @@ def fts_query(text: str) -> str:
     )
     words = dict.fromkeys(w for w in re.findall(r"\w{3,}", plain) if w not in STOPWORDS)
     return " OR ".join(f'"{w}"*' for w in words)
+
+
+@dataclass(frozen=True)
+class LLMUsage:
+    provider: str
+    purpose: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cost_usd: float = 0.0
+    model: str = ""
 
 
 @dataclass(frozen=True)
@@ -184,6 +210,39 @@ class Store:
                 "SELECT role, text FROM messages ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [(r["role"], r["text"]) for r in reversed(rows)]
+
+    def add_usage(self, usage: LLMUsage, now: int) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO llm_usage (ts, provider, model, purpose, input_tokens, output_tokens,"
+                " cache_read_tokens, cache_write_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    now, usage.provider, usage.model, usage.purpose, usage.input_tokens, usage.output_tokens,
+                    usage.cache_read_tokens, usage.cache_write_tokens, usage.cost_usd,
+                ),
+            )
+
+    def _usage_totals(self, since: int) -> dict[str, dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT provider, COUNT(*) calls, SUM(input_tokens) input, SUM(output_tokens) output,"
+            " SUM(cache_read_tokens) cache_read, SUM(cache_write_tokens) cache_write, SUM(cost_usd) cost"
+            " FROM llm_usage WHERE ts >= ? GROUP BY provider",
+            (since,),
+        ).fetchall()
+        return {row["provider"]: {key: row[key] for key in row.keys() if key != "provider"} for row in rows}
+
+    def usage_summary(self, day_start: int, month_start: int, recent: int = 8) -> dict[str, Any]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT ts, provider, model, purpose, input_tokens, output_tokens, cache_read_tokens,"
+                " cache_write_tokens, cost_usd FROM llm_usage ORDER BY id DESC LIMIT ?",
+                (recent,),
+            ).fetchall()
+            return {
+                "today": self._usage_totals(day_start),
+                "month": self._usage_totals(month_start),
+                "recent": [dict(row) for row in rows],
+            }
 
     def add_fact(self, text: str, now: int) -> int:
         with self._lock, self._conn:

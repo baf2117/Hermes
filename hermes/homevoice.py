@@ -54,7 +54,7 @@ class RecordSettings:
     min_threshold: float = 250.0
     noise_factor: float = 2.5
     start_timeout_frames: int = 50  # 5 s para empezar a hablar
-    end_silence_frames: int = 12  # 1,2 s de silencio para terminar
+    end_silence_frames: int = 8  # 0,8 s de silencio para terminar
     max_frames: int = 150  # 15 s como máximo
     min_speech_frames: int = 3
 

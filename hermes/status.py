@@ -7,11 +7,14 @@ import threading
 import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable, Sequence
+from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
 MAX_EVENTS = 25
+USAGE_REFRESH_SECONDS = 3.0
 
 
 class VoiceStatus:
@@ -22,6 +25,22 @@ class VoiceStatus:
         self._threshold = 0.0
         self._events: deque[dict[str, Any]] = deque(maxlen=MAX_EVENTS)
         self._version = 0
+        self._usage_source: Callable[[], dict[str, Any]] | None = None
+        self._usage: dict[str, Any] = {}
+        self._usage_at = -USAGE_REFRESH_SECONDS
+
+    def set_usage_source(self, source: Callable[[], dict[str, Any]]) -> None:
+        self._usage_source = source
+
+    def _current_usage(self) -> dict[str, Any]:
+        # La página pregunta cinco veces por segundo; la base de datos no necesita tanto.
+        if self._usage_source is not None and time.monotonic() - self._usage_at >= USAGE_REFRESH_SECONDS:
+            self._usage_at = time.monotonic()
+            try:
+                self._usage = self._usage_source()
+            except Exception:
+                log.exception("No se pudo leer el consumo de tokens")
+        return self._usage
 
     def set_state(self, state: str) -> None:
         with self._lock:
@@ -55,6 +74,7 @@ class VoiceStatus:
                 "threshold": round(self._threshold),
                 "version": self._version,
                 "events": list(self._events),
+                "tokens": self._current_usage(),
             }
 
 

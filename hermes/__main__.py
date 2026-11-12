@@ -4,21 +4,24 @@ from __future__ import annotations
 import importlib.util
 import logging
 import logging.handlers
+import shutil
 import socket
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from .assistant import Assistant
 from .backup import MIN_PASSWORD_LENGTH, BackupError, BackupService, restore_backup, upload_to_azure
+from .claude_cli import ClaudeCodeClient, ClaudeUnavailable, HybridLLM
 from .config import Config, hermes_home
 from .homevoice import HomeVoice, PiperSpeaker, WakeWordDetector, run_microphone_loop
 from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
 from .status import VoiceStatus, start_status_server
-from .store import Store
+from .store import LLMUsage, Store
 from .telegram import TelegramBot, TelegramClient, TelegramError
 from .voice import WhisperTranscriber
 from .websearch import SearchError, TavilySearch
@@ -36,6 +39,33 @@ def configure_logging(config: Config) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=[handler, logging.StreamHandler()],
     )
+
+
+def claude_client(config: Config, on_usage: Callable[[LLMUsage], None] | None) -> ClaudeCodeClient | None:
+    executable = shutil.which(config.claude_executable)
+    if executable is None:
+        return None
+    return ClaudeCodeClient(executable, config.claude_model, config.tmp_dir / "claude-workdir", on_usage)
+
+
+def build_llm(config: Config, store: Store) -> Any:
+    def record(usage: LLMUsage) -> None:
+        store.add_usage(usage, int(time.time()))
+
+    local = OllamaClient(config.ollama_url, config.ollama_model, on_usage=record)
+    if config.llm_mode != "claude":
+        return local
+    claude = claude_client(config, record)
+    if claude is None:
+        logging.warning("No se encontró Claude Code; uso solo el modelo local")
+        return local
+    return HybridLLM(local, claude)
+
+
+def usage_snapshot(store: Store) -> dict[str, Any]:
+    now = datetime.now().astimezone()
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return store.usage_summary(int(day_start.timestamp()), int(day_start.replace(day=1).timestamp()))
 
 
 def build_transcriber(config: Config) -> WhisperTranscriber | None:
@@ -70,6 +100,16 @@ def check(config: Config) -> int:
     print(f"Modelo de voz: {'instalado' if build_transcriber(config) else 'no disponible'}")
     print(f"Respaldo: {backup_problem(config) or 'configurado'}")
     print(f"Voz en casa: {home_voice_problem(config) or 'instalada'}")
+    if config.llm_mode != "claude":
+        print("Claude: desactivado (solo modelo local)")
+    elif (claude := claude_client(config, None)) is None:
+        print("Claude: no se encontró Claude Code")
+    else:
+        try:
+            claude.complete([{"role": "system", "content": "Responde solo: listo"}, {"role": "user", "content": "hola"}], "check")
+            print(f"Claude: responde con {config.claude_model}")
+        except ClaudeUnavailable as exc:
+            print(f"Claude: no disponible, se usará el modelo local ({exc})")
     if not config.tavily_api_key:
         print("Internet: falta TAVILY_API_KEY en .env")
     else:
@@ -180,7 +220,7 @@ def run(config: Config) -> int:
 
     configure_logging(config)
     store = Store(config.db_path)
-    llm = OllamaClient(config.ollama_url, config.ollama_model)
+    llm = build_llm(config, store)
     search = TavilySearch(config.tavily_api_key) if config.tavily_api_key else None
     assistant = Assistant(store, llm, config, search=search)
     client = TelegramClient(config.telegram_token)
@@ -189,6 +229,7 @@ def run(config: Config) -> int:
         logging.warning("Notas de voz desactivadas: falta faster-whisper o su modelo")
     bot = TelegramBot(client, assistant, store, config.allowed_chat_id, transcriber, config.tmp_dir)
     stop = threading.Event()
+    threading.Thread(target=llm.warm_up, args=(stop,), daemon=True, name="warm-up").start()
 
     if config.allowed_chat_id is not None:
         chat_id = config.allowed_chat_id
@@ -207,6 +248,7 @@ def run(config: Config) -> int:
         logging.warning("Sin chat autorizado: modo de emparejamiento, sin recordatorios")
 
     status = VoiceStatus()
+    status.set_usage_source(lambda: usage_snapshot(store))
     start_status_server(status, config.status_port)
     if problem := home_voice_problem(config):
         logging.warning("Voz en casa no disponible: %s", problem)
