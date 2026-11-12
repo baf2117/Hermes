@@ -211,6 +211,15 @@ class Store:
             ).fetchall()
         return [self._task(r) for r in rows]
 
+    def recently_finished(self, since: int, limit: int = 40) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, title, category, status, completed_at, parent_id FROM tasks"
+                " WHERE status != 'pending' AND completed_at >= ? ORDER BY completed_at DESC, id DESC LIMIT ?",
+                (since, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def subtasks(self, parent_id: int, status: str | None = None) -> list[Task]:
         with self._lock:
             rows = self._conn.execute(
@@ -262,6 +271,33 @@ class Store:
             (since,),
         ).fetchall()
         return {row["provider"]: {key: row[key] for key in row.keys() if key != "provider"} for row in rows}
+
+    def usage_daily(self, since: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT date(ts, 'unixepoch', 'localtime') day, provider, COUNT(*) calls,"
+                " SUM(input_tokens + cache_read_tokens + cache_write_tokens) input, SUM(output_tokens) output,"
+                " SUM(cost_usd) cost FROM llm_usage WHERE ts >= ? GROUP BY day, provider ORDER BY day",
+                (since,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def usage_by_purpose(self, since: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT provider, purpose, COUNT(*) calls,"
+                " SUM(input_tokens + cache_read_tokens + cache_write_tokens) input, SUM(output_tokens) output,"
+                " SUM(cost_usd) cost FROM llm_usage WHERE ts >= ? GROUP BY provider, purpose ORDER BY input + output DESC",
+                (since,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def message_history(self, limit: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, ts, role, text FROM messages ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
 
     def usage_summary(self, day_start: int, month_start: int, recent: int = 8) -> dict[str, Any]:
         with self._lock:

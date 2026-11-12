@@ -20,7 +20,7 @@ from .config import Config, hermes_home
 from .homevoice import HomeVoice, PiperSpeaker, WakeWordDetector, run_microphone_loop
 from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
-from .status import VoiceStatus, start_status_server
+from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
 from .store import LLMUsage, Store
 from .telegram import TelegramBot, TelegramClient, TelegramError
 from .voice import WhisperTranscriber
@@ -249,6 +249,9 @@ def run(config: Config) -> int:
 
     status = VoiceStatus()
     status.set_usage_source(lambda: usage_snapshot(store))
+    status.set_task_source(lambda: tasks_snapshot(store, config.categories, int(time.time())))
+    status.set_source("usage", lambda: usage_report(store, datetime.now().astimezone()))
+    status.set_source("history", lambda: history_report(store, status))
     start_status_server(status, config.status_port)
     if problem := home_voice_problem(config):
         logging.warning("Voz en casa no disponible: %s", problem)
