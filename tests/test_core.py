@@ -242,6 +242,286 @@ class ReminderTests(Harness):
         self.assertNotIn("Luego", summary)
 
 
+class SubtaskTests(Harness):
+    def setUp(self):
+        super().setUp()
+        self.say("x", title="Mudanza", category="casa", subtasks=["Empacar libros", "Contratar flete"])
+        self.parent = next(t for t in self.store.pending_tasks() if t.title == "Mudanza")
+
+    def children(self, status=None):
+        return {t.title: t for t in self.store.subtasks(self.parent.id, status)}
+
+    def test_created_with_steps_inheriting_category(self):
+        children = self.children()
+        self.assertEqual(set(children), {"Empacar libros", "Contratar flete"})
+        self.assertEqual({t.category for t in children.values()}, {"casa"})
+
+    def test_listing_nests_steps(self):
+        text = self.assistant.handle_text("/tareas").text
+        self.assertLess(text.index("Mudanza"), text.index("↳"))
+        self.assertEqual(text.count("Mudanza"), 1)
+
+    def test_completing_last_step_completes_parent(self):
+        first, second = self.children().values()
+        reply = self.assistant.handle_text(f"/hecho {first.id}")
+        self.assertIn("Quedan 1", reply.text)
+        self.assertEqual(self.store.get_task(self.parent.id).status, "pending")
+        reply = self.assistant.handle_text(f"/hecho {second.id}")
+        self.assertIn("terminaste «Mudanza»", reply.text)
+        self.assertEqual(self.store.get_task(self.parent.id).status, "done")
+
+    def test_model_picking_parent_for_a_named_step_completes_only_the_step(self):
+        self.say("ya contraté el flete", name="complete_task", task_id=self.parent.id)
+        self.assertEqual(self.store.get_task(self.parent.id).status, "pending")
+        self.assertEqual(self.children()["Contratar flete"].status, "done")
+        self.assertEqual(self.children()["Empacar libros"].status, "pending")
+
+    def test_finishing_the_whole_task_by_name_still_works(self):
+        self.say("ya terminé la mudanza", name="complete_task", task_id=self.parent.id)
+        self.assertEqual(self.store.get_task(self.parent.id).status, "done")
+
+    def test_prompt_marks_steps(self):
+        from hermes.llm import build_intent_prompt
+        prompt = build_intent_prompt(self.moment, self.store.pending_tasks(), None, DEFAULT_CATEGORIES)
+        self.assertIn(f"(paso de la tarea id {self.parent.id})", prompt)
+
+    def test_cancelling_all_steps_does_not_complete_parent(self):
+        for child in self.children().values():
+            self.assistant.handle_text(f"/borrar {child.id}")
+        self.assertEqual(self.store.get_task(self.parent.id).status, "pending")
+
+    def test_finishing_parent_finishes_pending_steps(self):
+        reply = self.assistant.handle_text(f"/hecho {self.parent.id}")
+        self.assertIn("2 subtareas", reply.text)
+        self.assertEqual(self.children("pending"), {})
+
+    def test_cancelling_parent_cancels_steps(self):
+        self.assistant.handle_text(f"/borrar {self.parent.id}")
+        self.assertEqual({t.status for t in self.children().values()}, {"cancelled"})
+
+    def test_add_steps_to_existing_task(self):
+        self.say("agrega a la mudanza cambiar dirección", name="add_subtasks", task_id=self.parent.id,
+                 subtasks=["Cambiar dirección"])
+        self.assertIn("Cambiar dirección", self.children())
+
+    def test_steps_of_a_step_go_to_the_parent(self):
+        child = self.children()["Empacar libros"]
+        self.say("x", name="add_subtasks", task_id=child.id, subtasks=["Comprar cajas"])
+        self.assertIn("Comprar cajas", self.children())
+
+    def test_step_named_in_text_without_id(self):
+        self.say("agrega a la mudanza: desconectar internet", name="add_subtasks", subtasks=["Desconectar internet"])
+        self.assertIn("Desconectar internet", self.children())
+
+    def test_steps_are_cleaned(self):
+        from hermes.assistant import clean_subtasks
+        self.assertEqual(clean_subtasks(["a", " a ", "", 5, None, "b"]), ["a", "b"])
+        self.assertEqual(len(clean_subtasks(["x" + str(i) for i in range(40)])), 15)
+        self.assertEqual(clean_subtasks("no lista"), [])
+
+    def test_command(self):
+        reply = self.assistant.handle_text(f"/sub {self.parent.id} comprar cajas")
+        self.assertIn("Agregué 1 paso", reply.text)
+        self.assertIn("comprar cajas", self.children())
+        self.assertIn("Uso", self.assistant.handle_text("/sub").text)
+
+    def test_existing_database_gets_parent_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "h.db"
+            conn = sqlite3.connect(path)
+            conn.executescript(
+                "CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT NOT NULL,"
+                " urgency TEXT NOT NULL, due_at INTEGER, status TEXT NOT NULL DEFAULT 'pending', notified_at INTEGER,"
+                " source_text TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, completed_at INTEGER);"
+            )
+            conn.close()
+            store = Store(path)
+            parent = store.add_task("P", "casa", "media", None, "x", 1)
+            store.add_task("H", "casa", "media", None, "x", 1, parent_id=parent.id)
+            self.assertEqual(len(store.subtasks(parent.id)), 1)
+            store._conn.close()
+
+
+class RepeatTests(Harness):
+    def setUp(self):
+        super().setUp()
+        self.moment = datetime(2026, 11, 10, 11, 0, tzinfo=TZ)  # fuera del horario de pausa
+
+    def create_repeating(self, minutes=30, **fields):
+        self.say("x", title="Medicina", relative_minutes=5, repeat_minutes=minutes, **fields)
+        return self.store.pending_tasks()[0]
+
+    def advance(self, **delta):
+        self.moment += timedelta(**delta)
+        self.scheduler.tick()
+
+    def test_repeats_every_interval_until_done(self):
+        task = self.create_repeating(30)
+        self.advance(minutes=5)
+        self.advance(minutes=29)
+        self.assertEqual(len(self.sent), 1)
+        self.advance(minutes=1)
+        self.assertEqual(len(self.sent), 2)
+        self.assertIn("Sigue pendiente", self.sent[1])
+        self.assistant.handle_button(f"done:{task.id}")
+        self.advance(minutes=31)
+        self.assertEqual(len(self.sent), 2)
+
+    def test_cancelled_task_stops_repeating(self):
+        task = self.create_repeating(30)
+        self.advance(minutes=5)
+        self.assistant.handle_text(f"/borrar {task.id}")
+        self.advance(minutes=31)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_quiet_hours_pause_and_resume_at_end(self):
+        self.moment = datetime(2026, 11, 10, 19, 50, tzinfo=TZ)
+        self.create_repeating(30)
+        self.advance(minutes=5)  # 19:55, primer aviso
+        self.assertEqual(len(self.sent), 1)
+        self.advance(minutes=35)  # 20:30, pausa
+        self.store.kv_set("last_summary_date", "2026-11-11")  # Sin el resumen del día siguiente.
+        self.moment = datetime(2026, 11, 11, 10, 29, tzinfo=TZ)
+        self.scheduler.tick()
+        self.assertEqual(len(self.sent), 1)
+        self.moment = datetime(2026, 11, 11, 10, 30, tzinfo=TZ)
+        self.scheduler.tick()
+        self.assertEqual(len(self.sent), 2)
+
+    def test_first_reminder_is_not_silenced_at_night(self):
+        self.moment = datetime(2026, 11, 10, 21, 0, tzinfo=TZ)
+        self.create_repeating(30)
+        self.advance(minutes=5)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_non_repeating_task_fires_once(self):
+        self.say("x", title="Una vez", relative_minutes=5)
+        self.advance(minutes=5)
+        self.advance(hours=3)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_snooze_restarts_the_cycle(self):
+        task = self.create_repeating(30)
+        self.advance(minutes=5)
+        self.assistant.handle_button(f"snooze:{task.id}")
+        self.advance(minutes=31)
+        self.assertEqual(len(self.sent), 1)
+        self.advance(minutes=30)
+        self.assertEqual(len(self.sent), 2)
+
+    def test_interval_parsed_from_text_when_model_misses_it(self):
+        self.say("recuérdame regar las plantas cada media hora", title="Regar las plantas")
+        task = self.store.pending_tasks()[0]
+        self.assertEqual(task.repeat_minutes, 30)
+        self.assertEqual(task.due_at, int(self.moment.timestamp()))
+
+    def test_parsing_variants(self):
+        from hermes.assistant import repeat_in_text
+        self.assertEqual(repeat_in_text("cada 45 minutos"), 45)
+        self.assertEqual(repeat_in_text("cada hora"), 60)
+        self.assertEqual(repeat_in_text("cada dos horas"), 120)
+        self.assertEqual(repeat_in_text("repítelo cada 1 min"), 5)
+        self.assertEqual(repeat_in_text("deja de repetirlo"), 0)
+        for text in ("ya no me repitas lo de la tierra", "no me lo repitas", "ya no me insistas", "no lo repitas más"):
+            self.assertEqual(repeat_in_text(text), 0, text)
+        self.assertIsNone(repeat_in_text("en 30 minutos"))
+        self.assertIsNone(repeat_in_text("cada lunes"))
+
+    def test_edit_adds_and_removes_repetition(self):
+        self.say("x", title="Llamar", relative_minutes=60)
+        self.say("que me lo repitas cada hora", name="edit_task")
+        self.assertEqual(self.store.pending_tasks()[0].repeat_minutes, 60)
+        self.say("ya no lo repitas", name="edit_task")
+        self.assertIsNone(self.store.pending_tasks()[0].repeat_minutes)
+
+    def test_stop_repeating_never_cancels_even_if_model_says_so(self):
+        task = self.create_repeating(30)
+        self.say("ya no me repitas lo de la medicina", name="cancel_task", task_id=task.id, repeat_minutes=0)
+        current = self.store.get_task(task.id)
+        self.assertEqual(current.status, "pending")
+        self.assertIsNone(current.repeat_minutes)
+
+    def test_stop_repeating_finds_the_named_task(self):
+        self.create_repeating(30)
+        self.say("x", title="Pagar la luz", relative_minutes=60, repeat_minutes=60)
+        self.say("deja de repetir lo de la medicina", name="chat")
+        by_title = {t.title: t for t in self.store.pending_tasks()}
+        self.assertIsNone(by_title["Medicina"].repeat_minutes)
+        self.assertEqual(by_title["Pagar la luz"].repeat_minutes, 60)
+
+    def test_command(self):
+        self.say("x", title="Llamar", relative_minutes=60)
+        task_id = self.store.pending_tasks()[0].id
+        reply = self.assistant.handle_text(f"/repetir {task_id} 30")
+        self.assertIn("🔁 cada 30 min", reply.text)
+        self.assistant.handle_text(f"/repetir {task_id} 0")
+        self.assertIsNone(self.store.pending_tasks()[0].repeat_minutes)
+        self.assertIn("Uso", self.assistant.handle_text("/repetir").text)
+
+    def test_existing_database_gets_the_new_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "h.db"
+            conn = sqlite3.connect(path)
+            conn.executescript(
+                "CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT NOT NULL,"
+                " urgency TEXT NOT NULL, due_at INTEGER, status TEXT NOT NULL DEFAULT 'pending', notified_at INTEGER,"
+                " source_text TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, completed_at INTEGER);"
+                "INSERT INTO tasks (title, category, urgency, created_at, updated_at) VALUES ('vieja', 'casa', 'media', 1, 1);"
+            )
+            conn.close()
+            store = Store(path)
+            self.assertIsNone(store.pending_tasks()[0].repeat_minutes)
+            store._conn.close()
+
+
+class UrgencyTests(Harness):
+    def setUp(self):
+        super().setUp()
+        self.say("x", title="Agregar tierra a los terrarios", category="reptiles")
+        self.say("x", title="Cambiar las url de infile", category="trabajo")
+        self.say("x", title="Pagar la luz", category="finanzas")
+        self.llm.next = intent("chat")
+
+    def urgency_of(self, title):
+        return next(t.urgency for t in self.store.pending_tasks() if t.title.startswith(title))
+
+    def test_misread_order_still_marks_the_named_task(self):
+        reply = self.assistant.handle_text("¿Cuál es la tarea de agregar tierra? ¿Tiene que ser urgente?")
+        self.assertEqual(self.urgency_of("Agregar tierra"), "alta")
+        self.assertEqual(self.urgency_of("Pagar la luz"), "media")
+        self.assertIn("Corregida", reply.text)
+
+    def test_lowering_urgency(self):
+        self.assistant.handle_text("lo de las url de infile no es urgente")
+        self.assertEqual(self.urgency_of("Cambiar las url"), "baja")
+
+    def test_accents_do_not_matter(self):
+        self.assistant.handle_text("pon URGENTE lo de pagar la luz")
+        self.assertEqual(self.urgency_of("Pagar la luz"), "alta")
+
+    def test_without_a_named_task_it_stays_a_conversation(self):
+        self.assertEqual(self.assistant.handle_text("todo es urgente hoy").text, "hola")
+        self.assertEqual({t.urgency for t in self.store.pending_tasks()}, {"media"})
+
+    def test_ambiguous_match_changes_nothing(self):
+        self.store.add_task("Comprar tierra para macetas", "casa", "media", None, "x", 1)
+        self.assistant.handle_text("lo de la tierra es urgente")
+        self.assertEqual({t.urgency for t in self.store.pending_tasks()}, {"media"})
+
+    def test_model_intent_is_respected_when_it_already_understood(self):
+        task_id = next(t.id for t in self.store.pending_tasks() if t.title.startswith("Pagar"))
+        self.llm.next = intent("edit_task", task_id=task_id, urgency="alta")
+        self.assistant.handle_text("la de pagar ponla urgente")
+        self.assertEqual(self.urgency_of("Pagar la luz"), "alta")
+
+    def test_command(self):
+        task_id = next(t.id for t in self.store.pending_tasks() if t.title.startswith("Pagar"))
+        self.assistant.handle_text(f"/urgente {task_id}")
+        self.assertEqual(self.urgency_of("Pagar la luz"), "alta")
+        self.assertIn("número", self.assistant.handle_text("/urgente").text)
+        self.assertIn("No identifiqué", self.assistant.handle_text("/urgente 999").text)
+
+
 class BulkCancelTests(Harness):
     def setUp(self):
         super().setUp()

@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 from .config import Config
 from .llm import DAY_NAMES, LLMError
-from .store import Store, Task
+from .store import STOPWORDS, Store, Task
 from .websearch import SearchError
 
 log = logging.getLogger(__name__)
@@ -31,6 +31,9 @@ HELP_TEXT = (
     "/hoy: resumen de hoy\n"
     "/hecho 3: marca la tarea 3 como hecha\n"
     "/borrar 3: cancela la tarea 3\n"
+    "/urgente 3: marca la tarea 3 como urgente\n"
+    "/sub 3 empacar libros: agrega un paso a la tarea 3\n"
+    "/repetir 3 30: repite el aviso de la tarea 3 cada 30 min hasta que esté hecha (0 lo detiene)\n"
     "/memoria: lo que recuerdo de ti\n"
     "/olvidar 2: borra el dato 2 de mi memoria\n"
     "/ayuda: este mensaje\n\n"
@@ -53,6 +56,80 @@ BULK_CANCEL_SECONDS = 300
 BULK_CANCEL_REQUEST = re.compile(r"\b(cancel\w*|borr\w*|elimin\w*|quit\w*)\b.*\b(pendientes|tareas|todas|todos|todo)\b")
 CONFIRM_YES = re.compile(r"si|si,? (cancelalas?|borralas?|confirmo|dale|por favor)|confirmo|dale|hazlo|adelante")
 CONFIRM_NO = re.compile(r"no|no,? (gracias|las cancelas?)|mejor no|dejalo|dejalas")
+_LOW_URGENCY = re.compile(r"\b(no (es|era|está) urgente|sin prisa|no corre prisa|prioridad baja|baja prioridad)\b")
+_HIGH_URGENCY = re.compile(r"\b(urgente|prioridad alta|alta prioridad|muy importante)\b")
+_TASK_WORDS = frozenset(
+    "tarea tareas pendiente pendientes urgente urgencia prioridad importante cambia cambiala cambiar ponla "
+    "ponle poner marca marcala tiene tienen debe deben como".split()
+)
+
+
+def _plain(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
+
+
+MIN_REPEAT_MINUTES = 5
+MAX_REPEAT_MINUTES = 24 * 60
+_NUMBERS = {"un": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "diez": 10, "quince": 15, "veinte": 20}
+_REPEAT_EVERY = re.compile(
+    r"\bcada\s+(?:(media)\s+hora|(\d+|un|una|dos|tres|cuatro|cinco|diez|quince|veinte)?\s*(minutos?|min|horas?)\b)"
+)
+_STOP_REPEATING = re.compile(
+    r"\b(deja de (repetir|insistir)\w*|no (me |te )?(lo |la |los |las )?(repitas|insistas)|sin repetir|no lo repitas mas)\b"
+)
+
+
+MAX_SUBTASKS = 15
+
+
+def clean_subtasks(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    steps = [str(item).strip()[:200] for item in value if isinstance(item, str) and item.strip()]
+    return list(dict.fromkeys(steps))[:MAX_SUBTASKS]
+
+
+def format_interval(minutes: int | None) -> str:
+    if not minutes:
+        return ""
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        return "cada hora" if hours == 1 else f"cada {hours} h"
+    return f"cada {minutes} min"
+
+
+def clean_repeat(value: Any) -> int | None:
+    """Minutos entre repeticiones; 0 significa dejar de repetir; None si no se pidió nada."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return 0 if value == 0 else min(max(value, MIN_REPEAT_MINUTES), MAX_REPEAT_MINUTES)
+
+
+def repeat_in_text(text: str) -> int | None:
+    plain = _plain(text)
+    if _STOP_REPEATING.search(plain):
+        return 0
+    match = _REPEAT_EVERY.search(plain)
+    if not match:
+        return None
+    if match.group(1):
+        return 30
+    amount = match.group(2) or "1"
+    number = int(amount) if amount.isdigit() else _NUMBERS[amount]
+    return clean_repeat(number * (60 if match.group(3).startswith("hora") else 1))
+
+
+def requested_urgency(text: str) -> str | None:
+    plain = _plain(text)
+    if _LOW_URGENCY.search(plain):
+        return "baja"
+    return "alta" if _HIGH_URGENCY.search(plain) else None
+
+
+def significant_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"\w{4,}", _plain(text)) if w not in STOPWORDS and w not in _TASK_WORDS}
+
+
 MEMORY_FACTS = 6
 MEMORY_MESSAGES = 3
 FALLBACK_FACTS = 8
@@ -96,11 +173,18 @@ class Assistant:
         return f"{DAY_NAMES[moment.weekday()]} {moment.day} {MONTHS[moment.month - 1]}, {moment:%H:%M}"
 
     def format_task(self, task: Task) -> str:
-        return f"{URGENCY_MARK[task.urgency]} #{task.id} {task.title}\n     {task.category} · {self.format_due(task.due_at)}"
+        repeat = f" · 🔁 {format_interval(task.repeat_minutes)}" if task.repeat_minutes else ""
+        return (
+            f"{URGENCY_MARK[task.urgency]} #{task.id} {task.title}\n"
+            f"     {task.category} · {self.format_due(task.due_at)}{repeat}"
+        )
 
-    def reminder_text(self, task: Task, now: datetime) -> str:
-        text = f"⏰ {URGENCY_MARK[task.urgency]} {task.title}\n{task.category} · urgencia {task.urgency}"
-        if task.due_at is not None and now.timestamp() - task.due_at > 120:
+    def reminder_text(self, task: Task, now: datetime, repeated: bool = False) -> str:
+        prefix = "🔁 Sigue pendiente:" if repeated else "⏰"
+        text = f"{prefix} {URGENCY_MARK[task.urgency]} {task.title}\n{task.category} · urgencia {task.urgency}"
+        if repeated:
+            text += f"\nTe lo repito {format_interval(task.repeat_minutes)} hasta que lo marques como hecho."
+        elif task.due_at is not None and now.timestamp() - task.due_at > 120:
             text += f"\nAtrasado: era para {self.format_due(task.due_at)}."
         return text
 
@@ -120,14 +204,21 @@ class Assistant:
             parts.append("No tienes tareas para hoy.")
         return "\n".join(parts)
 
+    def _with_subtasks(self, task: Task, pending: list[Task] | None = None) -> str:
+        children = [t for t in pending if t.parent_id == task.id] if pending is not None else self.store.subtasks(task.id, "pending")
+        lines = [self.format_task(task)] + [f"     ↳ {self.format_task(child)}" for child in children]
+        return "\n".join(lines)
+
     def _list_text(self) -> str:
         pending = self.store.pending_tasks()
         if not pending:
             return "No tienes tareas pendientes."
-        return "Pendientes:\n" + "\n".join(self.format_task(t) for t in pending)
+        pending_ids = {t.id for t in pending}
+        roots = [t for t in pending if t.parent_id is None or t.parent_id not in pending_ids]
+        return "Pendientes:\n" + "\n".join(self._with_subtasks(t, pending) for t in roots)
 
     def _confirmation(self, task: Task, prefix: str) -> Reply:
-        text = f"{prefix}\n{self.format_task(task)}\n\nSi algo está mal, dímelo y lo corrijo."
+        text = f"{prefix}\n{self._with_subtasks(task)}\n\nSi algo está mal, dímelo y lo corrijo."
         return Reply(text, [[("🗑 Borrar", f"cancel:{task.id}")]])
 
     # --- Validación de lo que propone el modelo ---
@@ -207,7 +298,12 @@ class Assistant:
             due_at = self._resolve_due(data, reference)
         except DueProblem as exc:
             due_at, problem = None, str(exc)
-        task = self.store.add_task(title, category, urgency, due_at, source, now_ts)
+        repeat = clean_repeat(data.get("repeat_minutes")) or repeat_in_text(source) or None
+        if repeat and due_at is None and not problem:
+            due_at = int(reference.timestamp())  # "Repíteme X cada hora" sin hora: empieza ya.
+        task = self.store.add_task(title, category, urgency, due_at, source, now_ts, repeat)
+        for step in clean_subtasks(data.get("subtasks")):
+            self.store.add_task(step, category, "media", None, source, now_ts, parent_id=task.id)
         self._remember_last(task)
         if problem:
             return self._confirmation(task, f"Guardada sin aviso. {problem} ¿Para cuándo la dejo?")
@@ -230,6 +326,15 @@ class Assistant:
             return Reply(f"No la cambié. {exc} ¿Para cuándo la dejo?")
         if due_at is not None:
             changes.update(due_at=due_at, notified_at=None)
+        repeat = clean_repeat(data.get("repeat_minutes"))
+        if repeat is None:
+            repeat = repeat_in_text(data.get("_source", ""))
+        if repeat == 0:
+            changes["repeat_minutes"] = None
+        elif repeat:
+            changes["repeat_minutes"] = repeat
+            if task.due_at is None and "due_at" not in changes:
+                changes.update(due_at=int(reference.timestamp()), notified_at=None)
         if not changes:
             return Reply("No entendí qué quieres cambiar. Por ejemplo: «ponla para el lunes a las 10».")
         updated = self.store.update_task(task.id, int(self._now().timestamp()), **changes)
@@ -240,8 +345,39 @@ class Assistant:
         task = self._pending_by_id(task_id)
         if task is None:
             return Reply("No identifiqué esa tarea. Revisa /tareas y dime el número.")
-        self.store.set_status(task.id, status, int(self._now().timestamp()))
-        return Reply(f"{'✅ Hecho' if status == 'done' else '🗑 Cancelada'}: {task.title}")
+        now_ts = int(self._now().timestamp())
+        self.store.set_status(task.id, status, now_ts)
+        lines = [f"{'✅ Hecho' if status == 'done' else '🗑 Cancelada'}: {task.title}"]
+        children = self.store.subtasks(task.id, "pending")
+        for child in children:  # Terminar o cancelar la principal arrastra a sus subtareas.
+            self.store.set_status(child.id, status, now_ts)
+        if children:
+            verb = "completé" if status == "done" else "cancelé"
+            lines.append(f"También {verb} sus {len(children)} subtareas pendientes.")
+        if task.parent_id is not None and (parent := self._pending_by_id(task.parent_id)):
+            if not self.store.subtasks(parent.id, "pending"):
+                if any(child.status == "done" for child in self.store.subtasks(parent.id)):
+                    self.store.set_status(parent.id, "done", now_ts)
+                    lines.append(f"🎉 Con eso terminaste «{parent.title}».")
+            else:
+                left = len(self.store.subtasks(parent.id, "pending"))
+                lines.append(f"Quedan {left} de «{parent.title}».")
+        return Reply("\n".join(lines))
+
+    def _add_subtasks(self, data: dict[str, Any], text: str) -> Reply:
+        parent = self._pending_by_id(data.get("task_id")) or self._task_named_in(text) or self._last_task()
+        if parent is None:
+            return Reply("No sé a qué tarea agregar los pasos. Revisa /tareas y usa /sub con su número.")
+        if parent.parent_id is not None:  # Un solo nivel: los pasos de un paso van a la principal.
+            parent = self._pending_by_id(parent.parent_id) or parent
+        steps = clean_subtasks(data.get("subtasks")) or clean_subtasks([data.get("title")])
+        if not steps:
+            return Reply("No entendí qué pasos agregar. Por ejemplo: «agrega a la mudanza: empacar libros».")
+        now_ts = int(self._now().timestamp())
+        for step in steps:
+            self.store.add_task(step, parent.category, "media", None, text, now_ts, parent_id=parent.id)
+        self._remember_last(parent)
+        return self._confirmation(parent, f"Agregué {len(steps)} {'paso' if len(steps) == 1 else 'pasos'}:")
 
     def _remember(self, data: dict[str, Any], text: str) -> Reply:
         fact = str(data.get("title") or text).strip()[:500]
@@ -312,6 +448,19 @@ class Assistant:
                 return Reply("Listo, no cancelé nada.")
         return self._request_bulk_cancel(now) if BULK_CANCEL_REQUEST.search(plain) else None
 
+    def _task_named_in(self, text: str, candidates: list[Task] | None = None) -> Task | None:
+        """La tarea pendiente cuyo título comparte más palabras con el mensaje, si hay una sola."""
+        words = significant_words(text)
+        tasks = self.store.pending_tasks() if candidates is None else candidates
+        scored = sorted(
+            ((len(words & significant_words(task.title)), task) for task in tasks),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )
+        if not scored or scored[0][0] == 0 or (len(scored) > 1 and scored[1][0] == scored[0][0]):
+            return None
+        return scored[0][1]
+
     def _memory_for_chat(self, text: str) -> str:
         """Reúne lo relacionado con la pregunta; el historial reciente ya va aparte."""
         facts = [fact for _, fact in self.store.search_facts(text, MEMORY_FACTS)]
@@ -326,20 +475,36 @@ class Assistant:
 
     def _dispatch(self, data: dict[str, Any], text: str, reference: datetime) -> Reply:
         intent = data["intent"]
+        if intent != "create_task" and repeat_in_text(text) == 0:
+            # "Ya no me repitas X" no es cancelar X: el modelo los confundía.
+            task = self._pending_by_id(data.get("task_id")) or self._task_named_in(text) or self._last_task()
+            if task is None:
+                return Reply("No sé de qué tarea quitar la repetición. Usa /repetir con su número y 0.")
+            return self._edit({"task_id": task.id, "repeat_minutes": 0}, reference)
         if intent == "create_task":
             return self._create(data, text, reference)
         if intent == "edit_task":
-            return self._edit(data, reference)
+            return self._edit({**data, "_source": text}, reference)
+        if intent == "add_subtasks":
+            return self._add_subtasks(data, text)
         if intent == "remember_fact":
             return self._remember(data, text)
         if intent == "web_search":
             return self._web_search(data, text, reference)
         if intent == "complete_task":
-            return self._finish(data.get("task_id"), "done")
+            task_id = data.get("task_id")
+            if (task := self._pending_by_id(task_id)) and (steps := self.store.subtasks(task.id, "pending")):
+                # Si la frase nombra un paso, se completa ese paso y no toda la tarea con sus pasos.
+                if step := self._task_named_in(text, steps):
+                    task_id = step.id
+            return self._finish(task_id, "done")
         if intent == "cancel_task":
             return self._finish(data.get("task_id"), "cancelled")
         if intent == "list_tasks":
             return Reply(self._list_text())
+        if (urgency := requested_urgency(text)) and (task := self._task_named_in(text)):
+            # El modelo a veces toma "ponla urgente" como conversación; si nombra una tarea, se edita.
+            return self._edit({"task_id": task.id, "urgency": urgency}, reference)
         if self.search is not None and LIVE_INFO_HINT.search(text):
             # El modelo a veces trata esto como conversación y contesta que no lo sabe.
             facts = "; ".join(fact for _, fact in self.store.search_facts(text, 3))
@@ -359,6 +524,26 @@ class Assistant:
             if not argument.strip().isdigit():
                 return Reply(f"Dime el número de la tarea, por ejemplo: {command} 3")
             return self._finish(int(argument), "done" if command == "/hecho" else "cancelled")
+        if command == "/sub":
+            number, _, step = argument.strip().partition(" ")
+            if not number.isdigit() or not step.strip():
+                return Reply("Uso: /sub 3 empacar libros (agrega un paso a la tarea 3).")
+            if self._pending_by_id(int(number)) is None:
+                return Reply("No identifiqué esa tarea. Revisa /tareas y dime el número.")
+            return self._add_subtasks({"task_id": int(number), "subtasks": [step]}, text)
+        if command == "/repetir":
+            parts = argument.split()
+            if len(parts) != 2 or not all(p.isdigit() for p in parts):
+                return Reply("Uso: /repetir 3 30 (tarea 3, cada 30 minutos). Con 0 deja de repetirse.")
+            if self._pending_by_id(int(parts[0])) is None:
+                return Reply("No identifiqué esa tarea. Revisa /tareas y dime el número.")
+            return self._edit({"task_id": int(parts[0]), "repeat_minutes": int(parts[1])}, self._now())
+        if command == "/urgente":
+            if not argument.strip().isdigit():
+                return Reply("Dime el número de la tarea, por ejemplo: /urgente 3")
+            if self._pending_by_id(int(argument)) is None:
+                return Reply("No identifiqué esa tarea. Revisa /tareas y dime el número.")
+            return self._edit({"task_id": int(argument), "urgency": "alta"}, self._now())
         if command == "/memoria":
             facts = self.store.list_facts()
             if not facts:

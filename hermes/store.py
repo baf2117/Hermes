@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     due_at INTEGER,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'cancelled')),
     notified_at INTEGER,
+    repeat_minutes INTEGER,
+    parent_id INTEGER REFERENCES tasks (id),
     source_text TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -66,7 +68,7 @@ CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
 END;
 """
 
-EDITABLE_FIELDS = {"title", "category", "urgency", "due_at", "notified_at"}
+EDITABLE_FIELDS = {"title", "category", "urgency", "due_at", "notified_at", "repeat_minutes"}
 
 FTS_READY_KEY = "fts_ready"
 STOPWORDS = frozenset(
@@ -109,6 +111,8 @@ class Task:
     due_at: int | None
     status: str
     notified_at: int | None
+    repeat_minutes: int | None = None
+    parent_id: int | None = None
 
 
 class Store:
@@ -121,6 +125,11 @@ class Store:
         with self._lock, self._conn:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(SCHEMA)
+            columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(tasks)")}
+            # Bases creadas antes de existir estas columnas.
+            for name, definition in (("repeat_minutes", "INTEGER"), ("parent_id", "INTEGER REFERENCES tasks (id)")):
+                if name not in columns:
+                    self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
             if self.kv_get(FTS_READY_KEY) is None:
                 # Indexa los mensajes guardados antes de que existiera la búsqueda.
                 self._conn.execute("INSERT INTO messages_fts (messages_fts) VALUES ('rebuild')")
@@ -136,6 +145,8 @@ class Store:
             due_at=row["due_at"],
             status=row["status"],
             notified_at=row["notified_at"],
+            repeat_minutes=row["repeat_minutes"],
+            parent_id=row["parent_id"],
         )
 
     def add_task(
@@ -146,12 +157,14 @@ class Store:
         due_at: int | None,
         source_text: str,
         now: int,
+        repeat_minutes: int | None = None,
+        parent_id: int | None = None,
     ) -> Task:
         with self._lock, self._conn:
             cursor = self._conn.execute(
-                "INSERT INTO tasks (title, category, urgency, due_at, source_text, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (title, category, urgency, due_at, source_text, now, now),
+                "INSERT INTO tasks (title, category, urgency, due_at, repeat_minutes, parent_id, source_text,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, category, urgency, due_at, repeat_minutes, parent_id, source_text, now, now),
             )
             return self.get_task(int(cursor.lastrowid))  # type: ignore[return-value]
 
@@ -195,6 +208,25 @@ class Store:
                 "SELECT * FROM tasks WHERE status = 'pending' AND notified_at IS NULL"
                 " AND due_at IS NOT NULL AND due_at <= ? ORDER BY due_at, id",
                 (now,),
+            ).fetchall()
+        return [self._task(r) for r in rows]
+
+    def subtasks(self, parent_id: int, status: str | None = None) -> list[Task]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE parent_id = ? AND (? IS NULL OR status = ?) ORDER BY id",
+                (parent_id, status, status),
+            ).fetchall()
+        return [self._task(r) for r in rows]
+
+    def due_repeats(self, now: int) -> list[Task]:
+        """Tareas repetitivas ya avisadas cuyo intervalo se cumplió y que siguen pendientes."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' AND repeat_minutes IS NOT NULL"
+                " AND notified_at IS NOT NULL AND due_at IS NOT NULL AND due_at <= ?"
+                " AND notified_at + repeat_minutes * 60 <= ? ORDER BY due_at, id",
+                (now, now),
             ).fetchall()
         return [self._task(r) for r in rows]
 

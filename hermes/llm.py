@@ -11,7 +11,8 @@ from typing import Any, Callable, Sequence
 from .store import LLMUsage, Task
 
 INTENTS = (
-    "create_task", "edit_task", "complete_task", "cancel_task", "list_tasks", "remember_fact", "web_search", "chat",
+    "create_task", "add_subtasks", "edit_task", "complete_task", "cancel_task", "list_tasks", "remember_fact",
+    "web_search", "chat",
 )
 DAY_NAMES = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 MONTH_NAMES = (
@@ -36,9 +37,12 @@ INTENT_SCHEMA: dict[str, Any] = {
         "category": _NULLABLE_STRING,
         "urgency": {"type": ["string", "null"], "enum": ["baja", "media", "alta", None]},
         "task_id": _NULLABLE_INT,
+        "repeat_minutes": _NULLABLE_INT,
+        "subtasks": {"type": ["array", "null"], "items": {"type": "string"}},
     },
     "required": [
-        "intent", "title", "date", "time", "relative_minutes", "category", "urgency", "task_id",
+        "intent", "title", "date", "time", "relative_minutes", "category", "urgency", "task_id", "repeat_minutes",
+        "subtasks",
     ],
 }
 
@@ -73,7 +77,10 @@ def build_intent_prompt(
     facts: Sequence[str] = (),
 ) -> str:
     tomorrow = (now.date() + timedelta(days=1)).isoformat()
-    task_lines = "\n".join(f"- id {t.id}: {t.title}" for t in pending[:20]) or "(ninguna)"
+    task_lines = "\n".join(
+        f"- id {t.id}: {t.title}" + (f" (paso de la tarea id {t.parent_id})" if t.parent_id else "")
+        for t in pending[:30]
+    ) or "(ninguna)"
     last_line = f"id {last_task.id}: {last_task.title}" if last_task else "(ninguna)"
     fact_lines = "\n".join(f"- {fact}" for fact in facts) or "(ninguno)"
     return f"""Convierte el mensaje del usuario en JSON para un gestor de tareas. No respondas al usuario.
@@ -94,7 +101,9 @@ Datos conocidos del usuario, solo como referencia:
 
 Intenciones:
 - create_task: quiere que le recuerden o anotar algo. Da title corto sin la fecha, category y urgency.
-- edit_task: corrige o pospone una tarea. Llena SOLO lo que cambia. task_id null si se refiere a la última.
+- create_task con subtasks: si la tarea tiene pasos o partes, pon cada paso corto en subtasks; si no, subtasks null.
+- add_subtasks: agrega pasos a una tarea que ya existe. Da su id en task_id y los pasos en subtasks.
+- edit_task: corrige o pospone una tarea, o le cambia la urgencia o la categoría. Llena SOLO lo que cambia. Si nombra una tarea de la lista, usa su id en task_id; si no, task_id null para la última.
 - complete_task: dice que ya hizo una tarea. Da task_id de la lista.
 - cancel_task: quiere borrar o cancelar una tarea. Da task_id de la lista.
 - list_tasks: pregunta qué tareas tiene.
@@ -104,17 +113,19 @@ Intenciones:
 
 Fechas: date en AAAA-MM-DD y time en HH:MM de 24 horas; null si el usuario no las dijo. Nunca inventes.
 Para "en 20 minutos" o "en 2 horas" usa relative_minutes y deja date y time en null.
+repeat_minutes: solo si pide que le insistas o repitas el aviso cada cierto tiempo hasta hacerlo (cada media hora = 30, cada hora = 60, cada 2 horas = 120). Para dejar de repetir usa 0. Si no lo pide, null. "cada" no es "en": "en 30 minutos" es relative_minutes.
 
 Ejemplos:
-"recuérdame pagar la luz mañana a las 3 de la tarde" -> {{"intent":"create_task","title":"Pagar la luz","date":"{tomorrow}","time":"15:00","relative_minutes":null,"category":"finanzas","urgency":"media","task_id":null}}
-"en 20 minutos sacar la ropa" -> {{"intent":"create_task","title":"Sacar la ropa","date":null,"time":null,"relative_minutes":20,"category":"casa","urgency":"media","task_id":null}}
-"renovar la licencia de conducir" -> {{"intent":"create_task","title":"Renovar la licencia de conducir","date":null,"time":null,"relative_minutes":null,"category":"personal","urgency":"media","task_id":null}}
-"mejor ponlo en trabajo y que sea urgente" -> {{"intent":"edit_task","title":null,"date":null,"time":null,"relative_minutes":null,"category":"trabajo","urgency":"alta","task_id":null}}
-"qué tengo pendiente" -> {{"intent":"list_tasks","title":null,"date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null}}
-"mi veterinaria se llama Ana" -> {{"intent":"remember_fact","title":"Mi veterinaria se llama Ana","date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null}}
-"qué tiempo va a hacer mañana en Antigua" -> {{"intent":"web_search","title":"pronóstico del clima mañana Antigua Guatemala","date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null}}
-"cuándo es el cumpleaños de mi mamá" -> {{"intent":"chat","title":null,"date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null}}
-"cómo estás" -> {{"intent":"chat","title":null,"date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null}}"""
+"recuérdame tomar la medicina a las 8 de la noche y repítemelo cada 30 minutos hasta que la tome" -> {{"intent":"create_task","title":"Tomar la medicina","date":null,"time":"20:00","relative_minutes":null,"category":"salud","urgency":"media","task_id":null,"repeat_minutes":30,"subtasks":null}}
+"recuérdame pagar la luz mañana a las 3 de la tarde" -> {{"intent":"create_task","title":"Pagar la luz","date":"{tomorrow}","time":"15:00","relative_minutes":null,"category":"finanzas","urgency":"media","task_id":null,"repeat_minutes":null,"subtasks":null}}
+"en 20 minutos sacar la ropa" -> {{"intent":"create_task","title":"Sacar la ropa","date":null,"time":null,"relative_minutes":20,"category":"casa","urgency":"media","task_id":null,"repeat_minutes":null,"subtasks":null}}
+"renovar la licencia de conducir" -> {{"intent":"create_task","title":"Renovar la licencia de conducir","date":null,"time":null,"relative_minutes":null,"category":"personal","urgency":"media","task_id":null,"repeat_minutes":null,"subtasks":null}}
+"mejor ponlo en trabajo y que sea urgente" -> {{"intent":"edit_task","title":null,"date":null,"time":null,"relative_minutes":null,"category":"trabajo","urgency":"alta","task_id":null,"repeat_minutes":null,"subtasks":null}}
+"qué tengo pendiente" -> {{"intent":"list_tasks","title":null,"date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null,"repeat_minutes":null,"subtasks":null}}
+"mi veterinaria se llama Ana" -> {{"intent":"remember_fact","title":"Mi veterinaria se llama Ana","date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null,"repeat_minutes":null,"subtasks":null}}
+"qué tiempo va a hacer mañana en Antigua" -> {{"intent":"web_search","title":"pronóstico del clima mañana Antigua Guatemala","date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null,"repeat_minutes":null,"subtasks":null}}
+"cuándo es el cumpleaños de mi mamá" -> {{"intent":"chat","title":null,"date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null,"repeat_minutes":null,"subtasks":null}}
+"cómo estás" -> {{"intent":"chat","title":null,"date":null,"time":null,"relative_minutes":null,"category":null,"urgency":null,"task_id":null,"repeat_minutes":null,"subtasks":null}}"""
 
 
 def reply_messages(text: str, history: Sequence[tuple[str, str]], memory: str = "") -> list[dict[str, str]]:

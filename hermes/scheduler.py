@@ -32,7 +32,27 @@ class Scheduler:
 
     def tick(self) -> None:
         self._send_due_reminders()
+        self._send_repeats()
         self._send_summary_if_needed()
+
+    def in_quiet_hours(self, now: datetime) -> bool:
+        start, end = self.config.repeat_quiet_start, self.config.repeat_quiet_end
+        moment = now.time()
+        if start <= end:
+            return start <= moment < end
+        return moment >= start or moment < end  # El horario cruza la medianoche.
+
+    def _send_repeats(self) -> None:
+        now = self._now()
+        if self.in_quiet_hours(now):
+            return
+        for task in self.store.due_repeats(int(now.timestamp())):
+            try:
+                self.send(self.assistant.reminder_text(task, now, repeated=True), reminder_buttons(task.id))
+            except Exception as exc:
+                log.warning("No se pudo repetir el recordatorio %s: %s", task.id, exc)
+                return
+            self.store.update_task(task.id, int(now.timestamp()), notified_at=int(now.timestamp()))
 
     def _send_due_reminders(self) -> None:
         now = self._now()

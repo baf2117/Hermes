@@ -56,6 +56,8 @@ class Config:
     llm_mode: str = "local"
     claude_executable: str = "claude"
     claude_model: str = "claude-opus-5-5"
+    repeat_quiet_start: time = time(20, 0)
+    repeat_quiet_end: time = time(10, 30)
 
     @classmethod
     def load(cls) -> "Config":
@@ -65,6 +67,7 @@ class Config:
         def get(key: str, default: str = "") -> str:
             return os.environ.get(key) or file_values.get(key) or default
 
+        quiet_start, _, quiet_end = get("HERMES_REPEAT_QUIET", "20:00-10:30").partition("-")
         raw_chat = get("TELEGRAM_ALLOWED_CHAT_ID")
         raw_categories = get("HERMES_CATEGORIES")
         categories = (
@@ -98,4 +101,6 @@ class Config:
             llm_mode=get("HERMES_LLM_MODE", "local").lower(),
             claude_executable=get("HERMES_CLAUDE_PATH", "claude"),
             claude_model=get("HERMES_CLAUDE_MODEL", "claude-opus-5-5"),
+            repeat_quiet_start=_parse_time(quiet_start),
+            repeat_quiet_end=_parse_time(quiet_end),
         )
