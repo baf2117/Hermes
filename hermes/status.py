@@ -271,6 +271,64 @@ details.finished summary { cursor:pointer; color:var(--muted); font-size:14px; p
 .finished-list div:first-child { border-top:0; }
 .finished-list span:first-child { color:var(--muted); width:22px; }
 .finished-list span.when { margin-left:auto; color:var(--faint); font-size:13px; white-space:nowrap; }
+/* Edición */
+.tick { width:20px; height:20px; border-radius:50%; border:1.5px solid var(--faint); background:transparent; flex:none; cursor:pointer; padding:0; display:grid; place-items:center; color:transparent; font-size:12px; line-height:1; margin-top:1px; }
+.tick:hover { border-color:var(--accent); color:var(--accent); }
+.tick[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:#14110a; }
+.tick:focus-visible, .linkish:focus-visible, .icon-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.steps .tick { width:16px; height:16px; font-size:10px; position:relative; top:2px; }
+.task-main.clickable { cursor:pointer; }
+.task-main.clickable:hover .task-title { color:var(--accent); }
+.linkish { font:inherit; color:inherit; background:none; border:0; padding:0; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.linkish:disabled { cursor:default; }
+.task-title.linkish { font-weight:550; }
+.undo { font:inherit; font-size:12px; color:var(--accent); background:none; border:0; cursor:pointer; padding:0 0 0 8px; white-space:nowrap; }
+dialog#editor { background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:16px; padding:0; width:min(560px, calc(100vw - 24px)); max-height:calc(100vh - 24px); overflow:auto; box-shadow:0 24px 60px rgba(0,0,0,.5); }
+dialog#editor::backdrop { background:rgba(0,0,0,.62); backdrop-filter:blur(2px); }
+#ed-form { padding:18px 20px 20px; display:flex; flex-direction:column; gap:14px; }
+.ed-head { display:flex; align-items:flex-start; gap:12px; }
+.ed-head h3 { margin:0; font-size:18px; font-weight:650; }
+.ed-head .linkish { color:var(--muted); font-size:13px; }
+.ed-head .linkish:not(:disabled):hover { color:var(--accent); }
+.icon-btn { margin-left:auto; font:inherit; background:none; border:0; color:var(--muted); cursor:pointer; border-radius:8px; padding:2px 8px; font-size:15px; }
+.icon-btn:hover { color:var(--ink); background:var(--soft); }
+.field { display:flex; flex-direction:column; gap:5px; border:0; padding:0; margin:0; min-width:0; }
+.field > span, .field legend, .field-label { color:var(--muted); font-size:13px; padding:0; }
+.field input, .field select, .add-step input { font:inherit; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:8px 11px; width:100%; min-width:0; }
+.field input:focus, .field select:focus, .add-step input:focus { outline:none; border-color:var(--accent); }
+.row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.seg-ctl { display:grid; grid-template-columns:repeat(3, 1fr); background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:3px; gap:3px; }
+.seg-ctl label { position:relative; }
+.seg-ctl input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+.seg-ctl span { display:flex; align-items:center; justify-content:center; gap:6px; padding:6px 4px; border-radius:7px; font-size:14px; color:var(--muted); }
+.seg-ctl span::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--u, var(--u-media)); }
+.seg-ctl input:checked + span { background:var(--soft); color:var(--ink); font-weight:600; }
+.seg-ctl input:focus-visible + span { outline:2px solid var(--accent); }
+.date-row { display:flex; gap:8px; }
+.date-row input { flex:1; color-scheme:dark; }
+.ghost { font:inherit; font-size:14px; color:var(--ink); background:transparent; border:1px solid var(--line); border-radius:10px; padding:8px 13px; cursor:pointer; white-space:nowrap; }
+.ghost:hover { border-color:var(--faint); }
+.primary { margin-left:auto; font:inherit; font-size:14px; font-weight:600; color:#14110a; background:var(--accent); border:1px solid var(--accent); border-radius:10px; padding:8px 18px; cursor:pointer; }
+.danger { font:inherit; font-size:14px; color:var(--u-alta); background:transparent; border:1px solid transparent; border-radius:10px; padding:8px 10px; cursor:pointer; margin-right:auto; }
+.danger:hover { border-color:color-mix(in srgb, var(--u-alta) 40%, transparent); }
+#ed-form button:disabled { opacity:.5; cursor:default; }
+.ed-steps { list-style:none; margin:4px 0 8px; padding:0; border:1px solid var(--line); border-radius:10px; }
+.ed-steps li { display:flex; align-items:center; gap:10px; padding:7px 10px; border-top:1px solid var(--line); font-size:14px; }
+.ed-steps li:first-child { border-top:0; }
+.ed-steps li.done .linkish { color:var(--faint); text-decoration:line-through; }
+.ed-steps .linkish { flex:1; min-width:0; }
+.ed-steps .linkish:not(:disabled):hover { color:var(--accent); }
+.ed-steps .icon-btn { margin-left:0; font-size:13px; }
+.ed-steps li.empty { color:var(--muted); }
+.add-step { display:flex; gap:8px; }
+.ed-error { color:var(--u-alta); font-size:13px; }
+.ed-error:empty { display:none; }
+.ed-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding-top:4px; }
+.toast { position:fixed; left:50%; bottom:22px; transform:translate(-50%, 20px); opacity:0; pointer-events:none; background:var(--card); color:var(--ink); border:1px solid var(--line); box-shadow:0 10px 30px rgba(0,0,0,.45); border-radius:12px; padding:10px 14px; display:flex; align-items:center; gap:12px; font-size:14px; max-width:calc(100vw - 32px); z-index:20; transition:opacity .2s, transform .2s; white-space:pre-line; }
+.toast.show { opacity:1; transform:translate(-50%, 0); pointer-events:auto; }
+.toast button { font:inherit; font-weight:600; color:var(--accent); background:none; border:0; cursor:pointer; padding:0; white-space:nowrap; }
+.toast button[hidden] { display:none; }
+@media (max-width:480px) { .row2 { grid-template-columns:1fr; } }
 .empty-state { text-align:center; padding:48px 16px; color:var(--muted); }
 .empty-state b { display:block; color:var(--ink); font-size:17px; margin-bottom:4px; }
 
@@ -485,9 +543,75 @@ body.stage header { background:color-mix(in srgb, #0a0c0f 85%, transparent); }
   </div>
 </div>
 </main>
+<dialog id="editor" aria-labelledby="ed-heading">
+  <form id="ed-form" novalidate>
+    <div class="ed-head">
+      <div>
+        <h3 id="ed-heading">Editar tarea</h3>
+        <button type="button" class="linkish" id="ed-parent"></button>
+      </div>
+      <button type="button" class="icon-btn" id="ed-close" aria-label="Cerrar sin guardar">✕</button>
+    </div>
+    <label class="field"><span>Título</span><input id="ed-title" maxlength="200" autocomplete="off"></label>
+    <div class="row2">
+      <label class="field"><span>Categoría</span><select id="ed-category"></select></label>
+      <label class="field"><span>Repetir el aviso</span><select id="ed-repeat"></select></label>
+    </div>
+    <fieldset class="field">
+      <legend>Urgencia</legend>
+      <div class="seg-ctl">
+        <label><input type="radio" name="ed-urgency" value="baja"><span style="--u:var(--u-baja)">Baja</span></label>
+        <label><input type="radio" name="ed-urgency" value="media"><span style="--u:var(--u-media)">Normal</span></label>
+        <label><input type="radio" name="ed-urgency" value="alta"><span style="--u:var(--u-alta)">Urgente</span></label>
+      </div>
+    </fieldset>
+    <div class="field">
+      <label for="ed-due" class="field-label">Fecha y hora del aviso</label>
+      <div class="date-row"><input type="datetime-local" id="ed-due"><button type="button" class="ghost" id="ed-nodate">Sin fecha</button></div>
+    </div>
+    <div id="ed-steps-box">
+      <div class="field-label">Pasos</div>
+      <ul class="ed-steps" id="ed-steps"></ul>
+      <div class="add-step"><input id="ed-new-step" maxlength="200" placeholder="Agregar un paso…" aria-label="Nuevo paso" autocomplete="off"><button type="button" class="ghost" id="ed-add-step">Agregar</button></div>
+    </div>
+    <div class="ed-error" id="ed-error" role="alert"></div>
+    <div class="ed-actions">
+      <button type="button" class="danger" id="ed-delete">Borrar</button>
+      <button type="button" class="ghost" id="ed-done">✓ Marcar como hecha</button>
+      <button type="submit" class="primary" id="ed-save">Guardar</button>
+    </div>
+  </form>
+</dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-text"></span><button type="button" id="toast-undo" hidden>Deshacer</button></div>
 <script>
 const $ = id => document.getElementById(id);
 function text(tag, cls, value) { const el = document.createElement(tag); if (cls) el.className = cls; el.textContent = value; return el; }
+const TOKEN = document.querySelector('meta[name="hermes-token"]').content;
+async function send(path, body) {
+  const res = await fetch(path, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json", "X-Hermes-Token": TOKEN },
+    body: JSON.stringify(body)
+  });
+  if (res.status === 403) { location.reload(); throw new Error("Hermes se reinició; recargando la página…"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "No se pudo guardar.");
+  return data;
+}
+let toastTimer = 0;
+function toast(message, undoId) {
+  $("toast-text").textContent = message;
+  const undo = $("toast-undo");
+  undo.hidden = !undoId;
+  undo.onclick = async () => {
+    hideToast();
+    try { toast((await taskAction({ action: "reopen", id: undoId })).message); } catch (e) { toast(e.message); }
+  };
+  $("toast").classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, undoId ? 7000 : 3500);
+}
+function hideToast() { $("toast").classList.remove("show"); }
 
 /* ---------- Navegación ---------- */
 const VIEWS = ["tareas", "consumo", "historial", "vivo"];
@@ -541,11 +665,33 @@ function metaLine(t, nowTs, compact) {
   if (t.repeat_minutes) meta.append(text("span", "tag", "🔁 " + interval(t.repeat_minutes)));
   return meta;
 }
+function tickButton(t) {
+  const done = t.status === "done";
+  const b = text("button", "tick", "✓");
+  b.type = "button";
+  b.setAttribute("aria-pressed", String(done));
+  b.setAttribute("aria-label", (done ? "Volver a pendiente: " : "Marcar como hecha: ") + t.title);
+  b.title = done ? "Volver a pendiente" : "Marcar como hecha";
+  b.onclick = async e => {
+    e.stopPropagation();
+    b.disabled = true;
+    try {
+      const r = await taskAction({ action: done ? "reopen" : "done", id: t.id });
+      toast(r.message, done ? 0 : t.id);
+    } catch (err) { toast(err.message); }
+    b.disabled = false;
+  };
+  return b;
+}
 function taskRow(t, steps, nowTs) {
   const row = text("div", "task", "");
-  row.append(text("span", "urg " + t.urgency, ""));
-  const main = text("div", "task-main", "");
-  main.append(text("div", "task-title", t.title), metaLine(t, nowTs, false));
+  row.append(text("span", "urg " + t.urgency, ""), tickButton(t));
+  const main = text("div", "task-main clickable", "");
+  const title = text("button", "task-title linkish", t.title);
+  title.type = "button";
+  title.setAttribute("aria-label", "Editar: " + t.title);
+  main.addEventListener("click", e => { if (!e.target.closest(".steps button, .tick")) openEditor(t.id); });
+  main.append(title, metaLine(t, nowTs, false));
   if (steps.length) {
     const done = steps.filter(s => s.status === "done").length;
     const progress = text("div", "progress", "");
@@ -557,7 +703,12 @@ function taskRow(t, steps, nowTs) {
     const list = text("ul", "steps", "");
     for (const s of steps) {
       const li = text("li", s.status === "done" ? "done" : "", "");
-      li.append(text("span", "check", ""), text("span", "", s.title));
+      const name = text("button", "linkish", s.title);
+      name.type = "button";
+      name.disabled = s.status === "done";
+      name.setAttribute("aria-label", "Editar paso: " + s.title);
+      name.onclick = e => { e.stopPropagation(); openEditor(s.id); };
+      li.append(tickButton(s), name);
       if (s.status !== "done") li.append(metaLine(s, nowTs, true));
       list.append(li);
     }
@@ -626,11 +777,19 @@ function renderTasks(data) {
       text("span", "", f.title),
       text("span", "when", new Date(f.completed_at * 1000).toLocaleDateString("es", { weekday: "short", day: "numeric", month: "short" }))
     );
+    const undo = text("button", "undo", "Volver a pendientes");
+    undo.type = "button";
+    undo.onclick = async () => {
+      undo.disabled = true;
+      try { toast((await taskAction({ action: "reopen", id: f.id })).message); } catch (e) { toast(e.message); undo.disabled = false; }
+    };
+    item.append(undo);
     list.append(item);
   }
 }
 let tasksSerialized = "";
-async function loadTasks() {
+async function loadTasks(force) {
+  if (force) tasksSerialized = "";
   try {
     const res = await fetch("/tasks", { cache: "no-store" });
     const data = await res.json();
@@ -639,6 +798,147 @@ async function loadTasks() {
   } catch { $("offline").style.display = "block"; }
 }
 setInterval(() => { if (currentView() === "tareas") loadTasks(); }, 5000);
+
+/* ---------- Editor de tareas ---------- */
+const REPEATS = [[0, "No se repite"], [15, "Cada 15 min"], [30, "Cada 30 min"], [60, "Cada hora"], [120, "Cada 2 h"],
+  [180, "Cada 3 h"], [240, "Cada 4 h"], [360, "Cada 6 h"], [720, "Cada 12 h"], [1440, "Una vez al día"]];
+let editing = null;
+const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1);
+const pad = n => String(n).padStart(2, "0");
+function toLocalInput(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+function findPending(id) { return lastTasks ? (lastTasks.pending || []).find(t => t.id === id) : null; }
+function stepsFor(id) {
+  return [...(lastTasks.pending || []), ...(lastTasks.done_steps || [])].filter(t => t.parent_id === id).sort((a, b) => a.id - b.id);
+}
+async function taskAction(body) {
+  const result = await send("/tasks", body);
+  await loadTasks(true);
+  if ($("editor").open) {
+    if (findPending(editing)) renderEditorSteps(); else closeEditor();
+  }
+  return result;
+}
+function fillSelect(select, options, value) {
+  select.replaceChildren();
+  for (const [v, label] of options) { const o = text("option", "", label); o.value = String(v); select.append(o); }
+  select.value = String(value);
+}
+function openEditor(id) {
+  const t = findPending(id);
+  if (!t) return;
+  editing = id;
+  const parent = t.parent_id !== null ? findPending(t.parent_id) : null;
+  $("ed-heading").textContent = parent ? "Editar paso" : "Editar tarea";
+  const back = $("ed-parent");
+  back.textContent = parent ? "← Paso de «" + parent.title + "»" : "Tarea #" + t.id;
+  back.disabled = !parent;
+  back.onclick = parent ? () => openEditor(parent.id) : null;
+  $("ed-title").value = t.title;
+  const categories = [...new Set([...(lastTasks.categories || []), t.category])];
+  fillSelect($("ed-category"), categories.map(c => [c, capitalize(c)]), t.category);
+  const repeats = REPEATS.slice();
+  if (t.repeat_minutes && !repeats.some(([m]) => m === t.repeat_minutes)) repeats.push([t.repeat_minutes, "Cada " + t.repeat_minutes + " min"]);
+  fillSelect($("ed-repeat"), repeats, t.repeat_minutes || 0);
+  document.querySelectorAll('input[name="ed-urgency"]').forEach(r => r.checked = r.value === t.urgency);
+  $("ed-due").value = toLocalInput(t.due_at);
+  $("ed-steps-box").hidden = !!parent;
+  $("ed-done").textContent = parent ? "✓ Marcar paso como hecho" : "✓ Marcar como hecha";
+  $("ed-new-step").value = "";
+  $("ed-error").textContent = "";
+  renderEditorSteps();
+  if (!$("editor").open) $("editor").showModal();
+}
+function closeEditor() { editing = null; if ($("editor").open) $("editor").close(); }
+function renderEditorSteps() {
+  const list = $("ed-steps"); list.replaceChildren();
+  if (editing === null) return;
+  const steps = stepsFor(editing);
+  if (!steps.length) list.append(text("li", "empty", "Sin pasos. Agrega uno abajo."));
+  for (const s of steps) {
+    const li = text("li", s.status === "done" ? "done" : "", "");
+    const name = text("button", "linkish", s.title);
+    name.type = "button";
+    name.disabled = s.status === "done";
+    name.onclick = () => openEditor(s.id);
+    li.append(tickButton(s), name);
+    if (s.status !== "done") {
+      const del = text("button", "icon-btn", "✕");
+      del.type = "button";
+      del.setAttribute("aria-label", "Borrar paso: " + s.title);
+      del.title = "Borrar paso";
+      del.onclick = () => editorRun(async () => {
+        if (!confirm("¿Borrar el paso «" + s.title + "»?")) return;
+        toast((await taskAction({ action: "cancel", id: s.id })).message, s.id);
+      });
+      li.append(del);
+    }
+    list.append(li);
+  }
+}
+async function editorRun(work) {
+  const buttons = [...$("ed-form").querySelectorAll("button")];
+  buttons.forEach(b => b.disabled = true);
+  $("ed-error").textContent = "";
+  try { await work(); } catch (e) { $("ed-error").textContent = e.message; }
+  buttons.forEach(b => b.disabled = false);
+  $("ed-parent").disabled = !$("ed-parent").onclick;
+  renderEditorSteps();
+}
+$("ed-close").onclick = closeEditor;
+$("editor").addEventListener("close", () => { editing = null; });
+$("editor").addEventListener("click", e => { if (e.target === $("editor")) closeEditor(); });
+$("ed-nodate").onclick = () => { $("ed-due").value = ""; $("ed-repeat").value = "0"; };
+$("ed-form").addEventListener("submit", e => {
+  e.preventDefault();
+  editorRun(async () => {
+    const t = findPending(editing);
+    if (!t) { closeEditor(); return; }
+    const body = { action: "edit", id: t.id };
+    const title = $("ed-title").value.trim();
+    if (!title) throw new Error("El título no puede quedar vacío.");
+    if (title !== t.title) body.title = title;
+    if ($("ed-category").value !== t.category) body.category = $("ed-category").value;
+    const urgency = document.querySelector('input[name="ed-urgency"]:checked').value;
+    if (urgency !== t.urgency) body.urgency = urgency;
+    const dueText = $("ed-due").value;
+    if (dueText !== toLocalInput(t.due_at)) {
+      const due = dueText ? Math.floor(new Date(dueText).getTime() / 1000) : null;
+      if (dueText && !Number.isFinite(due)) throw new Error("Fecha inválida.");
+      body.due_at = due;
+    }
+    const repeat = Number($("ed-repeat").value) || null;
+    if (repeat !== (t.repeat_minutes || null)) body.repeat_minutes = repeat;
+    if (Object.keys(body).length > 2) toast((await taskAction(body)).message);
+    closeEditor();
+  });
+});
+$("ed-done").onclick = () => editorRun(async () => {
+  const id = editing;
+  const r = await taskAction({ action: "done", id });
+  toast(r.message, id);
+});
+$("ed-delete").onclick = () => editorRun(async () => {
+  const t = findPending(editing);
+  if (!t) return;
+  const steps = stepsFor(t.id).filter(s => s.status !== "done").length;
+  const extra = steps ? " También se borrarán sus " + steps + " pasos pendientes." : "";
+  if (!confirm("¿Borrar «" + t.title + "»?" + extra)) return;
+  toast((await taskAction({ action: "cancel", id: t.id })).message, t.id);
+});
+function addStep() {
+  const title = $("ed-new-step").value.trim();
+  if (!title) return;
+  editorRun(async () => {
+    await taskAction({ action: "add_step", id: editing, title });
+    $("ed-new-step").value = "";
+  });
+}
+$("ed-add-step").onclick = addStep;
+$("ed-new-step").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addStep(); } });
 
 /* ---------- En vivo ---------- */
 const STATES = {
@@ -845,7 +1145,6 @@ function updateOrb(s) {
   orbLevel = orbLevel * 0.45 + target * 0.55;
   orb.style.setProperty("--level", orbLevel.toFixed(3));
 }
-const TOKEN = document.querySelector('meta[name="hermes-token"]').content;
 let micBusy = false;
 function updateMicButton(s) {
   const btn = $("mic-btn");
@@ -857,14 +1156,7 @@ function updateMicButton(s) {
 $("mic-btn").addEventListener("click", async () => {
   const listening = $("mic-btn").getAttribute("aria-pressed") === "true";
   micBusy = true; $("mic-btn").disabled = true;
-  try {
-    const res = await fetch("/voice", {
-      method: "POST", cache: "no-store",
-      headers: { "Content-Type": "application/json", "X-Hermes-Token": TOKEN },
-      body: JSON.stringify({ listening })
-    });
-    if (res.status === 403) location.reload();  // Hermes se reinició: la página necesita la clave nueva.
-  } catch { $("offline").style.display = "block"; }
+  try { await send("/voice", { listening }); } catch (e) { toast(e.message); }
   micBusy = false;
 });
 async function tick() {

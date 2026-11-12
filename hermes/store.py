@@ -193,6 +193,14 @@ class Store:
                 (status, now, now, task_id),
             )
 
+    def reopen(self, task_id: int, now: int) -> None:
+        """Devuelve a pendientes una tarea hecha o cancelada por error."""
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE tasks SET status = 'pending', updated_at = ?, completed_at = NULL WHERE id = ?",
+                (now, task_id),
+            )
+
     def pending_tasks(self) -> list[Task]:
         with self._lock:
             rows = self._conn.execute(
