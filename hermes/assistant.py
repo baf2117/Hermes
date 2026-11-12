@@ -6,7 +6,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
@@ -51,6 +51,14 @@ UPCOMING_HINT = re.compile(
 LIVE_INFO_HINT = re.compile(
     r"\b(juega|juegan|partidos?|marcador|clima|pron[óo]stico|noticias|d[óo]lar)\b", re.IGNORECASE
 )
+# El modelo a veces copia la fecha de inicio como vencimiento; solo se acepta si el mensaje habla de un límite.
+DEADLINE_HINT = re.compile(
+    r"\b(venc\w*|l[íi]mite|plazo|antes de(l)?|a m[áa]s tardar|tiene que estar|debe estar|entreg\w*|hasta el)\b",
+    re.IGNORECASE,
+)
+# Si pide un aviso o habla de empezar, la fecha que dio es el inicio aunque también mencione un límite.
+START_HINT = re.compile(r"\b(empie\w*|empez\w*|inici\w*|comienz\w*|arranc\w*|recu[ée]rd\w*|av[íi]s\w*)\b", re.IGNORECASE)
+DEFAULT_DEADLINE_TIME = time(18, 0)  # "Vence el viernes" sin hora: al final de la jornada.
 BULK_CANCEL_KEY = "bulk_cancel_request"
 BULK_CANCEL_SECONDS = 300
 BULK_CANCEL_REQUEST = re.compile(r"\b(cancel\w*|borr\w*|elimin\w*|quit\w*)\b.*\b(pendientes|tareas|todas|todos|todo)\b")
@@ -172,11 +180,17 @@ class Assistant:
         moment = datetime.fromtimestamp(due_at, self._now().tzinfo)
         return f"{DAY_NAMES[moment.weekday()]} {moment.day} {MONTHS[moment.month - 1]}, {moment:%H:%M}"
 
+    def format_when(self, task: Task) -> str:
+        if task.deadline_at is None:
+            return self.format_due(task.due_at)
+        deadline = f"vence {self.format_due(task.deadline_at)}"
+        return deadline if task.due_at is None else f"{self.format_due(task.due_at)} → {deadline}"
+
     def format_task(self, task: Task) -> str:
         repeat = f" · 🔁 {format_interval(task.repeat_minutes)}" if task.repeat_minutes else ""
         return (
             f"{URGENCY_MARK[task.urgency]} #{task.id} {task.title}\n"
-            f"     {task.category} · {self.format_due(task.due_at)}{repeat}"
+            f"     {task.category} · {self.format_when(task)}{repeat}"
         )
 
     def reminder_text(self, task: Task, now: datetime, repeated: bool = False) -> str:
@@ -186,18 +200,30 @@ class Assistant:
             text += f"\nTe lo repito {format_interval(task.repeat_minutes)} hasta que lo marques como hecho."
         elif task.due_at is not None and now.timestamp() - task.due_at > 120:
             text += f"\nAtrasado: era para {self.format_due(task.due_at)}."
+        if task.deadline_at is not None and task.deadline_at > now.timestamp():
+            text += f"\nVence {self.format_due(task.deadline_at)}."
         return text
+
+    def deadline_text(self, task: Task) -> str:
+        return (
+            f"⌛ Venció: {URGENCY_MARK[task.urgency]} {task.title}\n"
+            f"{task.category} · era para {self.format_due(task.deadline_at)}.\n"
+            "¿Ya la hiciste? Si no, sigue en tus pendientes."
+        )
 
     def build_summary(self) -> str:
         now = self._now()
         end_of_today = now.replace(hour=23, minute=59, second=59, microsecond=0).timestamp()
         start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         pending = self.store.pending_tasks()
-        overdue = [t for t in pending if t.due_at is not None and t.due_at < start_of_today]
-        today = [t for t in pending if t.due_at is not None and start_of_today <= t.due_at <= end_of_today]
-        undated_high = [t for t in pending if t.due_at is None and t.urgency == "alta"]
+        is_today = lambda ts: ts is not None and start_of_today <= ts <= end_of_today  # noqa: E731
+        overdue = [t for t in pending if t.overdue_from is not None and t.overdue_from < start_of_today]
+        due_today = [t for t in pending if t not in overdue and is_today(t.deadline_at)]
+        today = [t for t in pending if t not in overdue and t not in due_today and is_today(t.due_at)]
+        undated_high = [t for t in pending if t.overdue_from is None and t.urgency == "alta"]
         parts = [f"Buen día. Hoy es {DAY_NAMES[now.weekday()]} {now.day} {MONTHS[now.month - 1]}."]
-        for label, tasks in (("Atrasadas", overdue), ("Hoy", today), ("Urgentes sin fecha", undated_high)):
+        sections = (("Atrasadas", overdue), ("Vencen hoy", due_today), ("Hoy", today), ("Urgentes sin fecha", undated_high))
+        for label, tasks in sections:
             if tasks:
                 parts.append(f"\n{label}:\n" + "\n".join(self.format_task(t) for t in tasks))
         if len(parts) == 1:
@@ -232,7 +258,7 @@ class Assistant:
     def _clean_urgency(value: Any) -> str | None:
         return value if value in URGENCIES else None
 
-    def _resolve_due(self, data: dict[str, Any], reference: datetime) -> int | None:
+    def _resolve_due(self, data: dict[str, Any], reference: datetime, default_time: time | None = None) -> int | None:
         """Devuelve el instante del aviso, None si no hay fecha, o lanza DueProblem.
 
         Todo se calcula desde `reference`, la hora en que el usuario envió el mensaje, aunque
@@ -260,7 +286,7 @@ class Assistant:
             return int(due.timestamp())
 
         if parsed_time is None:
-            due = datetime.combine(parsed_date, self.config.default_task_time, now.tzinfo)
+            due = datetime.combine(parsed_date, default_time or self.config.default_task_time, now.tzinfo)
             if parsed_date == now.date() and due <= now:
                 due = now + timedelta(hours=1)
             return int(due.timestamp())
@@ -269,6 +295,25 @@ class Assistant:
         if due <= now:
             raise DueProblem(f"Esa fecha ya pasó ({self.format_due(int(due.timestamp()))}).")
         return int(due.timestamp())
+
+    def _resolve_deadline(self, data: dict[str, Any], source: str, reference: datetime) -> int | None:
+        """Hora de vencimiento pedida en el mensaje; None si no habló de un límite."""
+        raw_date, raw_time = data.get("deadline_date"), data.get("deadline_time")
+        if not (raw_date or raw_time) or not DEADLINE_HINT.search(source):
+            return None
+        try:
+            return self._resolve_due({"date": raw_date, "time": raw_time}, reference, DEFAULT_DEADLINE_TIME)
+        except DueProblem as exc:
+            raise DueProblem(str(exc).replace("Esa fecha", "La fecha límite")) from exc
+
+    @staticmethod
+    def _only_a_limit(data: dict[str, Any], source: str) -> bool:
+        return bool(
+            (data.get("date") or data.get("time"))
+            and not (data.get("deadline_date") or data.get("deadline_time") or data.get("relative_minutes"))
+            and DEADLINE_HINT.search(source)
+            and not START_HINT.search(source)
+        )
 
     def _pending_by_id(self, value: Any) -> Task | None:
         if not isinstance(value, int) or isinstance(value, bool):
@@ -298,15 +343,31 @@ class Assistant:
             due_at = self._resolve_due(data, reference)
         except DueProblem as exc:
             due_at, problem = None, str(exc)
+        deadline_at = None
+        if not problem:
+            if self._only_a_limit(data, source):
+                # "A más tardar el jueves a las 6": el modelo la puso como inicio, pero es el vencimiento.
+                data = {**data, "deadline_date": data.get("date"), "deadline_time": data.get("time"), "date": None, "time": None}
+                due_at = None
+            try:
+                deadline_at = self._resolve_deadline(data, source, reference)
+            except DueProblem as exc:
+                problem = str(exc)
+        if deadline_at is not None and due_at is not None and deadline_at < due_at:
+            if data.get("relative_minutes") or data.get("date") or data.get("time"):
+                problem = "La fecha límite quedaba antes del inicio; guardé solo el inicio."
+            deadline_at = None
         repeat = clean_repeat(data.get("repeat_minutes")) or repeat_in_text(source) or None
         if repeat and due_at is None and not problem:
             due_at = int(reference.timestamp())  # "Repíteme X cada hora" sin hora: empieza ya.
-        task = self.store.add_task(title, category, urgency, due_at, source, now_ts, repeat)
+        task = self.store.add_task(title, category, urgency, due_at, source, now_ts, repeat, deadline_at=deadline_at)
         for step in clean_subtasks(data.get("subtasks")):
             self.store.add_task(step, category, "media", None, source, now_ts, parent_id=task.id)
         self._remember_last(task)
-        if problem:
+        if problem and task.due_at is None and task.deadline_at is None:
             return self._confirmation(task, f"Guardada sin aviso. {problem} ¿Para cuándo la dejo?")
+        if problem:
+            return self._confirmation(task, f"La anoté. {problem}")
         return self._confirmation(task, "Listo, la anoté:")
 
     def _edit(self, data: dict[str, Any], reference: datetime) -> Reply:
@@ -326,6 +387,15 @@ class Assistant:
             return Reply(f"No la cambié. {exc} ¿Para cuándo la dejo?")
         if due_at is not None:
             changes.update(due_at=due_at, notified_at=None)
+        try:
+            deadline_at = self._resolve_deadline(data, data.get("_source", ""), reference)
+        except DueProblem as exc:
+            return Reply(f"No la cambié. {exc}")
+        if deadline_at is not None:
+            start = changes.get("due_at", task.due_at)
+            if start is not None and deadline_at < start:
+                return Reply("No la cambié: la fecha límite quedaría antes del inicio.")
+            changes.update(deadline_at=deadline_at, deadline_notified_at=None)
         repeat = clean_repeat(data.get("repeat_minutes"))
         if repeat is None:
             repeat = repeat_in_text(data.get("_source", ""))

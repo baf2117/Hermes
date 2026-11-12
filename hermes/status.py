@@ -566,8 +566,12 @@ body.stage header { background:color-mix(in srgb, #0a0c0f 85%, transparent); }
       </div>
     </fieldset>
     <div class="field">
-      <label for="ed-due" class="field-label">Fecha y hora del aviso</label>
-      <div class="date-row"><input type="datetime-local" id="ed-due"><button type="button" class="ghost" id="ed-nodate">Sin fecha</button></div>
+      <label for="ed-due" class="field-label">Inicio · cuándo te aviso</label>
+      <div class="date-row"><input type="datetime-local" id="ed-due"><button type="button" class="ghost" id="ed-nodate">Sin inicio</button></div>
+    </div>
+    <div class="field">
+      <label for="ed-deadline" class="field-label">Vencimiento · fecha límite</label>
+      <div class="date-row"><input type="datetime-local" id="ed-deadline"><button type="button" class="ghost" id="ed-nodeadline">Sin vencimiento</button></div>
     </div>
     <div id="ed-steps-box">
       <div class="field-label">Pasos</div>
@@ -651,15 +655,38 @@ function due(ts, nowTs) {
   if (days < 7) return { label: d.toLocaleDateString("es", { weekday: "long" }) + " " + time, cls: "" };
   return { label: date + " " + time, cls: "" };
 }
+function moment(ts, nowTs) {
+  const d = new Date(ts * 1000), now = new Date(nowTs * 1000);
+  const time = d.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+  const days = Math.round((dayStart(d) - dayStart(now)) / 86400000);
+  if (days === 0) return "hoy " + time;
+  if (days === 1) return "mañana " + time;
+  if (days === -1) return "ayer " + time;
+  if (days > 1 && days < 7) return d.toLocaleDateString("es", { weekday: "long" }) + " " + time;
+  return d.toLocaleDateString("es", { weekday: "short", day: "numeric", month: "short" }) + " " + time;
+}
+function deadline(ts, nowTs) {
+  const today = dayStart(new Date(ts * 1000)) === dayStart(new Date(nowTs * 1000));
+  if (ts < nowTs) return { label: "Venció " + moment(ts, nowTs), cls: "overdue" };
+  return { label: "Vence " + moment(ts, nowTs), cls: today ? "today" : "" };
+}
+const overdueFrom = t => t.deadline_at || t.due_at || null;
+const firstDate = t => t.due_at || t.deadline_at || Infinity;
 function sortTasks(a, b) {
-  const da = a.due_at || Infinity, db = b.due_at || Infinity;
+  const da = firstDate(a), db = firstDate(b);
   return da - db || URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency] || a.id - b.id;
 }
 function metaLine(t, nowTs, compact) {
   const meta = text("div", "meta", "");
   if (!compact) meta.append(text("span", "", "#" + t.id));
-  const d = due(t.due_at, nowTs);
-  meta.append(text("span", "due " + d.cls, d.label));
+  if (t.deadline_at) {
+    if (t.due_at) meta.append(text("span", "due", "Inicio " + moment(t.due_at, nowTs)));
+    const v = deadline(t.deadline_at, nowTs);
+    meta.append(text("span", "due " + v.cls, v.label));
+  } else {
+    const d = due(t.due_at, nowTs);
+    meta.append(text("span", "due " + d.cls, d.label));
+  }
   if (t.urgency === "alta") meta.append(text("span", "tag alta", "Urgente"));
   else if (!compact && t.urgency === "baja") meta.append(text("span", "tag", "Baja"));
   if (t.repeat_minutes) meta.append(text("span", "tag", "🔁 " + interval(t.repeat_minutes)));
@@ -728,10 +755,11 @@ function renderTasks(data) {
   const steps = pending.length - roots.length;
   $("s-pending-label").textContent = steps ? "Pendientes · " + steps + (steps === 1 ? " paso" : " pasos") : "Pendientes";
   $("s-urgent").textContent = pending.filter(t => t.urgency === "alta").length;
-  const overdue = pending.filter(t => t.due_at && t.due_at < nowTs).length;
+  const overdue = pending.filter(t => overdueFrom(t) && overdueFrom(t) < nowTs).length;
   $("s-overdue").textContent = overdue;
   $("s-overdue-box").classList.toggle("alert", overdue > 0);
-  $("s-today").textContent = pending.filter(t => t.due_at && t.due_at >= nowTs && t.due_at < todayEnd).length;
+  const inToday = ts => ts && ts >= nowTs && ts < todayEnd;
+  $("s-today").textContent = pending.filter(t => !(overdueFrom(t) < nowTs) && (inToday(t.due_at) || inToday(t.deadline_at))).length;
   $("updated").textContent = "Actualizado " + new Date(nowTs * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 
   const categories = [...new Set([...(data.categories || []), ...roots.map(t => t.category)])];
@@ -845,6 +873,7 @@ function openEditor(id) {
   fillSelect($("ed-repeat"), repeats, t.repeat_minutes || 0);
   document.querySelectorAll('input[name="ed-urgency"]').forEach(r => r.checked = r.value === t.urgency);
   $("ed-due").value = toLocalInput(t.due_at);
+  $("ed-deadline").value = toLocalInput(t.deadline_at);
   $("ed-steps-box").hidden = !!parent;
   $("ed-done").textContent = parent ? "✓ Marcar paso como hecho" : "✓ Marcar como hecha";
   $("ed-new-step").value = "";
@@ -892,6 +921,7 @@ $("ed-close").onclick = closeEditor;
 $("editor").addEventListener("close", () => { editing = null; });
 $("editor").addEventListener("click", e => { if (e.target === $("editor")) closeEditor(); });
 $("ed-nodate").onclick = () => { $("ed-due").value = ""; $("ed-repeat").value = "0"; };
+$("ed-nodeadline").onclick = () => { $("ed-deadline").value = ""; };
 $("ed-form").addEventListener("submit", e => {
   e.preventDefault();
   editorRun(async () => {
@@ -904,12 +934,17 @@ $("ed-form").addEventListener("submit", e => {
     if ($("ed-category").value !== t.category) body.category = $("ed-category").value;
     const urgency = document.querySelector('input[name="ed-urgency"]:checked').value;
     if (urgency !== t.urgency) body.urgency = urgency;
-    const dueText = $("ed-due").value;
-    if (dueText !== toLocalInput(t.due_at)) {
-      const due = dueText ? Math.floor(new Date(dueText).getTime() / 1000) : null;
-      if (dueText && !Number.isFinite(due)) throw new Error("Fecha inválida.");
-      body.due_at = due;
-    }
+    const readDate = (id, original, field, label) => {
+      const value = $(id).value;
+      if (value === toLocalInput(original)) return;
+      const ts = value ? Math.floor(new Date(value).getTime() / 1000) : null;
+      if (value && !Number.isFinite(ts)) throw new Error("Fecha de " + label + " inválida.");
+      body[field] = ts;
+    };
+    readDate("ed-due", t.due_at, "due_at", "inicio");
+    readDate("ed-deadline", t.deadline_at, "deadline_at", "vencimiento");
+    const start = "due_at" in body ? body.due_at : t.due_at, end = "deadline_at" in body ? body.deadline_at : t.deadline_at;
+    if (start && end && end < start) throw new Error("El vencimiento tiene que ser después del inicio.");
     const repeat = Number($("ed-repeat").value) || null;
     if (repeat !== (t.repeat_minutes || null)) body.repeat_minutes = repeat;
     if (Object.keys(body).length > 2) toast((await taskAction(body)).message);

@@ -68,7 +68,9 @@ CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
 END;
 """
 
-EDITABLE_FIELDS = {"title", "category", "urgency", "due_at", "notified_at", "repeat_minutes"}
+EDITABLE_FIELDS = {
+    "title", "category", "urgency", "due_at", "notified_at", "repeat_minutes", "deadline_at", "deadline_notified_at",
+}
 
 FTS_READY_KEY = "fts_ready"
 STOPWORDS = frozenset(
@@ -113,6 +115,13 @@ class Task:
     notified_at: int | None
     repeat_minutes: int | None = None
     parent_id: int | None = None
+    deadline_at: int | None = None  # Hora de vencimiento; due_at es la hora de inicio (el aviso).
+    deadline_notified_at: int | None = None
+
+    @property
+    def overdue_from(self) -> int | None:
+        """Desde cuándo cuenta como vencida: el vencimiento si lo tiene; si no, el inicio."""
+        return self.deadline_at if self.deadline_at is not None else self.due_at
 
 
 class Store:
@@ -127,7 +136,12 @@ class Store:
             self._conn.executescript(SCHEMA)
             columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(tasks)")}
             # Bases creadas antes de existir estas columnas.
-            for name, definition in (("repeat_minutes", "INTEGER"), ("parent_id", "INTEGER REFERENCES tasks (id)")):
+            for name, definition in (
+                ("repeat_minutes", "INTEGER"),
+                ("parent_id", "INTEGER REFERENCES tasks (id)"),
+                ("deadline_at", "INTEGER"),
+                ("deadline_notified_at", "INTEGER"),
+            ):
                 if name not in columns:
                     self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
             if self.kv_get(FTS_READY_KEY) is None:
@@ -147,6 +161,8 @@ class Store:
             notified_at=row["notified_at"],
             repeat_minutes=row["repeat_minutes"],
             parent_id=row["parent_id"],
+            deadline_at=row["deadline_at"],
+            deadline_notified_at=row["deadline_notified_at"],
         )
 
     def add_task(
@@ -159,12 +175,13 @@ class Store:
         now: int,
         repeat_minutes: int | None = None,
         parent_id: int | None = None,
+        deadline_at: int | None = None,
     ) -> Task:
         with self._lock, self._conn:
             cursor = self._conn.execute(
-                "INSERT INTO tasks (title, category, urgency, due_at, repeat_minutes, parent_id, source_text,"
-                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (title, category, urgency, due_at, repeat_minutes, parent_id, source_text, now, now),
+                "INSERT INTO tasks (title, category, urgency, due_at, repeat_minutes, parent_id, deadline_at,"
+                " source_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, category, urgency, due_at, repeat_minutes, parent_id, deadline_at, source_text, now, now),
             )
             return self.get_task(int(cursor.lastrowid))  # type: ignore[return-value]
 
@@ -205,7 +222,7 @@ class Store:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM tasks WHERE status = 'pending'"
-                " ORDER BY due_at IS NULL, due_at,"
+                " ORDER BY COALESCE(due_at, deadline_at) IS NULL, COALESCE(due_at, deadline_at),"
                 " CASE urgency WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, id"
             ).fetchall()
         return [self._task(r) for r in rows]
@@ -233,6 +250,16 @@ class Store:
             rows = self._conn.execute(
                 "SELECT * FROM tasks WHERE parent_id = ? AND (? IS NULL OR status = ?) ORDER BY id",
                 (parent_id, status, status),
+            ).fetchall()
+        return [self._task(r) for r in rows]
+
+    def due_deadlines(self, now: int) -> list[Task]:
+        """Tareas pendientes cuya hora de vencimiento pasó y que aún no se avisaron."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' AND deadline_notified_at IS NULL"
+                " AND deadline_at IS NOT NULL AND deadline_at <= ? ORDER BY deadline_at, id",
+                (now,),
             ).fetchall()
         return [self._task(r) for r in rows]
 

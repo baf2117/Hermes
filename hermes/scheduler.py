@@ -32,6 +32,7 @@ class Scheduler:
 
     def tick(self) -> None:
         self._send_due_reminders()
+        self._send_deadlines()
         self._send_repeats()
         self._send_summary_if_needed()
 
@@ -63,6 +64,16 @@ class Scheduler:
                 log.warning("No se pudo enviar el recordatorio %s: %s", task.id, exc)
                 return
             self.store.update_task(task.id, int(now.timestamp()), notified_at=int(now.timestamp()))
+
+    def _send_deadlines(self) -> None:
+        now = self._now()
+        for task in self.store.due_deadlines(int(now.timestamp())):
+            try:
+                self.send(self.assistant.deadline_text(task), reminder_buttons(task.id))
+            except Exception as exc:  # Se reintenta en el siguiente ciclo.
+                log.warning("No se pudo avisar el vencimiento de %s: %s", task.id, exc)
+                return
+            self.store.update_task(task.id, int(now.timestamp()), deadline_notified_at=int(now.timestamp()))
 
     def _send_summary_if_needed(self) -> None:
         now = self._now()

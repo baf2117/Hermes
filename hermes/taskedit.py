@@ -32,6 +32,14 @@ def _title(value: Any) -> str:
     return " ".join(value.split())[:MAX_TITLE]
 
 
+def _timestamp(value: Any, problem: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not MIN_TIMESTAMP <= value <= MAX_TIMESTAMP:
+        raise EditError(problem)
+    return value
+
+
 class TaskEditor:
     def __init__(self, assistant: Assistant):
         self.assistant = assistant
@@ -77,13 +85,14 @@ class TaskEditor:
             changes["urgency"] = payload["urgency"]
         due_at = task.due_at
         if "due_at" in payload:
-            due_at = payload["due_at"]
-            if due_at is not None and (
-                isinstance(due_at, bool) or not isinstance(due_at, int) or not MIN_TIMESTAMP <= due_at <= MAX_TIMESTAMP
-            ):
-                raise EditError("Fecha inválida.")
+            due_at = _timestamp(payload["due_at"], "Fecha de inicio inválida.")
             if due_at != task.due_at:
                 changes.update(due_at=due_at, notified_at=None)  # Fecha nueva: se vuelve a avisar.
+        deadline_at = task.deadline_at
+        if "deadline_at" in payload:
+            deadline_at = _timestamp(payload["deadline_at"], "Fecha de vencimiento inválida.")
+            if deadline_at != task.deadline_at:
+                changes.update(deadline_at=deadline_at, deadline_notified_at=None)
         if "repeat_minutes" in payload:
             raw = payload["repeat_minutes"]
             repeat = None if raw is None else clean_repeat(raw)
@@ -93,6 +102,9 @@ class TaskEditor:
             if repeat and due_at is None:
                 # Igual que por Telegram: repetir sin fecha empieza a avisar desde ahora.
                 changes.update(due_at=self._now(), notified_at=None)
+        start = changes.get("due_at", due_at)
+        if deadline_at is not None and start is not None and deadline_at < start:
+            raise EditError("El vencimiento tiene que ser después del inicio.")
         if not changes:
             return "Sin cambios."
         now = self._now()

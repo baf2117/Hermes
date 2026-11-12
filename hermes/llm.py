@@ -39,6 +39,8 @@ INTENT_SCHEMA: dict[str, Any] = {
         "task_id": _NULLABLE_INT,
         "repeat_minutes": _NULLABLE_INT,
         "subtasks": {"type": ["array", "null"], "items": {"type": "string"}},
+        "deadline_date": _NULLABLE_STRING,
+        "deadline_time": _NULLABLE_STRING,
     },
     "required": [
         "intent", "title", "date", "time", "relative_minutes", "category", "urgency", "task_id", "repeat_minutes",
@@ -77,6 +79,8 @@ def build_intent_prompt(
     facts: Sequence[str] = (),
 ) -> str:
     tomorrow = (now.date() + timedelta(days=1)).isoformat()
+    in_three_days = (now.date() + timedelta(days=3)).isoformat()
+    in_three_days_name = DAY_NAMES[(now.date() + timedelta(days=3)).weekday()]
     task_lines = "\n".join(
         f"- id {t.id}: {t.title}" + (f" (paso de la tarea id {t.parent_id})" if t.parent_id else "")
         for t in pending[:30]
@@ -113,11 +117,14 @@ Intenciones:
 
 Fechas: date en AAAA-MM-DD y time en HH:MM de 24 horas; null si el usuario no las dijo. Nunca inventes.
 Para "en 20 minutos" o "en 2 horas" usa relative_minutes y deja date y time en null.
+date y time son el inicio: cuándo avisarle o empezar. deadline_date y deadline_time son el vencimiento: solo si dice cuándo vence o el límite ("vence", "antes de", "fecha límite", "a más tardar", "tiene que estar", "entregar"). Si no habla de un límite, omítelos.
 repeat_minutes: solo si pide que le insistas o repitas el aviso cada cierto tiempo hasta hacerlo (cada media hora = 30, cada hora = 60, cada 2 horas = 120). Para dejar de repetir usa 0. Si no lo pide, null. "cada" no es "en": "en 30 minutos" es relative_minutes.
 
 Ejemplos:
 "recuérdame tomar la medicina a las 8 de la noche y repítemelo cada 30 minutos hasta que la tome" -> {{"intent":"create_task","title":"Tomar la medicina","date":null,"time":"20:00","relative_minutes":null,"category":"salud","urgency":"media","task_id":null,"repeat_minutes":30,"subtasks":null}}
 "recuérdame pagar la luz mañana a las 3 de la tarde" -> {{"intent":"create_task","title":"Pagar la luz","date":"{tomorrow}","time":"15:00","relative_minutes":null,"category":"finanzas","urgency":"media","task_id":null,"repeat_minutes":null,"subtasks":null}}
+"empiezo el informe mañana a las 9 y vence el {in_three_days_name} a las 5 de la tarde" -> {{"intent":"create_task","title":"Hacer el informe","date":"{tomorrow}","time":"09:00","relative_minutes":null,"category":"trabajo","urgency":"media","task_id":null,"repeat_minutes":null,"subtasks":null,"deadline_date":"{in_three_days}","deadline_time":"17:00"}}
+"tengo que entregar el proyecto a más tardar el {in_three_days_name}" -> {{"intent":"create_task","title":"Entregar el proyecto","date":null,"time":null,"relative_minutes":null,"category":"trabajo","urgency":"media","task_id":null,"repeat_minutes":null,"subtasks":null,"deadline_date":"{in_three_days}","deadline_time":null}}
 "en 20 minutos sacar la ropa" -> {{"intent":"create_task","title":"Sacar la ropa","date":null,"time":null,"relative_minutes":20,"category":"casa","urgency":"media","task_id":null,"repeat_minutes":null,"subtasks":null}}
 "renovar la licencia de conducir" -> {{"intent":"create_task","title":"Renovar la licencia de conducir","date":null,"time":null,"relative_minutes":null,"category":"personal","urgency":"media","task_id":null,"repeat_minutes":null,"subtasks":null}}
 "mejor ponlo en trabajo y que sea urgente" -> {{"intent":"edit_task","title":null,"date":null,"time":null,"relative_minutes":null,"category":"trabajo","urgency":"alta","task_id":null,"repeat_minutes":null,"subtasks":null}}
