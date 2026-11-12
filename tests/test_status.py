@@ -1,5 +1,6 @@
 import http.client
 import json
+import re
 import socket
 import unittest
 
@@ -84,6 +85,72 @@ class ServerTests(unittest.TestCase):
     def test_busy_port_does_not_crash(self):
         with self.assertLogs("hermes.status", level="WARNING"):
             self.assertIsNone(start_status_server(VoiceStatus(), self.port))
+
+
+class PauseTests(unittest.TestCase):
+    def setUp(self):
+        self.port = free_port()
+        self.status = VoiceStatus()
+        self.status.set_state("escuchando")
+        self.server = start_status_server(self.status, self.port)
+        page = self.request("GET", "/")[1].decode("utf-8")
+        self.token = re.search(r'name="hermes-token" content="([^"]+)"', page).group(1)
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def request(self, method, path, body=None, headers=None):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request(method, path, body=body, headers={"Host": f"127.0.0.1:{self.port}", **(headers or {})})
+        response = connection.getresponse()
+        data = response.read()
+        connection.close()
+        return response, data
+
+    def post(self, listening, **overrides):
+        headers = {
+            "Origin": f"http://127.0.0.1:{self.port}",
+            "X-Hermes-Token": self.token,
+            "Content-Type": "application/json",
+            **overrides,
+        }
+        return self.request("POST", "/voice", json.dumps({"listening": listening}), headers)[0]
+
+    def test_token_is_new_and_hidden_placeholder_is_replaced(self):
+        self.assertNotIn("__CSRF_TOKEN__", self.request("GET", "/")[1].decode("utf-8"))
+        self.assertGreaterEqual(len(self.token), 20)
+
+    def test_pause_and_resume(self):
+        self.assertEqual(self.post(False).status, 200)
+        snapshot = self.status.snapshot()
+        self.assertTrue(snapshot["paused"])
+        self.assertEqual(snapshot["state"], "pausada")
+        self.assertEqual(self.post(True).status, 200)
+        self.assertFalse(self.status.paused)
+
+    def test_other_websites_cannot_pause(self):
+        for overrides in (
+            {"Origin": "https://malicioso.example"},
+            {"Origin": ""},
+            {"X-Hermes-Token": "adivinado"},
+            {"X-Hermes-Token": ""},
+            {"Host": "malicioso.example"},
+        ):
+            self.assertEqual(self.post(False, **overrides).status, 403, overrides)
+        self.assertFalse(self.status.paused)
+
+    def test_invalid_bodies_are_rejected(self):
+        headers = {"Origin": f"http://127.0.0.1:{self.port}", "X-Hermes-Token": self.token, "Content-Type": "application/json"}
+        for body in ("no json", "[]", '{"listening": "no"}', "{}", "x" * 1000):
+            self.assertEqual(self.request("POST", "/voice", body, headers)[0].status, 400, body)
+        form = {**headers, "Content-Type": "text/plain"}
+        self.assertEqual(self.request("POST", "/voice", '{"listening": false}', form)[0].status, 400)
+        self.assertFalse(self.status.paused)
+
+    def test_unknown_post_path(self):
+        headers = {"Origin": f"http://127.0.0.1:{self.port}", "X-Hermes-Token": self.token, "Content-Type": "application/json"}
+        self.assertEqual(self.request("POST", "/otra", "{}", headers)[0].status, 404)
 
 
 class TasksPageTests(unittest.TestCase):

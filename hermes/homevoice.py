@@ -228,8 +228,21 @@ class HomeVoice:
             self.status.set_state("escuchando")
 
 
+def wait_while_paused(status: VoiceStatus, stop: threading.Event) -> None:
+    """Con la pausa, el micrófono queda cerrado: Windows ni siquiera muestra que se esté usando."""
+    if status.paused and not stop.is_set():
+        log.info("Voz en casa en pausa: micrófono cerrado")
+        status.set_state("pausada")
+        status.set_level(0, 0)
+        while status.paused and not stop.is_set():
+            stop.wait(0.5)
+        if not stop.is_set():
+            log.info("Voz en casa reactivada")
+            status.set_state("escuchando")
+
+
 def run_microphone_loop(build: Callable[[Callable[[], bytes], Callable[[], None]], HomeVoice], stop: threading.Event) -> None:
-    """Mantiene abierto el micrófono y se recupera si el dispositivo falla."""
+    """Mantiene abierto el micrófono, lo cierra durante la pausa y se recupera si el dispositivo falla."""
     import sounddevice as sd
 
     while not stop.is_set():
@@ -260,12 +273,19 @@ def run_microphone_loop(build: Callable[[Callable[[], bytes], Callable[[], None]
 
         try:
             voice = build(read, flush)
-            with sd.RawInputStream(
-                samplerate=SAMPLE_RATE, blocksize=FRAME_SAMPLES, channels=1, dtype="int16", callback=on_audio
-            ):
-                log.info("Voz en casa activa: escuchando la palabra de activación")
-                while not stop.is_set():
-                    voice.step()
+            while not stop.is_set():
+                wait_while_paused(voice.status, stop)
+                if stop.is_set():
+                    return
+                flush()
+                voice.detector.reset()
+                with sd.RawInputStream(
+                    samplerate=SAMPLE_RATE, blocksize=FRAME_SAMPLES, channels=1, dtype="int16", callback=on_audio
+                ):
+                    log.info("Voz en casa activa: escuchando la palabra de activación")
+                    voice.status.set_state("escuchando")
+                    while not stop.is_set() and not voice.status.paused:
+                        voice.step()
         except InterruptedError:
             return
         except Exception:

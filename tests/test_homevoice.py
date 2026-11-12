@@ -10,7 +10,11 @@ from hermes.homevoice import (
     rms,
     speakable,
     strip_wake_word,
+    wait_while_paused,
 )
+import threading
+
+from hermes.status import VoiceStatus
 from hermes.voice import is_hallucination
 
 SILENCE = array("h", [0] * FRAME_SAMPLES).tobytes()
@@ -230,6 +234,30 @@ class ConversationTests(unittest.TestCase):
         for _ in range(400):
             voice.step()
         self.assertGreater(voice.noise, start)
+
+
+class PauseLoopTests(unittest.TestCase):
+    def test_waits_while_paused_and_resumes_listening(self):
+        status, stop = VoiceStatus(), threading.Event()
+        status.set_paused(True)
+        states = []
+        stop.wait = lambda _seconds: (states.append(status.snapshot()["state"]), status.set_paused(False))
+        wait_while_paused(status, stop)
+        self.assertEqual(states, ["pausada"])
+        self.assertEqual(status.snapshot()["state"], "escuchando")
+
+    def test_returns_at_once_when_not_paused(self):
+        status = VoiceStatus()
+        status.set_state("escuchando")
+        wait_while_paused(status, threading.Event())
+        self.assertEqual(status.snapshot()["state"], "escuchando")
+
+    def test_stop_ends_the_pause(self):
+        status, stop = VoiceStatus(), threading.Event()
+        status.set_paused(True)
+        stop.set()
+        wait_while_paused(status, stop)
+        self.assertTrue(status.paused)
 
 
 if __name__ == "__main__":

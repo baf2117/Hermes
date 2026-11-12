@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import threading
 import time
 from collections import deque
@@ -33,6 +34,21 @@ class VoiceStatus:
         self._usage: dict[str, Any] = {}
         self._usage_at = -USAGE_REFRESH_SECONDS
         self._sources: dict[str, Callable[[], dict[str, Any]]] = {}
+        self._paused = False
+        self._actions: dict[str, Callable[[Any], dict[str, Any]]] = {}
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    def set_paused(self, paused: bool) -> None:
+        """Desde la página: con la pausa, el micrófono se cierra hasta que lo vuelvas a activar."""
+        with self._lock:
+            self._paused = paused
+            if paused and self._state == "escuchando":
+                self._state = "pausada"
+                self._level = 0.0
+        log.info("Voz en casa %s desde la página", "en pausa" if paused else "reactivada")
 
     def set_usage_source(self, source: Callable[[], dict[str, Any]]) -> None:
         self._usage_source = source
@@ -53,6 +69,22 @@ class VoiceStatus:
         except Exception:
             log.exception("No se pudieron leer los datos de %s para la página", name)
             return {}
+
+    def set_action(self, name: str, action: Callable[[Any], dict[str, Any]]) -> None:
+        """Cambios que la página puede pedir, por ejemplo editar tareas."""
+        self._actions[name] = action
+
+    def has_action(self, name: str) -> bool:
+        return name in self._actions
+
+    def act(self, name: str, payload: Any) -> tuple[int, dict[str, Any]]:
+        try:
+            return 200, self._actions[name](payload)
+        except ValueError as exc:  # Datos inválidos: el mensaje es para el usuario.
+            return 400, {"error": str(exc) or "Solicitud inválida."}
+        except Exception:
+            log.exception("Falló la acción %s pedida desde la página", name)
+            return 500, {"error": "Ocurrió un error. Revisa el registro de Hermes."}
 
     def tasks(self) -> dict[str, Any]:
         return self.read("tasks")
@@ -95,6 +127,7 @@ class VoiceStatus:
         with self._lock:
             return {
                 "state": self._state,
+                "paused": self._paused,
                 "level": round(self._level),
                 "threshold": round(self._threshold),
                 "version": self._version,
@@ -149,6 +182,7 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hermes</title>
+<meta name="hermes-token" content="__CSRF_TOKEN__">
 <style>
 :root {
   --bg:#f4f3ef; --card:#ffffff; --ink:#1d1d1b; --muted:#6b6962; --faint:#9a978e; --line:#e4e1d8; --soft:#eeece6;
@@ -320,6 +354,8 @@ body.stage header { background:color-mix(in srgb, #0a0c0f 85%, transparent); }
 .disc img { width:78%; height:78%; object-fit:contain; transform:translate(-2%, 2%); user-select:none; }
 .orb[data-state="inactiva"] { --glow:.06; } .orb[data-state="inactiva"] .ripple { animation:none; }
 .orb[data-state="escuchando"] { --glow:.32; --speed:4.2s; }
+.orb[data-state="pausada"] { --glow:.04; } .orb[data-state="pausada"] .ripple { animation:none; }
+.orb[data-state="pausada"] .disc { filter:grayscale(1) brightness(.55); transition:filter .4s; }
 .orb[data-state="pitido"], .orb[data-state="grabando"] { --glow:1; --speed:1.5s; }
 .orb[data-state="transcribiendo"], .orb[data-state="pensando"] { --glow:.7; --speed:2.4s; }
 .orb[data-state="pensando"] .disc { animation:breathe 1.6s ease-in-out infinite; }
@@ -328,6 +364,13 @@ body.stage header { background:color-mix(in srgb, #0a0c0f 85%, transparent); }
 .stage-wrap #state { color:rgb(242,194,48); font-size:28px; }
 .stage-wrap #hint { margin-top:-12px; }
 .stage-meter { width:min(78vw, 360px); }
+.mic-btn { font:inherit; font-weight:600; font-size:15px; display:inline-flex; align-items:center; gap:9px; padding:10px 22px; border-radius:999px;
+  border:1.5px solid var(--accent); background:transparent; color:var(--accent); cursor:pointer; transition:background .2s, color .2s; }
+.mic-btn:hover { background:color-mix(in srgb, var(--accent) 12%, transparent); }
+.mic-btn:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.mic-btn[aria-pressed="true"] { background:var(--accent); color:#14110a; }
+.mic-btn:disabled { opacity:.5; cursor:default; }
+.mic-btn svg { width:18px; height:18px; flex:none; }
 .stage-meter .meter { height:6px; border-radius:6px; }
 .stage-meter .nums { font-size:12px; }
 @media (prefers-reduced-motion: reduce) {
@@ -395,6 +438,10 @@ body.stage header { background:color-mix(in srgb, #0a0c0f 85%, transparent); }
     </div>
     <div id="state" role="status">Conectando…</div>
     <div id="hint"></div>
+    <button class="mic-btn" id="mic-btn" type="button" aria-pressed="false" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path id="mic-slash" d="M4 4l16 16"/></svg>
+      <span id="mic-label">Dejar de escuchar</span>
+    </button>
     <div class="stage-meter">
       <div class="meter"><div id="fill"></div><div id="mark"></div></div>
       <div class="nums"><span id="level">Nivel: 0</span><span id="threshold">Mínimo para contar como voz: 0</span></div>
@@ -597,6 +644,7 @@ setInterval(() => { if (currentView() === "tareas") loadTasks(); }, 5000);
 const STATES = {
   inactiva: ["Inactiva", "La voz en casa no está disponible."],
   escuchando: ["Escuchando", "Di “Hermes”. Nada se graba hasta entonces."],
+  pausada: ["En pausa", "El micrófono está apagado. Telegram sigue funcionando."],
   pitido: ["Te oí", "Espera el pitido."],
   grabando: ["Grabando tu orden", "Habla ahora. Termina cuando te quedes callado."],
   transcribiendo: ["Entendiendo el audio", "Convirtiendo tu voz en texto."],
@@ -797,13 +845,36 @@ function updateOrb(s) {
   orbLevel = orbLevel * 0.45 + target * 0.55;
   orb.style.setProperty("--level", orbLevel.toFixed(3));
 }
+const TOKEN = document.querySelector('meta[name="hermes-token"]').content;
+let micBusy = false;
+function updateMicButton(s) {
+  const btn = $("mic-btn");
+  btn.disabled = micBusy || s.state === "inactiva";
+  btn.setAttribute("aria-pressed", String(!!s.paused));
+  $("mic-label").textContent = s.paused ? "Volver a escuchar" : "Dejar de escuchar";
+  $("mic-slash").style.display = s.paused ? "none" : "";
+}
+$("mic-btn").addEventListener("click", async () => {
+  const listening = $("mic-btn").getAttribute("aria-pressed") === "true";
+  micBusy = true; $("mic-btn").disabled = true;
+  try {
+    const res = await fetch("/voice", {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json", "X-Hermes-Token": TOKEN },
+      body: JSON.stringify({ listening })
+    });
+    if (res.status === 403) location.reload();  // Hermes se reinició: la página necesita la clave nueva.
+  } catch { $("offline").style.display = "block"; }
+  micBusy = false;
+});
 async function tick() {
   try {
     const res = await fetch("/status", { cache: "no-store" });
     const s = await res.json();
     $("offline").style.display = "none";
     const [title, hint] = STATES[s.state] || [s.state, ""];
-    $("pill").classList.toggle("on", s.state !== "inactiva");
+    $("pill").classList.toggle("on", s.state !== "inactiva" && s.state !== "pausada");
+    updateMicButton(s);
     $("pill").lastElementChild.textContent = "Voz: " + title.toLowerCase();
     if (currentView() === "vivo") {
       $("state").textContent = title; $("hint").textContent = hint;
@@ -830,8 +901,15 @@ tick();
 """
 
 
+MAX_POST_BYTES = 4096
+
+
 def make_handler(status: VoiceStatus, port: int) -> type[BaseHTTPRequestHandler]:
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+    allowed_origins = {f"http://{host}" for host in allowed_hosts}
+    # Clave nueva en cada arranque: solo la conoce la página servida aquí, así otra web no puede pausar el micrófono.
+    token = secrets.token_urlsafe(24)
+    page = PAGE.replace("__CSRF_TOKEN__", token).encode("utf-8")
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, content_type: str, body: bytes) -> None:
@@ -853,7 +931,7 @@ def make_handler(status: VoiceStatus, port: int) -> type[BaseHTTPRequestHandler]
             if self.headers.get("Host") not in allowed_hosts:
                 self._send(403, "text/plain; charset=utf-8", b"Solo desde esta computadora.")
             elif path == "/":
-                self._send(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
+                self._send(200, "text/html; charset=utf-8", page)
             elif path == "/logo.webp" and LOGO_PATH.exists():
                 self._send(200, "image/webp", LOGO_PATH.read_bytes())
             elif path == "/status":
@@ -862,6 +940,38 @@ def make_handler(status: VoiceStatus, port: int) -> type[BaseHTTPRequestHandler]
                 self._send(200, "application/json", json.dumps(status.read(path[1:])).encode("utf-8"))
             else:
                 self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
+
+        def _json(self, code: int, data: dict[str, Any]) -> None:
+            self._send(code, "application/json", json.dumps(data).encode("utf-8"))
+
+        def do_POST(self) -> None:
+            # Otra web abierta en el navegador podría enviar formularios aquí: se exige el origen
+            # de esta página y la clave que solo ella conoce.
+            sent_token = self.headers.get("X-Hermes-Token", "").encode("latin-1", "replace")
+            if (
+                self.headers.get("Host") not in allowed_hosts
+                or self.headers.get("Origin") not in allowed_origins
+                or not secrets.compare_digest(sent_token, token.encode("ascii"))
+            ):
+                return self._send(403, "text/plain; charset=utf-8", b"No permitido.")
+            path = urlsplit(self.path).path
+            if path not in ("/voice", "/tasks") or (path == "/tasks" and not status.has_action("tasks")):
+                return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_POST_BYTES or self.headers.get("Content-Type") != "application/json":
+                    raise ValueError
+                payload = json.loads(self.rfile.read(length))
+            except ValueError:
+                return self._json(400, {"error": "Solicitud inválida."})
+            if path == "/voice":
+                listening = payload.get("listening") if isinstance(payload, dict) else None
+                if not isinstance(listening, bool):
+                    return self._json(400, {"error": "Solicitud inválida."})
+                status.set_paused(not listening)
+                return self._json(200, {"paused": status.paused})
+            code, result = status.act("tasks", payload)
+            self._json(code, result)
 
         def log_message(self, *_: Any) -> None:
             pass
