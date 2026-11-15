@@ -180,7 +180,9 @@ PAGE = """<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c0f">
+<meta name="robots" content="noindex">
 <title>Hermes</title>
 <meta name="hermes-token" content="__CSRF_TOKEN__">
 <style>
@@ -446,12 +448,56 @@ body.stage header { background:color-mix(in srgb, #0a0c0f 85%, transparent); }
 .msg.hermes { background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
 .msg small { display:block; color:var(--faint); font-size:11px; margin-top:3px; }
 
-@media (max-width:640px) {
-  .stats { grid-template-columns:repeat(2, 1fr); }
-  .tabs a { padding:6px 10px; }
-  .xlabels span:nth-child(even):not(:first-child) { visibility:hidden; }
-  .brand { width:100%; }
+/* Teléfono y pantallas táctiles */
+html { -webkit-text-size-adjust:100%; }
+a, button, input, select, summary { -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+.bar, main { padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right)); }
+main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
+.toast { bottom:calc(22px + env(safe-area-inset-bottom)); }
+@supports (height:100dvh) {
+  dialog#editor { max-height:calc(100dvh - 24px); }
+  .stage-wrap { min-height:calc(100dvh - 150px); }
 }
+@media (pointer:coarse) {
+  /* Zonas de toque de al menos 40 px aunque el dibujo sea pequeño. */
+  .tick { position:relative; }
+  .tick::after { content:""; position:absolute; inset:-11px; }
+  .steps .tick::after { inset:-7px -11px; }
+  .steps li { padding:6px 0; }
+  .filters button { padding:8px 14px; }
+  .tabs a { padding:9px 12px; }
+  .ghost, .primary, .danger, .mic-btn { min-height:44px; }
+  .icon-btn { min-width:40px; min-height:40px; }
+  .undo { padding:8px 0 8px 12px; }
+  .toast button { padding:8px 4px; }
+  details.finished summary, details.table-view summary { padding:10px 0; }
+  /* Con menos de 16 px, el teléfono acerca la página al tocar un campo. */
+  .field input, .field select, .add-step input, .search { font-size:16px; min-height:44px; }
+}
+@media (max-width:640px) {
+  .bar { gap:10px 12px; padding-top:10px; padding-bottom:10px; }
+  .tabs { order:3; width:100%; }
+  .tabs a { flex:1; text-align:center; padding-left:6px; padding-right:6px; }
+  main { padding-top:16px; }
+  h2 { font-size:20px; }
+  section { padding:14px; }
+  .stats { grid-template-columns:repeat(2, 1fr); gap:10px; }
+  .stat { padding:12px 14px; }
+  .stat b { font-size:24px; }
+  .task, .group-head { padding-left:14px; padding-right:14px; }
+  .task { gap:10px; }
+  .top { flex-wrap:wrap; }
+  .msg { max-width:92%; }
+  .xlabels span:nth-child(even):not(:first-child) { visibility:hidden; }
+  /* El editor sube desde abajo y ocupa todo el ancho. */
+  dialog#editor { width:100vw; max-width:100vw; margin:auto 0 0; border-radius:18px 18px 0 0; border-width:1px 0 0; max-height:92vh; }
+  #ed-form { padding:16px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .date-row { flex-wrap:wrap; }
+  .date-row input { flex:1 1 190px; }
+  .ed-actions .ghost { margin-left:auto; }
+  .ed-actions .primary { order:3; flex:1 1 100%; margin-left:0; }
+}
+@media (max-width:640px) { @supports (height:100dvh) { dialog#editor { max-height:92dvh; } } }
 </style>
 </head>
 <body class="stage">
