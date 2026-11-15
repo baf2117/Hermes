@@ -15,7 +15,7 @@ from . import spoken
 from .config import Config
 from .llm import DAY_NAMES, LLMError
 from .speakers import DEFAULT_VOICES, VOICE_HELP, VOICE_KEY, describe_voice
-from .store import STOPWORDS, Store, Task
+from .store import MailNote, STOPWORDS, Store, Task
 from .websearch import SearchError
 
 log = logging.getLogger(__name__)
@@ -150,6 +150,9 @@ FALLBACK_FACTS = 8
 # Verdadero mientras se atiende una orden dicha en voz alta: el modelo redacta para ser escuchado.
 _SPOKEN = contextvars.ContextVar("hermes_spoken", default=False)
 
+MAIL_OPEN_HOURS = 48  # El resumen lista los correos importantes de este lapso que siguen sin atender.
+MAX_MAILS_IN_SUMMARY = 5
+
 
 @dataclass
 class Reply:
@@ -237,7 +240,46 @@ class Assistant:
                 parts.append(f"\n{label}:\n" + "\n".join(self.format_task(t) for t in tasks))
         if len(parts) == 1:
             parts.append("No tienes tareas para hoy.")
+        mails = self.store.open_emails(int(now.timestamp()) - MAIL_OPEN_HOURS * 3600)
+        if mails:
+            lines = [f"• {m.sender}: {m.subject}" for m in mails[:MAX_MAILS_IN_SUMMARY]]
+            if len(mails) > MAX_MAILS_IN_SUMMARY:
+                lines.append(f"… y {len(mails) - MAX_MAILS_IN_SUMMARY} más")
+            parts.append("\nCorreos sin atender:\n" + "\n".join(lines))
         return "\n".join(parts)
+
+    def mail_text(self, note: MailNote) -> str:
+        """Aviso de un correo importante. Sin enlaces; el remitente se muestra con su dirección real."""
+        from .mailwatch import clean  # Importación tardía: mailwatch no depende del asistente.
+
+        text = f"📧 Correo de {note.sender}\nAsunto: {clean(note.subject, 200) or '(sin asunto)'}"
+        if note.summary:
+            text += f"\n{note.summary}"
+        if note.task_title:
+            when = f" · {self.format_due(note.task_due_at)}" if note.task_due_at is not None else ""
+            text += f"\n\nTarea sugerida: {note.task_title}{when}"
+        return text
+
+    def _mail_button(self, action: str, email_id: int) -> Reply:
+        note = self.store.get_email(email_id)
+        if note is None:
+            return Reply("Ese correo ya no está en mi lista.")
+        if note.handled:
+            return Reply("Ese correo ya lo habías atendido.")
+        if action == "mailskip":
+            self.store.mark_email(note.id, handled=True)
+            return Reply("Listo, lo doy por visto.")
+        if not note.task_title:
+            return Reply("Ese correo no traía una tarea sugerida.")
+        now = self._now()
+        due_at = note.task_due_at if note.task_due_at is not None and note.task_due_at > now.timestamp() else None
+        task = self.store.add_task(
+            note.task_title, self._clean_category(note.task_category) or "personal", "media", due_at,
+            f"correo de {note.sender}: {note.subject}", int(now.timestamp()),
+        )
+        self.store.mark_email(note.id, handled=True)
+        self._remember_last(task)
+        return self._confirmation(task, "Listo, la anoté:")
 
     def _with_subtasks(self, task: Task, pending: list[Task] | None = None) -> str:
         children = [t for t in pending if t.parent_id == task.id] if pending is not None else self.store.subtasks(task.id, "pending")
@@ -711,6 +753,8 @@ class Assistant:
         action, _, raw_id = data.partition(":")
         if not raw_id.isdigit():
             return Reply("No entendí ese botón.")
+        if action in ("mailtask", "mailskip"):
+            return self._mail_button(action, int(raw_id))
         if action == "forget":
             return Reply("Listo, lo olvidé." if self.store.delete_fact(int(raw_id)) else "Ese dato ya no estaba.")
         task = self._pending_by_id(int(raw_id))

@@ -132,6 +132,10 @@ class HybridLLM:
     def interpret(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return self.local.interpret(*args, **kwargs)
 
+    def classify_email(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        # Siempre el modelo local: el contenido del correo no sale de la computadora.
+        return self.local.classify_email(*args, **kwargs)
+
     def _ask(self, messages: Sequence[dict[str, str]], purpose: str, fallback: Callable[[], str]) -> str:
         if self._clock() >= self._retry_at:
             try:

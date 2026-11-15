@@ -51,6 +51,20 @@ CREATE TABLE IF NOT EXISTS facts (
     text TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    gmail_id TEXT NOT NULL UNIQUE,
+    ts INTEGER NOT NULL,
+    sender TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    important INTEGER NOT NULL,
+    task_title TEXT,
+    task_category TEXT,
+    task_due_at INTEGER,
+    notified_at INTEGER,
+    handled INTEGER NOT NULL DEFAULT 0
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     text, content='messages', content_rowid='id', tokenize='unicode61 remove_diacritics 2'
 );
@@ -122,6 +136,24 @@ class Task:
     def overdue_from(self) -> int | None:
         """Desde cuándo cuenta como vencida: el vencimiento si lo tiene; si no, el inicio."""
         return self.deadline_at if self.deadline_at is not None else self.due_at
+
+
+@dataclass(frozen=True)
+class MailNote:
+    """Lo que Hermes guarda de un correo: remitente, asunto y el resumen del modelo. Nunca el texto completo."""
+
+    id: int
+    gmail_id: str
+    ts: int
+    sender: str
+    subject: str
+    summary: str
+    important: bool
+    task_title: str | None = None
+    task_category: str | None = None
+    task_due_at: int | None = None
+    notified_at: int | None = None
+    handled: bool = False
 
 
 class Store:
@@ -394,6 +426,66 @@ class Store:
                 (query, skip_latest, limit),
             ).fetchall()
         return [(r["ts"], r["text"]) for r in rows]
+
+    @staticmethod
+    def _mail(row: sqlite3.Row) -> MailNote:
+        return MailNote(
+            id=row["id"], gmail_id=row["gmail_id"], ts=row["ts"], sender=row["sender"], subject=row["subject"],
+            summary=row["summary"], important=bool(row["important"]), task_title=row["task_title"],
+            task_category=row["task_category"], task_due_at=row["task_due_at"], notified_at=row["notified_at"],
+            handled=bool(row["handled"]),
+        )
+
+    def email_known(self, gmail_id: str) -> bool:
+        with self._lock:
+            return self._conn.execute("SELECT 1 FROM emails WHERE gmail_id = ?", (gmail_id,)).fetchone() is not None
+
+    def add_email(
+        self,
+        gmail_id: str,
+        ts: int,
+        sender: str,
+        subject: str,
+        summary: str,
+        important: bool,
+        task_title: str | None = None,
+        task_category: str | None = None,
+        task_due_at: int | None = None,
+    ) -> MailNote:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "INSERT INTO emails (gmail_id, ts, sender, subject, summary, important, task_title, task_category,"
+                " task_due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (gmail_id, ts, sender, subject, summary, int(important), task_title, task_category, task_due_at),
+            )
+            return self.get_email(int(cursor.lastrowid))  # type: ignore[return-value]
+
+    def get_email(self, email_id: int) -> MailNote | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM emails WHERE id = ?", (email_id,)).fetchone()
+        return self._mail(row) if row else None
+
+    def mark_email(self, email_id: int, notified_at: int | None = None, handled: bool | None = None) -> None:
+        with self._lock, self._conn:
+            if notified_at is not None:
+                self._conn.execute("UPDATE emails SET notified_at = ? WHERE id = ?", (notified_at, email_id))
+            if handled is not None:
+                self._conn.execute("UPDATE emails SET handled = ? WHERE id = ?", (int(handled), email_id))
+
+    def unnotified_emails(self) -> list[MailNote]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM emails WHERE important = 1 AND notified_at IS NULL AND handled = 0 ORDER BY ts"
+            ).fetchall()
+        return [self._mail(r) for r in rows]
+
+    def open_emails(self, since: int) -> list[MailNote]:
+        """Correos importantes recientes que el dueño todavía no atendió con los botones."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM emails WHERE important = 1 AND handled = 0 AND ts >= ? ORDER BY ts DESC", (since,)
+            ).fetchall()
+        return [self._mail(r) for r in rows]
 
     def kv_get(self, key: str) -> str | None:
         with self._lock:

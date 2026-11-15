@@ -54,6 +54,10 @@ class Config:
     verify_wake_word: bool = True
     voice: str = "piper"
     kokoro_dir: Path | None = None
+    mail_enabled: bool = True
+    mail_poll_seconds: int = 300
+    gmail_client_path: Path | None = None
+    gmail_token_path: Path | None = None
     public_host: str = ""  # Dominio del túnel (ngrok) por el que se permite abrir la página con contraseña.
     page_password: str = field(default="", repr=False)
     status_port: int = 47822
@@ -104,6 +108,10 @@ class Config:
             verify_wake_word=get("HERMES_WAKE_VERIFY", "on").lower() != "off",
             voice=get("HERMES_VOICE", "piper"),
             kokoro_dir=home / "models" / "kokoro",
+            mail_enabled=get("HERMES_MAIL", "on").lower() != "off",
+            mail_poll_seconds=max(60, int(get("HERMES_MAIL_POLL_SECONDS", "300"))),
+            gmail_client_path=home / "google-client.json",
+            gmail_token_path=home / "google-token.json",
             public_host=get("HERMES_PUBLIC_HOST"),
             page_password=get("HERMES_PAGE_PASSWORD"),
             status_port=int(get("HERMES_STATUS_PORT", "47822")),

@@ -21,6 +21,8 @@ from .homevoice import HomeVoice, PiperSpeaker, WakeWordDetector, run_microphone
 from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
 from .speakers import VOICE_KEY, SwitchableSpeaker
+from .gmail import GmailAuthError, GmailClient, authorize
+from .mailwatch import MailWatcher
 from .remote import RemoteAccess
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
 from .store import LLMUsage, Store
@@ -247,6 +249,17 @@ def run(config: Config) -> int:
 
         scheduler = Scheduler(store, assistant, config, send)
         threading.Thread(target=scheduler.run_forever, args=(stop,), daemon=True, name="scheduler").start()
+        gmail = GmailClient(config.gmail_client_path, config.gmail_token_path)
+        if not config.mail_enabled:
+            logging.info("Correo: vigilancia apagada (HERMES_MAIL=off)")
+        elif not gmail.configured:
+            logging.info("Correo: sin autorizar; ejecuta «python -m hermes gmail-auth» para encenderlo")
+        else:
+            watcher = MailWatcher(store, gmail, llm, config, send, assistant.mail_text)
+            threading.Thread(
+                target=watcher.run_forever, args=(stop, config.mail_poll_seconds), daemon=True, name="mail"
+            ).start()
+            logging.info("Correo: vigilando la bandeja principal cada %d s", config.mail_poll_seconds)
         if problem := backup_problem(config):
             logging.warning("Respaldo desactivado: %s", problem)
         else:
@@ -278,9 +291,34 @@ def run(config: Config) -> int:
     return 0
 
 
+def gmail_auth(config: Config) -> int:
+    """Pide en el navegador el permiso de solo lectura de Gmail y guarda la llave en la carpeta de datos."""
+    import webbrowser
+
+    if not config.gmail_client_path.exists():
+        print(f"Falta la credencial de Google en {config.gmail_client_path}", file=sys.stderr)
+        return 2
+    print("Se abrirá el navegador. Elige tu cuenta y acepta el permiso «ver tus correos».")
+    print("Si aparece «Google no ha verificado esta app»: Configuración avanzada → Ir a Hermes.")
+    try:
+        authorize(config.gmail_client_path, config.gmail_token_path, webbrowser.open)
+        count = len(GmailClient(config.gmail_client_path, config.gmail_token_path).list_ids(int(time.time()) - 86400))
+    except GmailAuthError as exc:
+        print(f"No se pudo autorizar: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Autorizado, pero no pude leer la bandeja: {exc}", file=sys.stderr)
+        return 1
+    print(f"Listo: permiso de solo lectura guardado. Correos en la bandeja principal en las últimas 24 h: {count}")
+    print("Reinicia Hermes para que empiece a vigilar.")
+    return 0
+
+
 def main() -> int:
     config = Config.load()
     command = sys.argv[1] if len(sys.argv) > 1 else "run"
+    if command == "gmail-auth":
+        return gmail_auth(config)
     if command == "check":
         return check(config)
     if command == "backup":
