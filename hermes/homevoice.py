@@ -301,8 +301,8 @@ class HomeVoice:
             if not order:
                 outcome = "solo_nombre"
                 return
-            reply = stage("pensar", "pensando", lambda: self.assistant.handle_text(order))
-            answer = speakable(reply.text)
+            reply = stage("pensar", "pensando", lambda: self.assistant.handle_text(order, spoken=True))
+            answer = speakable(getattr(reply, "spoken", None) or reply.text)
             stage("hablar", "hablando", lambda: self.speaker.speak(answer))
             outcome = "ok"
         except Exception:

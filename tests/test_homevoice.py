@@ -128,7 +128,7 @@ class FakeAssistant:
     def __init__(self):
         self.heard = []
 
-    def handle_text(self, text):
+    def handle_text(self, text, spoken=False):
         self.heard.append(text)
         return SimpleNamespace(text="🟡 Listo", buttons=[])
 

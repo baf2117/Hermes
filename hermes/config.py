@@ -52,6 +52,8 @@ class Config:
     piper_voice_path: Path | None = None
     wake_word: str = "hermes"
     verify_wake_word: bool = True
+    voice: str = "piper"
+    kokoro_dir: Path | None = None
     status_port: int = 47822
     tavily_api_key: str = ""
     llm_mode: str = "local"
@@ -98,6 +100,8 @@ class Config:
             ),
             wake_word=get("HERMES_WAKE_WORD", "hermes").lower(),
             verify_wake_word=get("HERMES_WAKE_VERIFY", "on").lower() != "off",
+            voice=get("HERMES_VOICE", "piper"),
+            kokoro_dir=home / "models" / "kokoro",
             status_port=int(get("HERMES_STATUS_PORT", "47822")),
             tavily_api_key=get("TAVILY_API_KEY"),
             llm_mode=get("HERMES_LLM_MODE", "local").lower(),

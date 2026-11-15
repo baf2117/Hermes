@@ -20,6 +20,7 @@ from .config import Config, hermes_home
 from .homevoice import HomeVoice, PiperSpeaker, WakeWordDetector, run_microphone_loop
 from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
+from .speakers import VOICE_KEY, SwitchableSpeaker
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
 from .store import LLMUsage, Store
 from .taskedit import TaskEditor
@@ -150,7 +151,11 @@ def start_home_voice(
             WakeWordDetector(config.vosk_model_dir, config.wake_word),
             transcriber,
             assistant,
-            PiperSpeaker(config.piper_voice_path),
+            SwitchableSpeaker(
+                lambda: assistant.store.kv_get(VOICE_KEY) or config.voice,
+                PiperSpeaker(config.piper_voice_path),
+                config.kokoro_dir,
+            ),
             read,
             flush,
             status,

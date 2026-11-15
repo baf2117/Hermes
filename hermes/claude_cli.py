@@ -141,14 +141,18 @@ class HybridLLM:
                 self._retry_at = self._clock() + COOLDOWN_SECONDS
         return fallback()
 
-    def reply(self, text: str, history: Sequence[tuple[str, str]], memory: str = "") -> str:
+    def reply(self, text: str, history: Sequence[tuple[str, str]], memory: str = "", spoken: bool = False) -> str:
         return self._ask(
-            reply_messages(text, history, memory), "conversación", lambda: self.local.reply(text, history, memory)
+            reply_messages(text, history, memory, spoken),
+            "conversación",
+            lambda: self.local.reply(text, history, memory, **({"spoken": True} if spoken else {})),
         )
 
-    def answer_from_web(self, question: str, query: str, results: Sequence[Any], now: datetime) -> str:
+    def answer_from_web(
+        self, question: str, query: str, results: Sequence[Any], now: datetime, spoken: bool = False
+    ) -> str:
         return self._ask(
-            web_messages(question, query, results, now),
+            web_messages(question, query, results, now, spoken),
             "búsqueda",
-            lambda: self.local.answer_from_web(question, query, results, now),
+            lambda: self.local.answer_from_web(question, query, results, now, **({"spoken": True} if spoken else {})),
         )

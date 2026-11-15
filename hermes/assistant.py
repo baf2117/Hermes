@@ -1,6 +1,7 @@
 """Lógica de Hermes: convierte mensajes en acciones validadas sobre las tareas."""
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import re
@@ -10,8 +11,10 @@ from datetime import datetime, time, timedelta
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from . import spoken
 from .config import Config
 from .llm import DAY_NAMES, LLMError
+from .speakers import DEFAULT_VOICES, VOICE_HELP, VOICE_KEY, describe_voice
 from .store import STOPWORDS, Store, Task
 from .websearch import SearchError
 
@@ -34,6 +37,7 @@ HELP_TEXT = (
     "/urgente 3: marca la tarea 3 como urgente\n"
     "/sub 3 empacar libros: agrega un paso a la tarea 3\n"
     "/repetir 3 30: repite el aviso de la tarea 3 cada 30 min hasta que esté hecha (0 lo detiene)\n"
+    "/voz: cambia la voz con la que te contesto en casa\n"
     "/memoria: lo que recuerdo de ti\n"
     "/olvidar 2: borra el dato 2 de mi memoria\n"
     "/ayuda: este mensaje\n\n"
@@ -143,10 +147,15 @@ MEMORY_MESSAGES = 3
 FALLBACK_FACTS = 8
 
 
+# Verdadero mientras se atiende una orden dicha en voz alta: el modelo redacta para ser escuchado.
+_SPOKEN = contextvars.ContextVar("hermes_spoken", default=False)
+
+
 @dataclass
 class Reply:
     text: str
     buttons: list[list[tuple[str, str]]] = field(default_factory=list)
+    spoken: str | None = None  # Cómo decirlo en voz alta; si falta, se lee `text`.
 
 
 class DueProblem(Exception):
@@ -236,16 +245,26 @@ class Assistant:
         return "\n".join(lines)
 
     def _list_text(self) -> str:
+        return self._list_reply().text
+
+    def _list_reply(self) -> Reply:
         pending = self.store.pending_tasks()
         if not pending:
-            return "No tienes tareas pendientes."
+            return Reply("No tienes tareas pendientes.", spoken=spoken.task_list([], {}, self._now()))
         pending_ids = {t.id for t in pending}
         roots = [t for t in pending if t.parent_id is None or t.parent_id not in pending_ids]
-        return "Pendientes:\n" + "\n".join(self._with_subtasks(t, pending) for t in roots)
+        steps = {root.id: [t.title for t in pending if t.parent_id == root.id] for root in roots}
+        text = "Pendientes:\n" + "\n".join(self._with_subtasks(t, pending) for t in roots)
+        return Reply(text, spoken=spoken.task_list(roots, steps, self._now()))
 
-    def _confirmation(self, task: Task, prefix: str) -> Reply:
+    def _confirmation(self, task: Task, prefix: str, say: str | None = None) -> Reply:
         text = f"{prefix}\n{self._with_subtasks(task)}\n\nSi algo está mal, dímelo y lo corrijo."
-        return Reply(text, [[("🗑 Borrar", f"cancel:{task.id}")]])
+        return Reply(text, [[("🗑 Borrar", f"cancel:{task.id}")]], say)
+
+    @staticmethod
+    def _voice_style() -> dict[str, bool]:
+        """Argumento extra para el modelo solo cuando la orden llegó por voz."""
+        return {"spoken": True} if _SPOKEN.get() else {}
 
     # --- Validación de lo que propone el modelo ---
 
@@ -368,7 +387,8 @@ class Assistant:
             return self._confirmation(task, f"Guardada sin aviso. {problem} ¿Para cuándo la dejo?")
         if problem:
             return self._confirmation(task, f"La anoté. {problem}")
-        return self._confirmation(task, "Listo, la anoté:")
+        steps = [step.title for step in self.store.subtasks(task.id, "pending")]
+        return self._confirmation(task, "Listo, la anoté:", spoken.created(task, self._now(), steps))
 
     def _edit(self, data: dict[str, Any], reference: datetime) -> Reply:
         task = self._pending_by_id(data.get("task_id")) or self._last_task()
@@ -409,7 +429,7 @@ class Assistant:
             return Reply("No entendí qué quieres cambiar. Por ejemplo: «ponla para el lunes a las 10».")
         updated = self.store.update_task(task.id, int(self._now().timestamp()), **changes)
         self._remember_last(updated)  # type: ignore[arg-type]
-        return self._confirmation(updated, "Corregida:")  # type: ignore[arg-type]
+        return self._confirmation(updated, "Corregida:", spoken.edited(updated, self._now()))  # type: ignore[arg-type]
 
     def _finish(self, task_id: Any, status: str) -> Reply:
         task = self._pending_by_id(task_id)
@@ -432,7 +452,7 @@ class Assistant:
             else:
                 left = len(self.store.subtasks(parent.id, "pending"))
                 lines.append(f"Quedan {left} de «{parent.title}».")
-        return Reply("\n".join(lines))
+        return Reply("\n".join(lines), spoken=spoken.finished(task, status, lines[1:]))
 
     def _add_subtasks(self, data: dict[str, Any], text: str) -> Reply:
         parent = self._pending_by_id(data.get("task_id")) or self._task_named_in(text) or self._last_task()
@@ -447,7 +467,9 @@ class Assistant:
         for step in steps:
             self.store.add_task(step, parent.category, "media", None, text, now_ts, parent_id=parent.id)
         self._remember_last(parent)
-        return self._confirmation(parent, f"Agregué {len(steps)} {'paso' if len(steps) == 1 else 'pasos'}:")
+        return self._confirmation(
+            parent, f"Agregué {len(steps)} {'paso' if len(steps) == 1 else 'pasos'}:", spoken.steps_added(parent, steps)
+        )
 
     def _remember(self, data: dict[str, Any], text: str) -> Reply:
         fact = str(data.get("title") or text).strip()[:500]
@@ -466,7 +488,7 @@ class Assistant:
             return Reply("No pude buscar en internet en este momento. Inténtalo otra vez en un rato.")
         if not results:
             return Reply("No encontré resultados sobre eso.")
-        answer = self.llm.answer_from_web(text, query, results, reference)
+        answer = self.llm.answer_from_web(text, query, results, reference, **self._voice_style())
         domains = dict.fromkeys(
             (urlsplit(r.url).hostname or "").removeprefix("www.") for r in results[:2]
         )
@@ -571,7 +593,7 @@ class Assistant:
         if intent == "cancel_task":
             return self._finish(data.get("task_id"), "cancelled")
         if intent == "list_tasks":
-            return Reply(self._list_text())
+            return self._list_reply()
         if (urgency := requested_urgency(text)) and (task := self._task_named_in(text)):
             # El modelo a veces toma "ponla urgente" como conversación; si nombra una tarea, se edita.
             return self._edit({"task_id": task.id, "urgency": urgency}, reference)
@@ -579,7 +601,21 @@ class Assistant:
             # El modelo a veces trata esto como conversación y contesta que no lo sabe.
             facts = "; ".join(fact for _, fact in self.store.search_facts(text, 3))
             return self._web_search({"title": f"{text} ({facts})" if facts else text}, text, reference)
-        return Reply(self.llm.reply(text, self.store.recent_messages(HISTORY_TURNS), self._memory_for_chat(text)))
+        return Reply(
+            self.llm.reply(
+                text, self.store.recent_messages(HISTORY_TURNS), self._memory_for_chat(text), **self._voice_style()
+            )
+        )
+
+    def _voice_command(self, choice: str) -> Reply:
+        current = describe_voice(self.store.kv_get(VOICE_KEY) or self.config.voice)
+        if not choice:
+            return Reply(f"Voz actual: {current}\n\n{VOICE_HELP}")
+        if choice.partition(":")[0].strip().lower() not in DEFAULT_VOICES:
+            return Reply(f"No conozco esa voz.\n\n{VOICE_HELP}")
+        chosen = describe_voice(choice)
+        self.store.kv_set(VOICE_KEY, chosen)
+        return Reply(f"Listo, la próxima respuesta en casa será con la voz {chosen}. Dime «Hermes» para oírla.")
 
     def _command(self, text: str) -> Reply:
         command, _, argument = text.partition(" ")
@@ -587,7 +623,9 @@ class Assistant:
         if command in ("/start", "/ayuda"):
             return Reply("Hola, soy Hermes.\n\n" + HELP_TEXT)
         if command == "/tareas":
-            return Reply(self._list_text())
+            return self._list_reply()
+        if command == "/voz":
+            return self._voice_command(argument.strip())
         if command == "/hoy":
             return Reply(self.build_summary())
         if command in ("/hecho", "/borrar"):
@@ -627,7 +665,15 @@ class Assistant:
 
     # --- Entradas ---
 
-    def handle_text(self, text: str, sent_at: datetime | None = None) -> Reply:
+    def handle_text(self, text: str, sent_at: datetime | None = None, spoken: bool = False) -> Reply:
+        """Con spoken=True la orden llegó por voz: la respuesta trae una versión para decir en voz alta."""
+        token = _SPOKEN.set(spoken)
+        try:
+            return self._handle_text(text, sent_at)
+        finally:
+            _SPOKEN.reset(token)
+
+    def _handle_text(self, text: str, sent_at: datetime | None) -> Reply:
         text = text.strip()
         now = self._now()
         reference = min(sent_at, now) if sent_at else now
