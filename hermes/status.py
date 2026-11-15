@@ -12,7 +12,9 @@ from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Sequence
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
+
+from .remote import RemoteAccess, login_page
 
 log = logging.getLogger(__name__)
 
@@ -643,6 +645,7 @@ async function send(path, body) {
     headers: { "Content-Type": "application/json", "X-Hermes-Token": TOKEN },
     body: JSON.stringify(body)
   });
+  if (res.status === 401) { location.href = "/login"; throw new Error("La sesión terminó; entra de nuevo."); }
   if (res.status === 403) { location.reload(); throw new Error("Hermes se reinició; recargando la página…"); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "No se pudo guardar.");
@@ -1244,6 +1247,7 @@ $("mic-btn").addEventListener("click", async () => {
 async function tick() {
   try {
     const res = await fetch("/status", { cache: "no-store" });
+    if (res.status === 401) { location.href = "/login"; return; }
     const s = await res.json();
     $("offline").style.display = "none";
     const [title, hint] = STATES[s.state] || [s.state, ""];
@@ -1276,9 +1280,11 @@ tick();
 
 
 MAX_POST_BYTES = 4096
+MAX_LOGIN_BYTES = 1024
 
 
-def make_handler(status: VoiceStatus, port: int) -> type[BaseHTTPRequestHandler]:
+def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = None) -> type[BaseHTTPRequestHandler]:
+    remote = remote or RemoteAccess()
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
     allowed_origins = {f"http://{host}" for host in allowed_hosts}
     # Clave nueva en cada arranque: solo la conoce la página servida aquí, así otra web no puede pausar el micrófono.
@@ -1286,25 +1292,64 @@ def make_handler(status: VoiceStatus, port: int) -> type[BaseHTTPRequestHandler]
     page = PAGE.replace("__CSRF_TOKEN__", token).encode("utf-8")
 
     class Handler(BaseHTTPRequestHandler):
-        def _send(self, code: int, content_type: str, body: bytes) -> None:
+        def _send(self, code: int, content_type: str, body: bytes, extra: dict[str, str] | None = None) -> None:
             self.send_response(code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            # "no-referrer" haría que el navegador mande "Origin: null" en el formulario de entrada.
+            self.send_header("Referrer-Policy", "same-origin")
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self'",
+                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; "
+                "img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             )
+            for name, value in (extra or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
+
+        def _is_remote(self) -> bool:
+            """Llegó por el túnel: o trae otro Host, o trae los encabezados que agrega un túnel."""
+            return self.headers.get("Host") not in allowed_hosts or remote.is_forwarded(self.headers)
+
+        def _remote_allowed(self) -> bool:
+            # Solo el dominio configurado; cualquier otro nombre (o un túnel que reescribe el Host) se rechaza.
+            return remote.enabled and (self.headers.get("Host") or "").lower() == remote.host
+
+        def _login(self) -> None:
+            origin = self.headers.get("Origin")
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_LOGIN_BYTES or (origin and origin != remote.origin):
+                    raise ValueError
+                password = parse_qs(self.rfile.read(length).decode("utf-8")).get("password", [""])[0]
+            except ValueError:
+                return self._send(400, "text/html; charset=utf-8", login_page("Solicitud inválida."))
+            session = remote.login(password)
+            if session:
+                return self._send(303, "text/plain; charset=utf-8", b"", {"Location": "/", "Set-Cookie": remote.cookie(session)})
+            wait = remote.locked_for()
+            if wait:
+                minutes = -(-wait // 60)
+                message = f"Demasiados intentos. Espera {minutes} min y vuelve a intentar."
+                return self._send(429, "text/html; charset=utf-8", login_page(message))
+            self._send(401, "text/html; charset=utf-8", login_page("Contraseña incorrecta."))
 
         def do_GET(self) -> None:
             # Valida el Host para que una web externa no pueda leer esto mediante DNS rebinding.
             path = urlsplit(self.path).path
-            if self.headers.get("Host") not in allowed_hosts:
-                self._send(403, "text/plain; charset=utf-8", b"Solo desde esta computadora.")
-            elif path == "/":
+            if self._is_remote():
+                if not self._remote_allowed():
+                    return self._send(403, "text/plain; charset=utf-8", b"Solo desde esta computadora.")
+                if path == "/login":
+                    return self._send(200, "text/html; charset=utf-8", login_page())
+                if not remote.valid(self.headers.get("Cookie")):
+                    if path == "/":
+                        return self._send(303, "text/plain; charset=utf-8", b"", {"Location": "/login"})
+                    return self._send(401, "text/plain; charset=utf-8", "Sesión requerida.".encode("utf-8"))
+            if path == "/":
                 self._send(200, "text/html; charset=utf-8", page)
             elif path == "/logo.webp" and LOGO_PATH.exists():
                 self._send(200, "image/webp", LOGO_PATH.read_bytes())
@@ -1322,13 +1367,20 @@ def make_handler(status: VoiceStatus, port: int) -> type[BaseHTTPRequestHandler]
             # Otra web abierta en el navegador podría enviar formularios aquí: se exige el origen
             # de esta página y la clave que solo ella conoce.
             sent_token = self.headers.get("X-Hermes-Token", "").encode("latin-1", "replace")
-            if (
-                self.headers.get("Host") not in allowed_hosts
-                or self.headers.get("Origin") not in allowed_origins
-                or not secrets.compare_digest(sent_token, token.encode("ascii"))
-            ):
-                return self._send(403, "text/plain; charset=utf-8", b"No permitido.")
             path = urlsplit(self.path).path
+            if self._is_remote():
+                # Por el túnel, además: el dominio configurado y una sesión abierta con la contraseña.
+                if not self._remote_allowed():
+                    return self._send(403, "text/plain; charset=utf-8", b"No permitido.")
+                if path == "/login":
+                    return self._login()
+                if not remote.valid(self.headers.get("Cookie")):
+                    return self._send(401, "text/plain; charset=utf-8", "Sesión requerida.".encode("utf-8"))
+                origin_ok = self.headers.get("Origin") == remote.origin
+            else:
+                origin_ok = self.headers.get("Origin") in allowed_origins
+            if not origin_ok or not secrets.compare_digest(sent_token, token.encode("ascii")):
+                return self._send(403, "text/plain; charset=utf-8", b"No permitido.")
             if path not in ("/voice", "/tasks") or (path == "/tasks" and not status.has_action("tasks")):
                 return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
             try:
@@ -1358,12 +1410,18 @@ class StatusServer(ThreadingHTTPServer):
     daemon_threads = True
 
 
-def start_status_server(status: VoiceStatus, port: int) -> ThreadingHTTPServer | None:
+def start_status_server(
+    status: VoiceStatus, port: int, remote: RemoteAccess | None = None
+) -> ThreadingHTTPServer | None:
     try:
-        server = StatusServer(("127.0.0.1", port), make_handler(status, port))
+        server = StatusServer(("127.0.0.1", port), make_handler(status, port, remote))
     except OSError as exc:
         log.warning("No se pudo abrir la página de estado: %s", exc)
         return None
     threading.Thread(target=server.serve_forever, daemon=True, name="status-page").start()
     log.info("Página de estado en http://127.0.0.1:%d", port)
+    if remote is not None and remote.enabled:
+        log.info("Página: acceso remoto con contraseña encendido para %s", remote.host)
+    elif remote is not None and remote.problem:
+        log.warning("Página: acceso remoto apagado, %s", remote.problem)
     return server

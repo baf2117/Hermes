@@ -21,6 +21,7 @@ from .homevoice import HomeVoice, PiperSpeaker, WakeWordDetector, run_microphone
 from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
 from .speakers import VOICE_KEY, SwitchableSpeaker
+from .remote import RemoteAccess
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
 from .store import LLMUsage, Store
 from .taskedit import TaskEditor
@@ -260,7 +261,7 @@ def run(config: Config) -> int:
     status.set_source("usage", lambda: usage_report(store, datetime.now().astimezone()))
     status.set_source("history", lambda: history_report(store, status))
     status.set_action("tasks", TaskEditor(assistant).apply)
-    start_status_server(status, config.status_port)
+    start_status_server(status, config.status_port, RemoteAccess(config.public_host, config.page_password))
     if problem := home_voice_problem(config):
         logging.warning("Voz en casa no disponible: %s", problem)
     else:

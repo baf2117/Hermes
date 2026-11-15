@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import time
 from pathlib import Path
 
@@ -54,6 +54,8 @@ class Config:
     verify_wake_word: bool = True
     voice: str = "piper"
     kokoro_dir: Path | None = None
+    public_host: str = ""  # Dominio del túnel (ngrok) por el que se permite abrir la página con contraseña.
+    page_password: str = field(default="", repr=False)
     status_port: int = 47822
     tavily_api_key: str = ""
     llm_mode: str = "local"
@@ -102,6 +104,8 @@ class Config:
             verify_wake_word=get("HERMES_WAKE_VERIFY", "on").lower() != "off",
             voice=get("HERMES_VOICE", "piper"),
             kokoro_dir=home / "models" / "kokoro",
+            public_host=get("HERMES_PUBLIC_HOST"),
+            page_password=get("HERMES_PAGE_PASSWORD"),
             status_port=int(get("HERMES_STATUS_PORT", "47822")),
             tavily_api_key=get("TAVILY_API_KEY"),
             llm_mode=get("HERMES_LLM_MODE", "local").lower(),
