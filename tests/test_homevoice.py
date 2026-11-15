@@ -4,7 +4,9 @@ from types import SimpleNamespace
 
 from hermes.homevoice import (
     FRAME_SAMPLES,
+    WAKE_CONFIRM_FRAMES,
     HomeVoice,
+    WakeWordDetector,
     RecordSettings,
     record_utterance,
     rms,
@@ -13,6 +15,7 @@ from hermes.homevoice import (
     mentions_wake_word,
     strip_wake_word,
     wait_while_paused,
+    wake_grammar,
 )
 import threading
 
@@ -238,6 +241,44 @@ class ConversationTests(unittest.TestCase):
         for _ in range(400):
             voice.step()
         self.assertGreater(voice.noise, start)
+
+
+class DetectorTests(unittest.TestCase):
+    def detector(self):
+        detector = WakeWordDetector.__new__(WakeWordDetector)  # Sin cargar el modelo de Vosk.
+        detector.word, detector._streak = "hermes", 0
+        detector._recognizer = SimpleNamespace(Reset=lambda: None)
+        return detector
+
+    def test_partial_guess_must_hold(self):
+        detector = self.detector()
+        results = [detector.observe(True, False) for _ in range(WAKE_CONFIRM_FRAMES)]
+        self.assertEqual(results, [False] * (WAKE_CONFIRM_FRAMES - 1) + [True])
+
+    def test_flicker_is_ignored(self):
+        detector = self.detector()
+        pattern = [True, False, True, True, False, True, False] * 3
+        self.assertFalse(any(detector.observe(heard, False) for heard in pattern))
+
+    def test_final_result_with_the_name_fires_at_once(self):
+        self.assertTrue(self.detector().observe(True, True))
+
+    def test_final_result_clears_the_streak(self):
+        detector = self.detector()
+        detector.observe(True, False)
+        detector.observe(False, True)
+        self.assertFalse(detector.observe(True, False))
+
+    def test_grammar_keeps_accents_unescaped(self):
+        import json
+        grammar = wake_grammar("hermes")
+        self.assertNotIn("\\u00", grammar)
+        words = json.loads(grammar)
+        self.assertEqual((words[0], words[-1]), ("hermes", "[unk]"))
+        self.assertEqual(words.count("hermes"), 1)
+        self.assertIn("mañana", words)
+        self.assertEqual(len(words), len(set(words)))
+        self.assertNotIn("ernesto", words)  # Hacía perder el nombre real.
 
 
 class WakeVerificationTests(unittest.TestCase):

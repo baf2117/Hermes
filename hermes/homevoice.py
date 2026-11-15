@@ -28,13 +28,31 @@ SAMPLE_RATE = 16000
 FRAME_SAMPLES = 1600  # 0,1 segundos
 WAKE_WINDOW_FRAMES = 20  # Los 2 s previos a la activación: ahí está el "Hermes" que Vosk creyó oír.
 WAKE_MATCH = 0.85
-# Palabras comunes que suenan parecido o se dicen mucho. Con solo "hermes" en su vocabulario,
-# Vosk forzaba cualquier palabra parecida a "hermes"; con estas, tiene a dónde más asignarlas.
-DECOY_WORDS = (
-    "es mes eres este esta ese eso pues entonces hermano hermana hermosa hermoso permiso termina "
-    "tiene tienes tengo que de la el en y los se no me lo si por con para una un yo tu bueno oye mira "
-    "verdad gracias mesa entre ver hacer mercado"
-).split()
+WAKE_CONFIRM_FRAMES = 3  # El nombre debe sostenerse 0,3 s en la hipótesis de Vosk: descarta parpadeos.
+# Palabras frecuentes del español y otras que suenan parecido. Con solo "hermes" en su vocabulario,
+# Vosk forzaba cualquier palabra parecida a "hermes" ("eres el mejor" -> "eres hermes"); mientras más
+# palabras conoce, menos se equivoca. Medido con frases sintetizadas: con ~50 palabras ignoraba 13 de
+# 18 frases sin el nombre. "Ernesto" no está porque hacía perder el nombre real, y "informe" no
+# existe en el modelo pequeño: "enorme", "forma" y "uniforme" ocupan su lugar.
+DECOY_WORDS = tuple(dict.fromkeys("""
+de la que el en y a los se del las un por con no una su para es al lo como más pero sus le ya o este sí
+porque esta entre cuando muy sin sobre también me hasta hay donde quien desde todo nos durante todos uno
+les ni contra otros ese eso ante ellos e esto mí antes algunos qué unos yo otro otras otra él tanto esa
+estos mucho quienes nada muchos cual poco ella estar estas algunas algo nosotros mi mis tú te ti tu tus
+ellas nosotras os mío mía tuyo tuya suyo nuestro esos esas estoy estás está estamos están esté era eres
+soy somos son fue fueron ser sea tengo tienes tiene tenemos tienen hace hacer hago haces hecho voy vas va
+vamos van ir ver veo ves vez veces dice dijo decir digo dime oye mira bueno bien mal mejor peor mayor menor
+mismo misma mes meses año años día días hoy mañana tarde noche ayer hora horas semana ahora luego después
+siempre nunca aquí allí ahí casa trabajo gente persona hombre mujer amigo amiga hermano hermana hermanos
+madre padre mamá papá hijo hija niño niña perro gato toda todas cosa cosas parte vida mundo tiempo agua
+comida dinero gracias favor permiso perdón hola adiós claro verdad entonces pues así solo tampoco quiero
+quieres quiere puedo puedes puede debo debe sé sabes sabe creo crees cree pasa pasó pasar viene vienen
+venir sale salir llega llegar llama llamar llamó habla hablar come comer termina terminar empieza mercado
+mesa hermosa hermoso termas mercedes ermita herencia hierro términos máximo mínimo mensaje mejores
+mujeres menos enorme enormes forma formas uniforme norma firme invierno germán hernán merece reunión tarea tareas pendiente pendientes pagar luz comprar recordar cita
+doctor número primero nombre cuenta cuentas tienda escuela oficina carro coche calle ciudad país película
+serie juego partido equipo música canción libro teléfono celular computadora internet
+""".split()))
 MAX_SPOKEN_CHARS = 500
 
 _NOT_SPEAKABLE = re.compile(r"[^\w\s.,;:¿?¡!%/()-]", re.UNICODE)
@@ -78,6 +96,14 @@ def speech_threshold(noise: float, settings: RecordSettings = RecordSettings()) 
 def strip_wake_word(text: str, word: str) -> str:
     """Quita el nombre si la orden empieza con él: "Hermes, ¿qué hora es?" -> "¿qué hora es?"."""
     return re.sub(rf"^\W*{re.escape(word)}\b[\s,.:;!¡-]*", "", text, count=1, flags=re.IGNORECASE).strip()
+
+
+def wake_grammar(word: str) -> str:
+    """Vocabulario de Vosk: el nombre más las palabras de relleno.
+
+    Va sin escapar los acentos: Vosk no decodifica "\\u00e1" y descartaría esas palabras.
+    """
+    return json.dumps([word] + [w for w in DECOY_WORDS if w != word] + ["[unk]"], ensure_ascii=False)
 
 
 def _plain(text: str) -> str:
@@ -138,20 +164,29 @@ class WakeWordDetector:
 
         vosk.SetLogLevel(-1)
         self.word = word
-        grammar = [word] + [w for w in DECOY_WORDS if w != word] + ["[unk]"]
-        self._recognizer = vosk.KaldiRecognizer(vosk.Model(str(model_dir)), SAMPLE_RATE, json.dumps(grammar))
+        self._streak = 0
+        self._recognizer = vosk.KaldiRecognizer(vosk.Model(str(model_dir)), SAMPLE_RATE, wake_grammar(word))
 
     def feed(self, frame: bytes) -> bool:
-        if self._recognizer.AcceptWaveform(frame):
+        final = self._recognizer.AcceptWaveform(frame)
+        if final:
             text = json.loads(self._recognizer.Result()).get("text", "")
         else:
             text = json.loads(self._recognizer.PartialResult()).get("partial", "")
-        if self.word in text.split():
+        return self.observe(self.word in text.split(), final)
+
+    def observe(self, heard: bool, final: bool) -> bool:
+        """Decide con la hipótesis de Vosk: un resultado final con el nombre basta; uno parcial debe repetirse."""
+        self._streak = self._streak + 1 if heard else 0
+        if heard and (final or self._streak >= WAKE_CONFIRM_FRAMES):
             self.reset()
             return True
+        if final:
+            self._streak = 0
         return False
 
     def reset(self) -> None:
+        self._streak = 0
         self._recognizer.Reset()
 
 
