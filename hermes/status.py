@@ -673,6 +673,13 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .set-row input:disabled, .set-row select:disabled { opacity:.5; }
 .set-row input[type="checkbox"] { width:22px; height:22px; accent-color:var(--accent); justify-self:start; }
 .set-row.wide { grid-template-columns:1fr; }
+.pw { position:relative; display:block; min-width:0; }
+.pw input { width:100%; padding-right:46px !important; }
+.pw-eye { position:absolute; right:4px; top:50%; transform:translateY(-50%); width:38px; height:38px; display:grid; place-items:center;
+  background:none; border:0; border-radius:8px; color:var(--muted, #a19f96); cursor:pointer; padding:0; }
+.pw-eye:hover, .pw-eye:focus-visible { color:var(--accent, #f2c230); outline:none; }
+.pw-eye:disabled { opacity:.4; cursor:default; }
+.pw-eye[aria-pressed="false"] .eye-off { display:none; }
 .chips { display:flex; flex-direction:column; gap:10px; min-width:0; }
 .chip-list { display:flex; flex-wrap:wrap; gap:8px; }
 .chip { display:inline-flex; align-items:center; gap:7px; padding:5px 6px 5px 12px; border:1px solid var(--line); border-radius:999px; background:var(--soft); font-size:14px; font-weight:550; }
@@ -2477,12 +2484,29 @@ function settingControl(s) {
     const secret = s.kind === "secret" || s.kind === "url";
     el.type = secret ? "password" : s.kind === "int" ? "number" : (s.kind === "time" || s.kind === "time_off") ? "time" : "text";
     if (s.kind === "int") { el.min = s.low; el.max = s.high; }
-    if (secret) { el.placeholder = s.set ? "Configurada · escribe para cambiarla" : "Sin configurar"; el.autocomplete = "new-password"; }
-    else if (s.confirm) el.placeholder = s.set ? "Configurado · escribe para cambiarlo" : "Sin configurar";
+    if (secret) { el.placeholder = s.set ? "Guardada · escribe una nueva" : "Sin configurar"; el.autocomplete = "new-password"; }
+    else if (s.confirm) el.placeholder = s.set ? "Guardado · escribe uno nuevo" : "Sin configurar";
     el.value = s.value || ""; el.dataset.initial = el.value; el.maxLength = 600;
   }
   el.id = "set-" + s.key; el.dataset.key = s.key; el.disabled = !!s.locked;
   return el;
+}
+// Botón de ojo: muestra lo que estás escribiendo en un campo secreto. Lo guardado nunca llega a la página.
+const EYE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="eye-off" d="M4 4l16 16"/></svg>';
+function withEye(input) {
+  if (input.type !== "password") return input;
+  const wrap = text("span", "pw", "");
+  const eye = document.createElement("button");
+  eye.type = "button"; eye.className = "pw-eye"; eye.innerHTML = EYE_SVG; eye.disabled = input.disabled;
+  eye.setAttribute("aria-pressed", "false"); eye.setAttribute("aria-label", "Mostrar lo que escribes"); eye.title = "Mostrar lo que escribes";
+  eye.onclick = () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    eye.setAttribute("aria-pressed", String(show));
+    eye.setAttribute("aria-label", show ? "Ocultar" : "Mostrar lo que escribes"); eye.title = eye.getAttribute("aria-label");
+  };
+  wrap.append(input, eye);
+  return wrap;
 }
 function settingValue(el) { return el.type === "checkbox" ? (el.checked ? "on" : "off") : el.value.trim(); }
 function settingChanges() {
@@ -2503,7 +2527,7 @@ function renderSettings(data) {
       const help = s.locked ? "Solo se cambia desde la computadora de Hermes."
         : s.confirm ? (s.help ? s.help + " " : "") + "Desde aquí, el cambio espera tu aprobación en Telegram." : s.help;
       if (help) label.appendChild(text("small", "", help));
-      row.appendChild(label); row.appendChild(settingControl(s)); card.appendChild(row);
+      row.appendChild(label); row.appendChild(withEye(settingControl(s))); card.appendChild(row);
     }
     box.appendChild(card);
   }

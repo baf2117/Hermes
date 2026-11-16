@@ -350,6 +350,13 @@ button, a.button { font:inherit; font-weight:600; color:#14110a; background:#f2c
   text-align:center; text-decoration:none; }
 p { margin:0; color:#a19f96; font-size:15px; }
 p.error { color:#ef7a63; font-size:14px; min-height:1.5em; }
+.pw { position:relative; display:block; min-width:0; }
+.pw input { width:100%; padding-right:46px !important; }
+.pw-eye { position:absolute; right:4px; top:50%; transform:translateY(-50%); width:38px; height:38px; display:grid; place-items:center;
+  background:none; border:0; border-radius:8px; color:var(--muted, #a19f96); cursor:pointer; padding:0; }
+.pw-eye:hover, .pw-eye:focus-visible { color:var(--accent, #f2c230); outline:none; }
+.pw-eye:disabled { opacity:.4; cursor:default; }
+.pw-eye[aria-pressed="false"] .eye-off { display:none; }
 </style>
 </head>
 <body>
@@ -358,11 +365,21 @@ p.error { color:#ef7a63; font-size:14px; min-height:1.5em; }
 LOGIN_PAGE = _PAGE_HEAD + """<form method="post" action="/login">
   <h1><i></i>Hermes</h1>
   <label>Contraseña de la página
-    <input type="password" name="password" autocomplete="current-password" required autofocus maxlength="200">
+    <span class="pw"><input type="password" id="password" name="password" autocomplete="current-password" required autofocus maxlength="200"><button
+      type="button" class="pw-eye" id="eye" aria-pressed="false" aria-label="Mostrar la contraseña" title="Mostrar la contraseña"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="eye-off" d="M4 4l16 16"/></svg></button></span>
   </label>
   <button type="submit">Entrar</button>
   <p class="error" role="alert">__ERROR__</p>
 </form>
+<script>
+document.getElementById("eye").onclick = function () {
+  const input = document.getElementById("password"), show = input.type === "password";
+  input.type = show ? "text" : "password";
+  this.setAttribute("aria-pressed", String(show));
+  this.setAttribute("aria-label", show ? "Ocultar la contraseña" : "Mostrar la contraseña"); this.title = this.getAttribute("aria-label");
+  input.focus();
+};
+</script>
 </body>
 </html>
 """
