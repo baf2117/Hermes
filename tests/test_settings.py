@@ -154,6 +154,83 @@ class EditorTests(HomeCase):
             self.assertEqual(entries["TELEGRAM_ALLOWED_CHAT_ID"].get("value"), "111" if local else None)
 
 
+class OutsideApprovalTests(HomeCase):
+    """Desde fuera, lo delicado se puede pedir, pero solo se guarda cuando el dueño lo aprueba en Telegram."""
+
+    def setUp(self):
+        super().setUp()
+        self.now = 1_800_000_000.0
+        self.asked = []
+        self.editor = SettingsEditor(self.env, self.config, clock=lambda: self.now)
+        self.editor.confirm = lambda request_id, lines: self.asked.append((request_id, lines))
+        self.before = self.env.read_bytes()
+
+    def test_nothing_is_written_until_the_owner_approves(self):
+        result = self.change(local=False, TELEGRAM_ALLOWED_CHAT_ID="999", HERMES_SUMMARY_TIME="06:00")
+        self.assertTrue(result["pending"])
+        self.assertIn("Telegram", result["message"])
+        self.assertEqual(self.env.read_bytes(), self.before)  # Ni lo delicado ni lo que venía en el mismo lote.
+        request_id, lines = self.asked[0]
+        self.assertEqual(lines, ["• Chat de Telegram autorizado: 999", "• y 1 ajuste más de los que no son delicados"])
+        self.assertTrue(self.editor.snapshot(False)["pending"])
+        self.assertEqual(self.editor.approve(request_id), "✅ Guardado. Reinicia Hermes para aplicar lo que falta.")
+        saved = self.env.read_text(encoding="utf-8")
+        self.assertIn("TELEGRAM_ALLOWED_CHAT_ID=999", saved)
+        self.assertIn("HERMES_SUMMARY_TIME=06:00", saved)
+        self.assertFalse(self.editor.snapshot(False)["pending"])
+        self.assertIn("ya venció", self.editor.approve(request_id))  # El botón no sirve dos veces.
+
+    def test_secrets_never_travel_to_telegram(self):
+        self.change(local=False, HERMES_PAGE_PASSWORD="otra-clave-bien-larga", TAVILY_API_KEY="clave-secreta-de-busqueda")
+        request_id, lines = self.asked[0]
+        self.assertEqual(lines, ["• Contraseña de la página: (no se muestra)", "• Clave de búsqueda en internet: (no se muestra)"])
+        self.editor.approve(request_id)
+        saved = self.env.read_text(encoding="utf-8")
+        self.assertNotIn("otra-clave-bien-larga", saved)
+        self.assertIn("HERMES_PAGE_PASSWORD=scrypt$", saved)
+        self.assertIn("TAVILY_API_KEY=clave-secreta-de-busqueda", saved)
+
+    def test_rejection_expiry_and_telegram_failure_change_nothing(self):
+        self.change(local=False, TELEGRAM_ALLOWED_CHAT_ID="999")
+        self.assertIn("Rechazado", self.editor.reject(self.asked[0][0]))
+        self.assertIn("ya venció", self.editor.approve(self.asked[0][0]))
+        self.change(local=False, TELEGRAM_ALLOWED_CHAT_ID="999")
+        self.now += 301
+        self.assertFalse(self.editor.snapshot(False)["pending"])
+        self.assertIn("ya venció", self.editor.approve(self.asked[1][0]))
+
+        def down(*_):
+            raise OSError("sin red")
+
+        self.editor.confirm = down
+        with self.assertRaises(SettingError):
+            self.change(local=False, TELEGRAM_ALLOWED_CHAT_ID="999")
+        self.assertFalse(self.editor.snapshot(False)["pending"])
+        self.assertEqual(self.env.read_bytes(), self.before)
+
+    def test_invalid_values_are_refused_before_asking(self):
+        with self.assertRaises(SettingError):
+            self.change(local=False, TELEGRAM_ALLOWED_CHAT_ID="abc")
+        with self.assertRaises(SettingError):
+            self.change(local=False, HERMES_PAGE_PASSWORD="corta")
+        self.assertEqual(self.asked, [])
+
+    def test_ordinary_settings_and_local_changes_need_no_approval(self):
+        self.assertEqual(self.change(local=False, HERMES_SUMMARY_TIME="06:00")["message"], "Guardado y aplicado.")
+        self.change(local=True, TELEGRAM_ALLOWED_CHAT_ID="555")
+        self.assertEqual(self.asked, [])
+        self.assertIn("TELEGRAM_ALLOWED_CHAT_ID=555", self.env.read_text(encoding="utf-8"))
+
+    def test_outside_view_offers_the_fields_without_revealing_them(self):
+        snapshot = self.editor.snapshot(False)
+        entries = {s["key"]: s for group in snapshot["groups"] for s in group["settings"]}
+        chat = entries["TELEGRAM_ALLOWED_CHAT_ID"]
+        self.assertEqual((chat["locked"], chat["confirm"], chat["set"], "value" in chat), (False, True, True, False))
+        self.assertNotIn(TOKEN, json.dumps(snapshot))
+        self.assertFalse(entries["HERMES_SUMMARY_TIME"]["confirm"])
+        self.assertFalse(self.editor.snapshot(True)["groups"][-1]["settings"][0]["confirm"])  # En la computadora no hace falta.
+
+
 HOST = "hermes-prueba.example"
 PASSWORD = "clave-de-prueba-larga"
 

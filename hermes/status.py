@@ -2233,6 +2233,7 @@ function settingControl(s) {
     el.type = secret ? "password" : s.kind === "int" ? "number" : (s.kind === "time" || s.kind === "time_off") ? "time" : "text";
     if (s.kind === "int") { el.min = s.low; el.max = s.high; }
     if (secret) { el.placeholder = s.set ? "Configurada · escribe para cambiarla" : "Sin configurar"; el.autocomplete = "new-password"; }
+    else if (s.confirm) el.placeholder = s.set ? "Configurado · escribe para cambiarlo" : "Sin configurar";
     el.value = s.value || ""; el.dataset.initial = el.value; el.maxLength = 600;
   }
   el.id = "set-" + s.key; el.dataset.key = s.key; el.disabled = !!s.locked;
@@ -2253,7 +2254,8 @@ function renderSettings(data) {
       const row = text("div", "set-row", "");
       const label = text("label", "", s.label); label.htmlFor = "set-" + s.key;
       if (!s.live) label.appendChild(text("span", "set-tag", "Al reiniciar"));
-      const help = s.locked ? "Solo se cambia desde la computadora de Hermes." : s.help;
+      const help = s.locked ? "Solo se cambia desde la computadora de Hermes."
+        : s.confirm ? (s.help ? s.help + " " : "") + "Desde aquí, el cambio espera tu aprobación en Telegram." : s.help;
       if (help) label.appendChild(text("small", "", help));
       row.appendChild(label); row.appendChild(settingControl(s)); card.appendChild(row);
     }
@@ -2261,6 +2263,22 @@ function renderSettings(data) {
   }
   $("set-restart").hidden = !data.restart_needed || !data.can_restart;
   $("set-save").disabled = !Object.keys(settingChanges()).length;
+}
+// Un cambio delicado pedido desde fuera queda en espera: la página revisa hasta que lo resuelvas en Telegram.
+async function waitForApproval() {
+  for (let i = 0; i < 110; i++) {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    try {
+      const res = await fetch("/settings", { cache: "no-store" });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.pending) continue;
+      renderSettings(data);
+      $("set-status").textContent = "La solicitud ya quedó resuelta en Telegram. Aquí ves cómo quedó.";
+      return;
+    } catch {}
+  }
+  $("set-status").textContent = "La solicitud venció sin aprobarse. No se cambió nada.";
 }
 async function loadSettings() {
   if (Object.keys(settingChanges()).length) return;  // No pisa lo que estás escribiendo.
@@ -2281,6 +2299,7 @@ $("set-form").addEventListener("submit", async event => {
     const data = await send("/settings", { changes });
     document.querySelectorAll("#set-groups [data-key]").forEach(el => { el.dataset.initial = settingValue(el); });
     $("set-status").textContent = data.message;
+    if (data.pending) { waitForApproval(); return; }
     await loadSettings();
   } catch (e) { $("set-status").textContent = e.message; $("set-save").disabled = false; }
 });

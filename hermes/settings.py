@@ -3,7 +3,9 @@
 Reglas:
 - Solo se pueden tocar los ajustes de esta lista; rutas, puertos y programas a ejecutar quedan fuera.
 - Las claves y lo que decide quién entra (token de Telegram, chat autorizado, contraseña y dominio de la
-  página) solo se cambian desde esta computadora, nunca por el túnel, y las claves jamás se muestran.
+  página) se cambian libremente desde esta computadora. Desde fuera, cada cambio de esos espera a que el
+  dueño lo apruebe en Telegram en ese momento; sin Telegram configurado, desde fuera no se pueden tocar.
+  Las claves jamás se muestran.
 - Cada valor se valida antes de escribirlo. La contraseña de la página se guarda cifrada de un solo sentido.
 - Algunos ajustes se aplican al instante; el resto, al reiniciar Hermes (también desde la página).
 """
@@ -12,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -23,6 +26,7 @@ from .speakers import DEFAULT_VOICES
 log = logging.getLogger(__name__)
 
 MAX_VALUE = 600
+PENDING_SECONDS = 300  # Tiempo para aprobar en Telegram un cambio delicado pedido desde fuera.
 _TIME = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 _NAME = re.compile(r"[A-Za-z0-9._:-]{1,80}")
 _WORD = re.compile(r"[a-záéíóúüñ]{3,20}")
@@ -196,9 +200,20 @@ class SettingsEditor:
         config: Config,
         restart: Callable[[], None] | None = None,
         on_change: Callable[[set[str]], None] | None = None,
+        clock: Callable[[], float] = time.time,
     ):
         self.env_path, self.config, self._restart, self._on_change = Path(env_path), config, restart, on_change
         self.restart_needed = False
+        self._clock = clock
+        # Pide por Telegram la aprobación de un cambio delicado: (número de solicitud, renglones que lo describen).
+        self.confirm: Callable[[int, list[str]], None] | None = None
+        self._pending: dict[str, Any] | None = None
+        self._requests = 0
+
+    def _waiting(self) -> bool:
+        if self._pending is not None and self._pending["expires"] <= self._clock():
+            self._pending = None
+        return self._pending is not None
 
     def snapshot(self, local: bool) -> dict[str, Any]:
         """Lo que la página muestra. Las claves nunca salen: solo si están puestas o no."""
@@ -208,19 +223,22 @@ class SettingsEditor:
             current = values.get(setting.key, "")
             entry: dict[str, Any] = {
                 "key": setting.key, "label": setting.label, "kind": setting.kind, "help": setting.help,
-                "live": setting.live, "locked": setting.local_only and not local, "set": bool(current),
+                "live": setting.live, "set": bool(current),
+                "locked": setting.local_only and not local and self.confirm is None,
+                "confirm": setting.local_only and not local and self.confirm is not None,
             }
             if setting.choices:
                 entry["choices"] = list(setting.choices)
             if setting.kind == "int":
                 entry.update(low=setting.low, high=setting.high)
-            if not setting.secret and not entry["locked"]:
+            if not setting.secret and not (setting.local_only and not local):
                 value = current or setting.default
                 entry["value"] = "" if setting.kind == "time_off" and value.lower() in ("off", "no") else value
             groups.setdefault(setting.group, []).append(entry)
         return {
             "groups": [{"name": name, "settings": entries} for name, entries in groups.items()],
             "restart_needed": self.restart_needed, "can_restart": self._restart is not None, "local": local,
+            "pending": self._waiting(),
         }
 
     def apply(self, payload: Any, local: bool) -> dict[str, Any]:
@@ -237,19 +255,62 @@ class SettingsEditor:
             raise SettingError("No hay cambios que guardar.")
         current = _load_env_file(self.env_path)
         changes: dict[str, str] = {}
+        delicate: list[str] = []  # Renglones para Telegram: qué se quiere cambiar. Las claves no se escriben.
         for key, raw in raw_changes.items():
             setting = BY_KEY.get(key)
             if setting is None:
                 raise SettingError("Ese ajuste no se puede cambiar desde la página.")
-            if setting.local_only and not local:
+            if setting.local_only and not local and self.confirm is None:
                 raise SettingError(f"{setting.label}: solo se cambia desde la computadora de Hermes.")
             value = validate(setting, raw)
+            if setting.local_only and not local:
+                shown = "(no se muestra)" if setting.secret else (value or "(vacío)")
+                delicate.append(f"• {setting.label}: {shown}")
             if key == "HERMES_PAGE_PASSWORD" and value:
                 value = hash_password(value)  # Al archivo llega solo la huella, nunca la contraseña.
             if value != current.get(key, ""):
                 changes[key] = value
         if not changes:
             return {"ok": True, "message": "Sin cambios.", "restart_needed": self.restart_needed}
+        if delicate:
+            return self._ask_owner(changes, delicate)
+        return {"ok": True, "message": self._commit(changes, local), "restart_needed": self.restart_needed}
+
+    def _ask_owner(self, changes: dict[str, str], lines: list[str]) -> dict[str, Any]:
+        """Deja el cambio en espera y le pregunta al dueño por Telegram. Nada se escribe hasta que apruebe."""
+        self._requests += 1
+        request_id = self._requests
+        others = len(changes) - len(lines)
+        if others:
+            lines = lines + [f"• y {others} {'ajuste más' if others == 1 else 'ajustes más'} de los que no son delicados"]
+        try:
+            self.confirm(request_id, lines)  # type: ignore[misc]
+        except Exception as exc:
+            log.warning("Ajustes: no se pudo pedir la aprobación por Telegram: %s", exc)
+            raise SettingError("No pude avisarte por Telegram, así que no guardé nada. Intenta de nuevo.") from exc
+        self._pending = {"id": request_id, "changes": changes, "expires": self._clock() + PENDING_SECONDS}
+        log.info("Ajustes: cambio delicado pedido desde fuera, en espera de aprobación (%s)", ", ".join(sorted(changes)))
+        return {
+            "ok": True, "pending": True, "restart_needed": self.restart_needed,
+            "message": "Te mandé un mensaje a Telegram. El cambio se guarda cuando lo apruebes ahí; tienes 5 minutos.",
+        }
+
+    def approve(self, request_id: int) -> str:
+        if not self._waiting() or self._pending["id"] != request_id:  # type: ignore[index]
+            return "Esa solicitud ya venció o ya estaba atendida. No cambié nada."
+        changes, self._pending = self._pending["changes"], None  # type: ignore[index]
+        return "✅ " + self._commit(changes, False)
+
+    def reject(self, request_id: int) -> str:
+        if self._waiting() and self._pending["id"] == request_id:  # type: ignore[index]
+            self._pending = None
+            log.warning("Ajustes: el dueño rechazó un cambio delicado pedido desde fuera")
+        return (
+            "🚫 Rechazado: no cambié nada.\n"
+            "Si no eras tú, alguien tiene tu página abierta. Cierra las sesiones con /sesiones y cambia tu contraseña."
+        )
+
+    def _commit(self, changes: dict[str, str], local: bool) -> str:
         write_env(self.env_path, changes)
         log.info("Ajustes: cambió %s desde %s", ", ".join(sorted(changes)), "esta computadora" if local else "fuera")
         if self._on_change is not None:
@@ -259,5 +320,4 @@ class SettingsEditor:
             object.__setattr__(self.config, name, getattr(fresh, name))
         if any(not BY_KEY[key].live for key in changes):
             self.restart_needed = True
-        message = "Guardado. Reinicia Hermes para aplicar lo que falta." if self.restart_needed else "Guardado y aplicado."
-        return {"ok": True, "message": message, "restart_needed": self.restart_needed}
+        return "Guardado. Reinicia Hermes para aplicar lo que falta." if self.restart_needed else "Guardado y aplicado."

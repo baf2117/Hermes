@@ -356,7 +356,23 @@ def run(config: Config) -> int:
         if "HERMES_PAGE_PASSWORD" in keys:
             remote.revoke_all()  # Contraseña nueva: todos los dispositivos vuelven a entrar.
 
-    status.settings = SettingsEditor(hermes_home() / ".env", config, request_restart, settings_changed)
+    editor = SettingsEditor(hermes_home() / ".env", config, request_restart, settings_changed)
+    if config.allowed_chat_id is not None:
+        owner_chat = config.allowed_chat_id
+
+        def confirm_change(request_id: int, lines: list[str]) -> None:
+            client.send_message(
+                owner_chat,
+                "⚙️ Desde un dispositivo con tu página abierta quieren cambiar:\n" + "\n".join(lines)
+                + "\n\n¿Lo apruebas? Sin tu aprobación no se guarda nada.",
+                [[("✅ Sí, cambiar", f"setok:{request_id}"), ("🚫 No", f"setno:{request_id}")]],
+            )
+
+        editor.confirm = confirm_change
+    assistant.button_hooks.update(
+        setok=lambda request_id: Reply(editor.approve(request_id)), setno=lambda request_id: Reply(editor.reject(request_id))
+    )
+    status.settings = editor
     server = start_status_server(status, config.status_port, remote)
     if problem := home_voice_problem(config):
         logging.warning("Voz en casa no disponible: %s", problem)
