@@ -30,8 +30,28 @@ class ApuntesTests(Harness):
             self.do("list_add", list="super", text="Leche")
         self.do("list_remove", id=lists[0]["items"][0]["id"])
         self.assertIn("Vacié", self.do("list_clear", list="viaje"))
+        # Vaciar deja el cajón; eliminar se lo lleva.
+        self.assertEqual([(e["name"], len(e["items"])) for e in self.editor.snapshot()["lists"]], [("super", 1), ("viaje", 0)])
+        self.assertIn("Eliminé", self.do("list_delete", list="viaje"))
         self.assertEqual([entry["name"] for entry in self.editor.snapshot()["lists"]], ["super"])
         self.assertIn("leche", self.assistant.handle_text("qué hay en la lista del súper").text)  # La misma lista que por chat.
+
+    def test_lists_are_created_empty_and_deleted_whole(self):
+        self.assertEqual(self.do("list_create", list="  Súper  "), "Creé la lista de super.")
+        self.assertEqual(self.editor.snapshot()["lists"], [{"name": "super", "items": []}])
+        with self.assertRaises(ApunteError):
+            self.do("list_create", list="super")
+        with self.assertRaises(ApunteError):
+            self.do("list_create", list="   ")
+        self.do("list_add", list="super", text="leche")
+        self.do("list_create", list="viaje")
+        self.assertEqual([e["name"] for e in self.editor.snapshot()["lists"]], ["super", "viaje"])  # En el orden en que se crearon.
+        self.assertIn("vacía", self.assistant.handle_text("qué hay en la lista de viaje").text)
+        self.assertIn("• viaje (0)", self.assistant.handle_text("qué listas tengo").text)
+        self.do("list_delete", list="super")
+        self.assertEqual(self.store.list_items("super"), [])
+        with self.assertRaises(ApunteError):
+            self.do("list_delete", list="super")
 
     def test_notes_are_the_memory(self):
         self.do("note_add", text="  la clave del wifi   está en el cajón ")

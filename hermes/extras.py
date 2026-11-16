@@ -229,6 +229,9 @@ class Extras:
             return self.R("Todavía no tienes listas. Prueba: «agrega leche a la lista del súper».")
         return self.R("Tus listas:\n" + "\n".join(f"• {name} ({count})" for name, count in names))
 
+    def list_exists(self, name: str) -> bool:
+        return any(existing == name for existing, _ in self.store.list_names())
+
     def _list_remove(self, raw_list: str, raw_item: str) -> Any:
         name, wanted = self._list_name(raw_list), [plain(i) for i in split_items(raw_item)]
         removed = []

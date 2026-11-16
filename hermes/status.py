@@ -525,6 +525,23 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
 .subtabs a span:empty { display:none; }
 .ap-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; min-width:0; max-width:760px; }
 .ap-card[hidden] { display:none; }
+.ap-create { max-width:760px; margin-bottom:16px; }
+.ap-create input { background:var(--card); padding:11px 13px; }
+.ap-drawers { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap:14px; align-items:start; }
+.ap-drawer { background:var(--card); border:1px solid var(--line); border-radius:14px; min-width:0; overflow:hidden; }
+.ap-drawer-head { display:flex; align-items:center; gap:10px; width:100%; font:inherit; font-weight:650; font-size:16px; color:inherit; background:none; border:0; padding:14px 16px; cursor:pointer; text-align:left; }
+.ap-drawer-head .name { text-transform:capitalize; flex:1; min-width:0; overflow-wrap:anywhere; }
+.ap-drawer-head em { font-style:normal; font-weight:500; font-size:13px; color:var(--muted); white-space:nowrap; }
+.ap-drawer-head .chev { width:8px; height:8px; border:solid var(--muted); border-width:0 2px 2px 0; transform:rotate(45deg); margin:0 4px 3px; transition:transform .15s; flex:none; }
+.ap-drawer.closed .chev { transform:rotate(-45deg); margin-bottom:0; }
+.ap-drawer-head:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.ap-drawer-body { padding:0 16px 12px; border-top:1px solid var(--line); }
+.ap-drawer-body .ap-row:first-child { border-top:0; }
+.ap-add { margin:10px 0 4px; }
+.ap-drawer-foot { display:flex; justify-content:space-between; gap:12px; margin-top:4px; }
+.ap-link:disabled { opacity:.4; cursor:default; text-decoration:none; }
+.ap-link.danger-link { color:var(--warn); }
+.ap-empty.card { padding:28px 16px; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:14px; }
 .ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
 .ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
 .ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
@@ -734,16 +751,12 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
   </nav>
   <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="primary" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
   <div class="ap-grid">
-    <section class="ap-card" data-sub="listas" hidden>
-      <h3>Listas <span id="ap-lists-count"></span></h3>
-      <p>Toca el círculo para quitar un elemento.</p>
-      <form class="ap-form" id="ap-list-form" autocomplete="off">
-        <input id="ap-list-name" list="ap-list-names" maxlength="40" placeholder="Lista (súper)" aria-label="Nombre de la lista">
-        <datalist id="ap-list-names"></datalist>
-        <input id="ap-list-item" maxlength="100" placeholder="Qué agregar" aria-label="Elemento">
-        <button type="submit" class="primary">Agregar</button>
+    <section class="ap-page" data-sub="listas" hidden>
+      <form class="ap-form ap-create" id="ap-list-form" autocomplete="off">
+        <input id="ap-list-name" maxlength="40" placeholder="Nombre de la lista nueva" aria-label="Nombre de la lista nueva">
+        <button type="submit" class="primary">+ Crear lista</button>
       </form>
-      <div id="ap-lists"></div>
+      <div class="ap-drawers" id="ap-lists"></div>
     </section>
     <section class="ap-card" data-sub="habitos" hidden>
       <h3>Hábitos <span id="ap-habits-count"></span></h3>
@@ -910,7 +923,7 @@ function currentSub() {
 }
 function showSub() {
   const sub = currentSub();
-  document.querySelectorAll("#view-apuntes .ap-card").forEach(card => { card.hidden = card.dataset.sub !== sub; });
+  document.querySelectorAll("#view-apuntes section[data-sub]").forEach(page => { page.hidden = page.dataset.sub !== sub; });
   document.querySelectorAll("#ap-tabs a").forEach(a => a.setAttribute("aria-current", a.dataset.sub === sub ? "page" : "false"));
 }
 function showView() {
@@ -1675,19 +1688,65 @@ function apFill(id, rows, empty) {
   if (!rows.length) box.appendChild(text("div", "ap-empty", empty));
   rows.forEach(r => box.appendChild(r));
 }
-function renderApuntes(d) {
-  const lists = $("ap-lists"); lists.textContent = "";
-  $("ap-list-names").textContent = "";
-  if (!d.lists.length) lists.appendChild(text("div", "ap-empty", "Todavía no tienes listas."));
-  for (const list of d.lists) {
-    const o = document.createElement("option"); o.value = list.name; $("ap-list-names").appendChild(o);
-    const head = text("div", "ap-sub", list.name + " · " + list.items.length);
-    const clear = text("button", "ap-link", "Vaciar"); clear.type = "button";
-    clear.onclick = () => { if (confirm("¿Vaciar la lista de " + list.name + "?")) apunte({ action: "list_clear", list: list.name }); };
-    head.appendChild(clear); lists.appendChild(head);
-    for (const item of list.items) lists.appendChild(apRow(item.text, "", apCheck(false, "Quitar " + item.text, () => apunte({ action: "list_remove", id: item.id }, true))));
+// Cada lista es un cajón: se abre y se cierra, y dentro se agregan y se quitan sus elementos.
+let closedLists = new Set();
+try { closedLists = new Set(JSON.parse(localStorage.getItem("hermes-lists-closed") || "[]")); } catch {}
+let focusList = null;
+function renderLists(lists) {
+  const box = $("ap-lists");
+  const typed = {};  // Lo que estabas escribiendo en cada cajón no se pierde al refrescar.
+  box.querySelectorAll("input[data-list]").forEach(input => { if (input.value) typed[input.dataset.list] = input.value; });
+  box.textContent = "";
+  if (!lists.length) box.appendChild(text("div", "ap-empty card", "Todavía no tienes listas. Crea la primera aquí arriba."));
+  for (const list of lists) {
+    const closed = closedLists.has(list.name);
+    const drawer = text("div", "ap-drawer" + (closed ? " closed" : ""), "");
+    const head = text("button", "ap-drawer-head", ""); head.type = "button";
+    head.setAttribute("aria-expanded", String(!closed));
+    head.append(text("span", "name", list.name), text("em", "", list.items.length === 1 ? "1 elemento" : list.items.length + " elementos"), text("span", "chev", ""));
+    head.onclick = () => {
+      if (closedLists.has(list.name)) closedLists.delete(list.name); else closedLists.add(list.name);
+      try { localStorage.setItem("hermes-lists-closed", JSON.stringify([...closedLists])); } catch {}
+      renderLists(lists);
+    };
+    drawer.appendChild(head);
+    if (!closed) {
+      const body = text("div", "ap-drawer-body", "");
+      if (!list.items.length) body.appendChild(text("div", "ap-empty", "Esta lista está vacía."));
+      for (const item of list.items) body.appendChild(apRow(item.text, "", apCheck(false, "Quitar " + item.text, () => apunte({ action: "list_remove", id: item.id }, true))));
+      const form = text("form", "ap-form ap-add", ""); form.autocomplete = "off";
+      const input = document.createElement("input");
+      input.maxLength = 100; input.placeholder = "Agregar a " + list.name + "…"; input.dataset.list = list.name;
+      input.setAttribute("aria-label", "Agregar a la lista de " + list.name); input.enterKeyHint = "done";
+      if (typed[list.name]) input.value = typed[list.name];
+      const add = text("button", "primary", "Agregar"); add.type = "submit";
+      form.append(input, add);
+      form.onsubmit = async event => {
+        event.preventDefault();
+        const item = input.value.trim();
+        if (!item) return;
+        focusList = list.name; input.value = "";
+        if (!await apunte({ action: "list_add", list: list.name, text: item }, true)) { input.value = item; }
+      };
+      const foot = text("div", "ap-drawer-foot", "");
+      const clear = text("button", "ap-link", "Vaciar"); clear.type = "button"; clear.disabled = !list.items.length;
+      clear.onclick = () => { if (confirm("¿Quitar todos los elementos de la lista de " + list.name + "?")) apunte({ action: "list_clear", list: list.name }); };
+      const remove = text("button", "ap-link danger-link", "Eliminar lista"); remove.type = "button";
+      remove.onclick = () => { if (confirm("¿Eliminar la lista de " + list.name + (list.items.length ? " con todo lo que tiene?" : "?"))) apunte({ action: "list_delete", list: list.name }); };
+      foot.append(clear, remove);
+      body.append(form, foot);
+      drawer.appendChild(body);
+    }
+    box.appendChild(drawer);
   }
-  $("ap-lists-count").textContent = d.lists.length ? d.lists.length : "";
+  if (focusList) {
+    const target = [...box.querySelectorAll("input[data-list]")].find(input => input.dataset.list === focusList);
+    focusList = null;
+    if (target) target.focus();
+  }
+}
+function renderApuntes(d) {
+  renderLists(d.lists);
   apFill("ap-habits", d.habits.map(h => apRow(h.title,
     (h.remind_at ? "Recordatorio " + h.remind_at + " · " : "") + "racha de " + (h.streak === 1 ? "1 día" : h.streak + " días"),
     apCheck(h.done, (h.done ? "Ya marcado hoy: " : "Marcar hecho hoy: ") + h.title, () => { if (!h.done) apunte({ action: "habit_done", id: h.id }); }),
@@ -1725,10 +1784,14 @@ function apForm(id, build, reset) {
     if (body && await apunte(body)) reset();
   });
 }
-apForm("ap-list-form", () => {
-  const list = $("ap-list-name").value.trim(), item = $("ap-list-item").value.trim();
-  return list && item ? { action: "list_add", list, text: item } : null;
-}, () => { $("ap-list-item").value = ""; $("ap-list-item").focus(); });
+$("ap-list-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const name = $("ap-list-name").value.trim();
+  if (!name) { $("ap-list-name").focus(); return; }
+  const key = plainText(name).split(" ").filter(Boolean).join(" ");
+  closedLists.delete(key); focusList = key;  // La lista nueva queda abierta y lista para escribir.
+  if (await apunte({ action: "list_create", list: name })) $("ap-list-name").value = "";
+});
 apForm("ap-habit-form", () => {
   const title = $("ap-habit-title").value.trim();
   return title ? { action: "habit_add", title, time: $("ap-habit-time").value || null } : null;

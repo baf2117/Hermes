@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS list_items (
     text TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS lists (
+    name TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS dates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,
@@ -226,6 +230,10 @@ class Store:
                     self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
             if "account" not in {row["name"] for row in self._conn.execute("PRAGMA table_info(emails)")}:
                 self._conn.execute("ALTER TABLE emails ADD COLUMN account TEXT NOT NULL DEFAULT 'personal'")
+            # Las listas creadas antes de poder existir vacías: se registran por sus elementos.
+            self._conn.execute(
+                "INSERT OR IGNORE INTO lists (name, created_at) SELECT list, MIN(created_at) FROM list_items GROUP BY list"
+            )
             if self.kv_get(FTS_READY_KEY) is None:
                 # Indexa los mensajes guardados antes de que existiera la búsqueda.
                 self._conn.execute("INSERT INTO messages_fts (messages_fts) VALUES ('rebuild')")
@@ -624,6 +632,7 @@ class Store:
                 "SELECT 1 FROM list_items WHERE list = ? AND lower(text) = lower(?)", (name, text)
             ).fetchone():
                 return False
+            self._conn.execute("INSERT OR IGNORE INTO lists (name, created_at) VALUES (?, ?)", (name, now))
             self._conn.execute("INSERT INTO list_items (list, text, created_at) VALUES (?, ?, ?)", (name, text, now))
             return True
 
@@ -632,10 +641,27 @@ class Store:
             rows = self._conn.execute("SELECT id, text FROM list_items WHERE list = ? ORDER BY id", (name,)).fetchall()
         return [(r["id"], r["text"]) for r in rows]
 
+    def list_create(self, name: str, now: int) -> bool:
+        """Crea una lista vacía; False si ya existía."""
+        with self._lock, self._conn:
+            return self._conn.execute(
+                "INSERT OR IGNORE INTO lists (name, created_at) VALUES (?, ?)", (name, now)
+            ).rowcount > 0
+
+    def list_delete(self, name: str) -> bool:
+        """Elimina la lista con todo lo que tenga."""
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM list_items WHERE list = ?", (name,))
+            return self._conn.execute("DELETE FROM lists WHERE name = ?", (name,)).rowcount > 0
+
     def list_names(self) -> list[tuple[str, int]]:
+        """Todas las listas, también las vacías, con cuántos elementos tienen."""
         with self._lock:
-            rows = self._conn.execute("SELECT list, COUNT(*) n FROM list_items GROUP BY list ORDER BY list").fetchall()
-        return [(r["list"], r["n"]) for r in rows]
+            rows = self._conn.execute(
+                "SELECT l.name, COUNT(i.id) n FROM lists l LEFT JOIN list_items i ON i.list = l.name"
+                " GROUP BY l.name ORDER BY l.created_at, l.name"
+            ).fetchall()
+        return [(r["name"], r["n"]) for r in rows]
 
     def list_remove(self, item_id: int) -> bool:
         with self._lock, self._conn:

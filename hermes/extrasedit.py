@@ -78,6 +78,8 @@ class ExtrasEditor:
         if not isinstance(payload, dict):
             raise ApunteError("Solicitud inválida.")
         handler = {
+            "list_create": self._list_create,
+            "list_delete": self._list_delete,
             "list_add": self._list_add,
             "list_remove": self._list_remove,
             "list_clear": self._list_clear,
@@ -93,6 +95,24 @@ class ExtrasEditor:
         if handler is None:
             raise ApunteError("Acción desconocida.")
         return {"ok": True, "message": handler(payload)}
+
+    def _list_create(self, payload: dict[str, Any]) -> str:
+        name = self.extras._list_name(_text(payload.get("list"), 40, "Escribe el nombre de la lista."))
+        if not name:
+            raise ApunteError("Escribe el nombre de la lista.")
+        names = [existing for existing, _ in self.store.list_names()]
+        if name in names:
+            raise ApunteError(f"Ya tienes una lista de {name}.")
+        if len(names) >= MAX_LISTS:
+            raise ApunteError("Ya tienes muchas listas. Elimina alguna antes de crear otra.")
+        self.store.list_create(name, int(self._now().timestamp()))
+        return f"Creé la lista de {name}."
+
+    def _list_delete(self, payload: dict[str, Any]) -> str:
+        name = self.extras._list_name(_text(payload.get("list"), 40, "Falta la lista."))
+        if not self.store.list_delete(name):
+            raise ApunteError("Esa lista ya no existía. Recarga la página.")
+        return f"Eliminé la lista de {name}."
 
     def _list_add(self, payload: dict[str, Any]) -> str:
         name = self.extras._list_name(_text(payload.get("list"), 40, "Escribe el nombre de la lista."))
