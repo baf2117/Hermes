@@ -2959,6 +2959,22 @@ tick();
 
 MAX_POST_BYTES = 4096
 
+
+class _CountingReader:
+    """Envuelve lo que llega en una solicitud y cuenta cuánto se leyó."""
+
+    def __init__(self, raw: Any):
+        self.raw, self.count = raw, 0
+
+    def read(self, size: int = -1) -> bytes:
+        data = self.raw.read(size)
+        self.count += len(data)
+        return data
+
+    def readline(self, size: int = -1) -> bytes:
+        data = self.raw.readline(size)
+        self.count += len(data)
+        return data
 MAX_LOGIN_BYTES = 1024
 MAX_AUDIO_BYTES = 3_000_000  # Una orden hablada de hasta un minuto pesa mucho menos.
 
@@ -3121,6 +3137,27 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
             self._json(code, result)
 
         def do_POST(self) -> None:
+            # Si se responde sin leer todo lo enviado (un 401, 403 o 404), Windows corta la conexión con un
+            # reinicio y el navegador ve un error de red en vez de la respuesta: lo que sobre se lee y se descarta.
+            try:
+                declared = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                declared = 0
+            raw = self.rfile
+            counted = _CountingReader(raw)
+            self.rfile = counted  # type: ignore[assignment]
+            try:
+                self._post()
+            finally:
+                self.rfile = raw
+                left = declared - counted.count
+                if 0 < left <= MAX_AUDIO_BYTES:
+                    try:
+                        raw.read(left)
+                    except OSError:
+                        pass
+
+        def _post(self) -> None:
             # Otra web abierta en el navegador podría enviar formularios aquí: se exige el origen
             # de esta página y la clave que solo ella conoce.
             sent_token = self.headers.get("X-Hermes-Token", "").encode("latin-1", "replace")
