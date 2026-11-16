@@ -29,6 +29,7 @@ from .outside import (
     CALENDAR_SCOPE, Agenda, CalendarClient, Weather, calendar_token_path, find_calendars, run_heartbeat, valid_heartbeat,
 )
 from .pagevoice import PageVoice, VoiceRenderer
+from .extrasedit import ExtrasEditor
 from .settings import SettingsEditor
 from .remote import RemoteAccess
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
@@ -335,6 +336,9 @@ def run(config: Config) -> int:
     status.set_source("usage", lambda: usage_report(store, datetime.now().astimezone()))
     status.set_source("history", lambda: history_report(store, status))
     status.set_action("tasks", TaskEditor(assistant).apply)
+    apuntes = ExtrasEditor(assistant)
+    status.set_source("extras", apuntes.snapshot)
+    status.set_action("extras", apuntes.apply)
     piper = shared_piper(config)
     if transcriber is not None:
         # Hablarle desde la página: sirve también fuera de casa, con el micrófono del teléfono.

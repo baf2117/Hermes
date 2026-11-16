@@ -494,6 +494,35 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
   dialog#editor { max-height:calc(100dvh - 24px); }
   .stage-wrap { min-height:calc(100dvh - 150px); }
 }
+/* Apuntes: listas, notas, hábitos, fechas y esperas */
+.tabs { overflow-x:auto; scrollbar-width:none; }
+.tabs::-webkit-scrollbar { display:none; }
+.tabs a { white-space:nowrap; flex:none; }
+.ap-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap:16px; align-items:start; }
+.ap-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; min-width:0; }
+.ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
+.ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
+.ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
+.ap-form { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 10px; }
+.ap-form input, .ap-form select { flex:1 1 110px; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
+.ap-form input:focus, .ap-form select:focus { outline:none; border-color:var(--accent); }
+.ap-form input.narrow { flex:0 1 84px; }
+.ap-form input[type="time"] { flex:0 1 120px; }
+.ap-form .primary { margin-left:0; flex:none; }
+.ap-sub { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:12px 0 2px; font-weight:600; font-size:14px; text-transform:capitalize; }
+.ap-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line); font-size:15px; }
+.ap-row .grow { flex:1; min-width:0; overflow-wrap:anywhere; }
+.ap-row small { display:block; color:var(--muted); font-size:13px; }
+.ap-check { flex:none; width:24px; height:24px; border-radius:50%; border:2px solid var(--faint); background:none; cursor:pointer; padding:0; position:relative; }
+.ap-check:hover { border-color:var(--accent); }
+.ap-check.on { background:var(--accent); border-color:var(--accent); }
+.ap-check.on::after { content:""; position:absolute; left:7px; top:3px; width:5px; height:10px; border:solid #14110a; border-width:0 2px 2px 0; transform:rotate(45deg); }
+.ap-x { flex:none; font:inherit; color:var(--faint); background:none; border:0; cursor:pointer; padding:4px 6px; border-radius:6px; }
+.ap-x:hover { color:var(--warn); }
+.ap-link { font:inherit; font-size:13px; font-weight:400; color:var(--muted); background:none; border:0; cursor:pointer; padding:4px 0; text-decoration:underline; text-transform:none; }
+.ap-empty { color:var(--faint); font-size:14px; padding:6px 0; }
+@media (pointer:coarse) { .ap-x { padding:8px 10px; } .ap-check { width:28px; height:28px; } .ap-check.on::after { left:9px; top:5px; } }
+
 /* Ajustes */
 .set-group { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 16px; margin:0 0 16px; }
 .set-group h3 { font-size:15px; margin:12px 0 4px; }
@@ -597,6 +626,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <div class="brand"><span class="brand-dot"></span>Hermes</div>
     <nav class="tabs" aria-label="Secciones">
       <a href="#tareas" data-view="tareas">Tareas</a>
+      <a href="#apuntes" data-view="apuntes">Apuntes</a>
       <a href="#consumo" data-view="consumo">Consumo</a>
       <a href="#historial" data-view="historial">Historial</a>
       <a href="#vivo" data-view="vivo">En vivo</a>
@@ -667,6 +697,61 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
   <div class="grid2">
     <section><div class="label">Este mes por uso</div><div class="wide" id="by-purpose"></div></section>
     <section><div class="label">Últimas llamadas</div><div class="wide" id="recent-calls"></div></section>
+  </div>
+</div>
+
+<div class="view" id="view-apuntes" hidden>
+  <h1>Apuntes</h1>
+  <div class="subtitle">Tus listas, notas, hábitos y fechas. También puedes pedírselo a Hermes con tus palabras.</div>
+  <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="primary" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
+  <div class="ap-grid">
+    <section class="ap-card">
+      <h3>Listas <span id="ap-lists-count"></span></h3>
+      <p>Toca el círculo para quitar un elemento.</p>
+      <form class="ap-form" id="ap-list-form" autocomplete="off">
+        <input id="ap-list-name" list="ap-list-names" maxlength="40" placeholder="Lista (súper)" aria-label="Nombre de la lista">
+        <datalist id="ap-list-names"></datalist>
+        <input id="ap-list-item" maxlength="100" placeholder="Qué agregar" aria-label="Elemento">
+        <button type="submit" class="primary">Agregar</button>
+      </form>
+      <div id="ap-lists"></div>
+    </section>
+    <section class="ap-card">
+      <h3>Hábitos <span id="ap-habits-count"></span></h3>
+      <p>Márcalos cada día para mantener la racha.</p>
+      <form class="ap-form" id="ap-habit-form" autocomplete="off">
+        <input id="ap-habit-title" maxlength="100" placeholder="Nuevo hábito" aria-label="Hábito">
+        <input id="ap-habit-time" type="time" aria-label="Hora del recordatorio (opcional)">
+        <button type="submit" class="primary">Crear</button>
+      </form>
+      <div id="ap-habits"></div>
+    </section>
+    <section class="ap-card">
+      <h3>Notas <span id="ap-notes-count"></span></h3>
+      <p>Lo que Hermes recuerda de ti y usa al conversar.</p>
+      <form class="ap-form" id="ap-note-form" autocomplete="off">
+        <input id="ap-note-text" maxlength="500" placeholder="Nueva nota" aria-label="Nota">
+        <button type="submit" class="primary">Guardar</button>
+      </form>
+      <div id="ap-notes"></div>
+    </section>
+    <section class="ap-card">
+      <h3>Fechas <span id="ap-dates-count"></span></h3>
+      <p>Hermes avisa un día antes y ese día.</p>
+      <form class="ap-form" id="ap-date-form" autocomplete="off">
+        <select id="ap-date-kind" aria-label="Tipo"><option value="cumpleaños">Cumpleaños</option><option value="aniversario">Aniversario</option></select>
+        <input id="ap-date-name" maxlength="80" placeholder="De quién" aria-label="De quién">
+        <input id="ap-date-day" class="narrow" type="number" min="1" max="31" placeholder="Día" aria-label="Día">
+        <select id="ap-date-month" aria-label="Mes"></select>
+        <button type="submit" class="primary">Guardar</button>
+      </form>
+      <div id="ap-dates"></div>
+    </section>
+    <section class="ap-card">
+      <h3>Esperando <span id="ap-waiting-count"></span></h3>
+      <p>Lo que te deben otras personas. Dile a Hermes «estoy esperando que…» para agregar.</p>
+      <div id="ap-waiting"></div>
+    </section>
   </div>
 </div>
 
@@ -784,7 +869,7 @@ function toast(message, undoId) {
 function hideToast() { $("toast").classList.remove("show"); }
 
 /* ---------- Navegación ---------- */
-const VIEWS = ["tareas", "consumo", "historial", "vivo", "ajustes"];
+const VIEWS = ["tareas", "apuntes", "consumo", "historial", "vivo", "ajustes"];
 function currentView() { const v = location.hash.slice(1); return VIEWS.includes(v) ? v : "tareas"; }
 function showView() {
   const view = currentView();
@@ -794,6 +879,7 @@ function showView() {
   if (view === "consumo") loadUsage();
   if (view === "historial") loadHistory();
   if (view === "ajustes") loadSettings();
+  if (view === "apuntes") loadApuntes();
 }
 window.addEventListener("hashchange", showView);
 
@@ -1440,6 +1526,103 @@ $("say-form").addEventListener("submit", async event => {
   } catch (e) { talkShow("", e.message, true); }
   $("say-send").disabled = false;
 });
+/* ---------- Apuntes ---------- */
+const AP_MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+AP_MONTHS.forEach((name, i) => { const o = document.createElement("option"); o.value = i + 1; o.textContent = name; $("ap-date-month").appendChild(o); });
+let apuntesSerialized = "";
+async function apunte(body, quiet) {
+  try {
+    const data = await send("/extras", body);
+    if (!quiet) toast(data.message);
+    await loadApuntes(true);
+    return true;
+  } catch (e) { toast(e.message); return false; }
+}
+function apRow(main, detail, check, onRemove, removeLabel) {
+  const row = text("div", "ap-row", "");
+  if (check) row.appendChild(check);
+  const body = text("div", "grow", main);
+  if (detail) body.appendChild(text("small", "", detail));
+  row.appendChild(body);
+  if (onRemove) { const x = text("button", "ap-x", "✕"); x.type = "button"; x.setAttribute("aria-label", removeLabel); x.onclick = onRemove; row.appendChild(x); }
+  return row;
+}
+function apCheck(on, label, onClick) {
+  const b = text("button", "ap-check" + (on ? " on" : ""), ""); b.type = "button"; b.setAttribute("aria-label", label); b.onclick = onClick; return b;
+}
+function apFill(id, rows, empty) {
+  const box = $(id); box.textContent = "";
+  if (!rows.length) box.appendChild(text("div", "ap-empty", empty));
+  rows.forEach(r => box.appendChild(r));
+}
+function renderApuntes(d) {
+  const lists = $("ap-lists"); lists.textContent = "";
+  $("ap-list-names").textContent = "";
+  if (!d.lists.length) lists.appendChild(text("div", "ap-empty", "Todavía no tienes listas."));
+  for (const list of d.lists) {
+    const o = document.createElement("option"); o.value = list.name; $("ap-list-names").appendChild(o);
+    const head = text("div", "ap-sub", list.name + " · " + list.items.length);
+    const clear = text("button", "ap-link", "Vaciar"); clear.type = "button";
+    clear.onclick = () => { if (confirm("¿Vaciar la lista de " + list.name + "?")) apunte({ action: "list_clear", list: list.name }); };
+    head.appendChild(clear); lists.appendChild(head);
+    for (const item of list.items) lists.appendChild(apRow(item.text, "", apCheck(false, "Quitar " + item.text, () => apunte({ action: "list_remove", id: item.id }, true))));
+  }
+  $("ap-lists-count").textContent = d.lists.length ? d.lists.length : "";
+  apFill("ap-habits", d.habits.map(h => apRow(h.title,
+    (h.remind_at ? "Recordatorio " + h.remind_at + " · " : "") + "racha de " + (h.streak === 1 ? "1 día" : h.streak + " días"),
+    apCheck(h.done, (h.done ? "Ya marcado hoy: " : "Marcar hecho hoy: ") + h.title, () => { if (!h.done) apunte({ action: "habit_done", id: h.id }); }),
+    () => { if (confirm("¿Quitar el hábito «" + h.title + "» y su racha?")) apunte({ action: "habit_delete", id: h.id }); }, "Quitar el hábito " + h.title)),
+    "Todavía no tienes hábitos.");
+  $("ap-habits-count").textContent = d.habits.length ? d.habits.filter(h => h.done).length + " de " + d.habits.length + " hoy" : "";
+  apFill("ap-notes", d.notes.map(n => apRow(n.text, "", null,
+    () => { if (confirm("¿Borrar esta nota?")) apunte({ action: "note_delete", id: n.id }); }, "Borrar la nota")), "Todavía no hay notas.");
+  $("ap-notes-count").textContent = d.notes.length || "";
+  apFill("ap-dates", d.dates.map(x => apRow(x.day + " de " + AP_MONTHS[x.month - 1] + (x.year ? " de " + x.year : ""), x.label, null,
+    () => { if (confirm("¿Borrar esta fecha?")) apunte({ action: "date_delete", id: x.id }); }, "Borrar la fecha")), "Todavía no hay fechas.");
+  $("ap-dates-count").textContent = d.dates.length || "";
+  apFill("ap-waiting", d.waiting.map(w => apRow(w.title, w.due_at ? "Te pregunto " + new Date(w.due_at * 1000).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" }) : "",
+    apCheck(false, "Ya llegó: " + w.title, async () => { try { toast((await send("/tasks", { action: "done", id: w.id })).message); loadApuntes(true); } catch (e) { toast(e.message); } }))),
+    "No estás esperando nada.");
+  $("ap-waiting-count").textContent = d.waiting.length || "";
+  $("ap-quiet").hidden = !d.quiet_until;
+  if (d.quiet_until) $("ap-quiet-text").textContent = "En silencio hasta las " + new Date(d.quiet_until * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }) + ". Los avisos salen después.";
+}
+async function loadApuntes(force) {
+  try {
+    const res = await fetch("/extras", { cache: "no-store" });
+    if (res.status === 401) { location.href = "/login"; return; }
+    const data = await res.json();
+    const serialized = JSON.stringify({ ...data, now: 0 });
+    if (force || serialized !== apuntesSerialized) { apuntesSerialized = serialized; renderApuntes(data); }
+  } catch { $("offline").style.display = "block"; }
+}
+function apForm(id, build, reset) {
+  $(id).addEventListener("submit", async event => {
+    event.preventDefault();
+    const body = build();
+    if (body && await apunte(body)) reset();
+  });
+}
+apForm("ap-list-form", () => {
+  const list = $("ap-list-name").value.trim(), item = $("ap-list-item").value.trim();
+  return list && item ? { action: "list_add", list, text: item } : null;
+}, () => { $("ap-list-item").value = ""; $("ap-list-item").focus(); });
+apForm("ap-habit-form", () => {
+  const title = $("ap-habit-title").value.trim();
+  return title ? { action: "habit_add", title, time: $("ap-habit-time").value || null } : null;
+}, () => { $("ap-habit-title").value = ""; $("ap-habit-time").value = ""; });
+apForm("ap-note-form", () => {
+  const note = $("ap-note-text").value.trim();
+  return note ? { action: "note_add", text: note } : null;
+}, () => { $("ap-note-text").value = ""; });
+apForm("ap-date-form", () => {
+  const day = parseInt($("ap-date-day").value, 10);
+  if (!day) return null;
+  return { action: "date_add", kind: $("ap-date-kind").value, name: $("ap-date-name").value.trim(), day, month: parseInt($("ap-date-month").value, 10) };
+}, () => { $("ap-date-name").value = ""; $("ap-date-day").value = ""; });
+$("ap-quiet-off").addEventListener("click", () => apunte({ action: "quiet_off" }));
+setInterval(() => { if (currentView() === "apuntes") loadApuntes(); }, 5000);
+
 /* ---------- Ajustes ---------- */
 let settingsData = null;
 let restarting = false;
@@ -1666,7 +1849,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 self._send(200, "application/json", json.dumps(status.snapshot()).encode("utf-8"))
             elif path == "/settings" and status.settings is not None:
                 self._json(200, status.settings.snapshot(not self._is_remote()))
-            elif path in ("/tasks", "/usage", "/history"):
+            elif path in ("/tasks", "/usage", "/history", "/extras"):
                 self._send(200, "application/json", json.dumps(status.read(path[1:])).encode("utf-8"))
             else:
                 self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
@@ -1722,7 +1905,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 return self._send(403, "text/plain; charset=utf-8", b"No permitido.")
             if path == "/settings" and status.settings is not None:
                 return self._settings()
-            if path not in ("/voice", "/tasks", "/speak") or (path != "/voice" and not status.has_action(path[1:])):
+            if path not in ("/voice", "/tasks", "/speak", "/extras") or (path != "/voice" and not status.has_action(path[1:])):
                 return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
             if path == "/speak":
                 return self._speak()
@@ -1739,7 +1922,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                     return self._json(400, {"error": "Solicitud inválida."})
                 status.set_paused(not listening)
                 return self._json(200, {"paused": status.paused})
-            code, result = status.act("tasks", payload)
+            code, result = status.act(path[1:], payload)
             self._json(code, result)
 
         def log_message(self, *_: Any) -> None:
