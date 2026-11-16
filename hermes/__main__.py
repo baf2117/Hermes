@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import logging.handlers
+import os
 import shutil
 import socket
 import sys
@@ -31,7 +32,6 @@ from .telegram import TelegramBot, TelegramClient, TelegramError
 from .voice import WhisperTranscriber
 from .websearch import SearchError, TavilySearch
 
-SINGLE_INSTANCE_PORT = 47821
 
 
 def configure_logging(config: Config) -> None:
@@ -223,7 +223,7 @@ def run(config: Config) -> int:
     # Telegram no admite dos lectores a la vez; este socket impide una segunda copia.
     lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        lock.bind(("127.0.0.1", SINGLE_INSTANCE_PORT))
+        lock.bind(("127.0.0.1", config.lock_port))
     except OSError:
         print("Hermes ya está corriendo.", file=sys.stderr)
         return 3
@@ -328,17 +328,30 @@ def gmail_auth(config: Config, account: str = DEFAULT_ACCOUNT) -> int:
     return 0
 
 
+def take_home(arguments: list[str]) -> list[str]:
+    """Atiende «--home CARPETA»: otra carpeta de datos, para correr una segunda copia de Hermes
+    con sus propias tareas y memoria. Devuelve los argumentos restantes."""
+    if "--home" not in arguments:
+        return arguments
+    index = arguments.index("--home")
+    if index + 1 >= len(arguments) or not arguments[index + 1].strip():
+        raise SystemExit("Falta la carpeta después de --home.")
+    os.environ["HERMES_HOME"] = arguments[index + 1]
+    return arguments[:index] + arguments[index + 2 :]
+
+
 def main() -> int:
+    arguments = take_home(sys.argv[1:])
     config = Config.load()
-    command = sys.argv[1] if len(sys.argv) > 1 else "run"
+    command = arguments[0] if arguments else "run"
     if command == "gmail-auth":
-        return gmail_auth(config, sys.argv[2].strip().lower() if len(sys.argv) > 2 else DEFAULT_ACCOUNT)
+        return gmail_auth(config, arguments[1].strip().lower() if len(arguments) > 1 else DEFAULT_ACCOUNT)
     if command == "check":
         return check(config)
     if command == "backup":
         return backup_now(config)
     if command == "restore":
-        return restore(config, sys.argv[2:])
+        return restore(config, arguments[1:])
     return run(config)
 
 

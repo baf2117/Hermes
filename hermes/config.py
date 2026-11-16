@@ -61,6 +61,7 @@ class Config:
     public_host: str = ""  # Dominio del túnel (ngrok) por el que se permite abrir la página con contraseña.
     page_password: str = field(default="", repr=False)
     status_port: int = 47822
+    lock_port: int = 47821  # Candado de «una sola copia»; una segunda copia de Hermes usa otro.
     tavily_api_key: str = ""
     llm_mode: str = "local"
     claude_executable: str = "claude"
@@ -115,6 +116,7 @@ class Config:
             public_host=get("HERMES_PUBLIC_HOST"),
             page_password=get("HERMES_PAGE_PASSWORD"),
             status_port=int(get("HERMES_STATUS_PORT", "47822")),
+            lock_port=int(get("HERMES_LOCK_PORT", "47821")),
             tavily_api_key=get("TAVILY_API_KEY"),
             llm_mode=get("HERMES_LLM_MODE", "local").lower(),
             claude_executable=get("HERMES_CLAUDE_PATH", "claude"),
