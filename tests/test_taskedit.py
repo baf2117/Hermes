@@ -116,6 +116,25 @@ class EditorTests(unittest.TestCase):
         with self.assertRaises(EditError):
             self.apply(action="reopen", id=self.task.id)
 
+    def test_undoing_done_brings_back_the_steps_it_closed(self):
+        self.apply(action="add_step", id=self.task.id, title="Buscar el recibo")
+        self.apply(action="add_step", id=self.task.id, title="Ir al banco")
+        self.apply(action="add_step", id=self.task.id, title="Guardar el comprobante")
+        earlier, closing, untouched = self.store.subtasks(self.task.id)
+        self.store.set_status(earlier.id, "done", NOW - 600)  # Ese paso ya estaba hecho de antes.
+        self.apply(action="done", id=self.task.id)
+        self.assertEqual({s.status for s in self.store.subtasks(self.task.id)}, {"done"})
+        self.apply(action="reopen", id=self.task.id)
+        self.assertEqual([(s.title, s.status) for s in self.store.subtasks(self.task.id)],
+                         [("Buscar el recibo", "done"), ("Ir al banco", "pending"), ("Guardar el comprobante", "pending")])
+        self.assertEqual(self.store.get_task(closing.id).completed_at, None)
+
+    def test_undoing_cancel_brings_back_the_steps_too(self):
+        self.apply(action="add_step", id=self.task.id, title="Paso")
+        self.apply(action="cancel", id=self.task.id)
+        self.apply(action="reopen", id=self.task.id)
+        self.assertEqual([s.status for s in self.store.subtasks(self.task.id)], ["pending"])
+
     def test_add_step_needs_a_title(self):
         with self.assertRaises(EditError):
             self.apply(action="add_step", id=self.task.id, title=" ")

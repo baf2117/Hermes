@@ -153,6 +153,11 @@ class TaskEditor:
             raise EditError("Esa tarea ya está pendiente.")
         now = self._now()
         self.store.reopen(task.id, now)
+        # Al terminar o cancelar una tarea se cierran con ella sus pasos pendientes, en el mismo instante.
+        # Deshacerlo los regresa; los pasos que ya estaban hechos de antes se quedan hechos.
+        for step in self.store.subtasks(task.id, task.status):
+            if step.completed_at == task.completed_at:
+                self.store.reopen(step.id, now)
         if task.parent_id is not None:
             parent = self.store.get_task(task.parent_id)
             if parent is not None and parent.status != "pending":
