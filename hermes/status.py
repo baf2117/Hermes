@@ -293,6 +293,11 @@ button.stat[aria-pressed="true"] { border-color:var(--accent); box-shadow:0 0 0 
 .group { overflow:hidden; }
 .group-head { display:flex; align-items:center; gap:9px; padding:12px 16px; border-bottom:1px solid var(--line); font-weight:600; }
 .group-head .name { text-transform:capitalize; }
+button.group-head { width:100%; font:inherit; font-weight:600; color:inherit; background:none; border:0; border-bottom:1px solid var(--line); text-align:left; cursor:pointer; }
+button.group-head:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.group-head .chev { width:8px; height:8px; border:solid var(--muted); border-width:0 2px 2px 0; transform:rotate(45deg); margin:0 4px 3px 4px; transition:transform .15s; flex:none; }
+.group.closed .group-head { border-bottom:0; }
+.group.closed .chev { transform:rotate(-45deg); margin-bottom:0; }
 .group-head em { margin-left:auto; font-style:normal; font-weight:500; color:var(--muted); font-size:13px; }
 .task { display:flex; gap:12px; padding:12px 16px; border-top:1px solid var(--line); }
 .task:first-of-type { border-top:0; }
@@ -926,6 +931,9 @@ const URGENCY_ORDER = { alta: 0, media: 1, baja: 2 };
 const KNOWN = ["trabajo", "negocios", "casa", "personal", "salud", "finanzas", "reptiles"];
 let filter = "todas";
 let stateFilter = "pendientes";  // El estado elegido arriba: pendientes, urgentes, vencidas, hoy o terminadas.
+// Categorías minimizadas: se recuerdan en este navegador.
+let collapsed = new Set();
+try { collapsed = new Set(JSON.parse(localStorage.getItem("hermes-collapsed") || "[]")); } catch {}
 const STATE_EMPTY = {
   pendientes: ["No tienes tareas pendientes", "Escríbele o háblale a Hermes para anotar algo."],
   urgentes: ["Nada urgente", "Ninguna tarea pendiente está marcada como urgente."],
@@ -1152,10 +1160,20 @@ function renderTasks(data) {
   }
   for (const c of visible) {
     const card = text("div", "card group", "");
-    const head = text("div", "group-head", "");
+    const closed = collapsed.has(c);
+    const head = text("button", "group-head", "");
+    head.type = "button";
+    head.setAttribute("aria-expanded", String(!closed));
+    head.setAttribute("aria-label", (closed ? "Mostrar" : "Minimizar") + " las tareas de " + c);
+    head.onclick = () => {
+      if (collapsed.has(c)) collapsed.delete(c); else collapsed.add(c);
+      try { localStorage.setItem("hermes-collapsed", JSON.stringify([...collapsed])); } catch {}
+      renderTasks(lastTasks);
+    };
     const dot = text("span", "dot", ""); dot.style.setProperty("--cat", catColor(c));
-    head.append(dot, text("span", "name", c), text("em", "", counts[c] + (counts[c] === 1 ? " tarea" : " tareas")));
+    head.append(dot, text("span", "name", c), text("em", "", counts[c] + (counts[c] === 1 ? " tarea" : " tareas")), text("span", "chev", ""));
     card.append(head);
+    if (closed) { card.classList.add("closed"); groups.append(card); continue; }
     const rows = shown.filter(t => t.category === c);
     if (ended) rows.forEach(t => card.append(finishedRow(t, finished.filter(s => s.parent_id === t.id).sort((a, b) => a.id - b.id))));
     else rows.sort(sortTasks).forEach(t => card.append(taskRow(t, stepsOf(t.id), nowTs)));
