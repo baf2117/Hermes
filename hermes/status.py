@@ -498,8 +498,16 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
 .tabs { overflow-x:auto; scrollbar-width:none; }
 .tabs::-webkit-scrollbar { display:none; }
 .tabs a { white-space:nowrap; flex:none; }
-.ap-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap:16px; align-items:start; }
-.ap-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; min-width:0; }
+.subtabs { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 16px; }
+.subtabs a { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border:1px solid var(--line); border-radius:999px;
+  color:var(--muted); text-decoration:none; font-size:14px; font-weight:600; white-space:nowrap; }
+.subtabs a:hover { color:var(--ink); }
+.subtabs a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.subtabs a[aria-current="page"] { background:var(--accent); border-color:var(--accent); color:#14110a; }
+.subtabs a span { font-weight:400; font-size:12px; opacity:.8; }
+.subtabs a span:empty { display:none; }
+.ap-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; min-width:0; max-width:760px; }
+.ap-card[hidden] { display:none; }
 .ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
 .ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
 .ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
@@ -521,7 +529,7 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
 .ap-x:hover { color:var(--warn); }
 .ap-link { font:inherit; font-size:13px; font-weight:400; color:var(--muted); background:none; border:0; cursor:pointer; padding:4px 0; text-decoration:underline; text-transform:none; }
 .ap-empty { color:var(--faint); font-size:14px; padding:6px 0; }
-@media (pointer:coarse) { .ap-x { padding:8px 10px; } .ap-check { width:28px; height:28px; } .ap-check.on::after { left:9px; top:5px; } }
+@media (pointer:coarse) { .subtabs a { padding:10px 16px; } .ap-x { padding:8px 10px; } .ap-check { width:28px; height:28px; } .ap-check.on::after { left:9px; top:5px; } }
 
 /* Ajustes */
 .set-group { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 16px; margin:0 0 16px; }
@@ -701,11 +709,18 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
 </div>
 
 <div class="view" id="view-apuntes" hidden>
-  <h1>Apuntes</h1>
-  <div class="subtitle">Tus listas, notas, hábitos y fechas. También puedes pedírselo a Hermes con tus palabras.</div>
+  <h1 id="ap-title">Apuntes</h1>
+  <div class="subtitle">También puedes pedírselo a Hermes con tus palabras.</div>
+  <nav class="subtabs" id="ap-tabs" aria-label="Apartados de Apuntes">
+    <a href="#apuntes/listas" data-sub="listas">Listas<span id="ap-tab-listas"></span></a>
+    <a href="#apuntes/habitos" data-sub="habitos">Hábitos<span id="ap-tab-habitos"></span></a>
+    <a href="#apuntes/notas" data-sub="notas">Notas<span id="ap-tab-notas"></span></a>
+    <a href="#apuntes/fechas" data-sub="fechas">Fechas<span id="ap-tab-fechas"></span></a>
+    <a href="#apuntes/esperando" data-sub="esperando">Esperando<span id="ap-tab-esperando"></span></a>
+  </nav>
   <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="primary" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
   <div class="ap-grid">
-    <section class="ap-card">
+    <section class="ap-card" data-sub="listas" hidden>
       <h3>Listas <span id="ap-lists-count"></span></h3>
       <p>Toca el círculo para quitar un elemento.</p>
       <form class="ap-form" id="ap-list-form" autocomplete="off">
@@ -716,7 +731,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
       </form>
       <div id="ap-lists"></div>
     </section>
-    <section class="ap-card">
+    <section class="ap-card" data-sub="habitos" hidden>
       <h3>Hábitos <span id="ap-habits-count"></span></h3>
       <p>Márcalos cada día para mantener la racha.</p>
       <form class="ap-form" id="ap-habit-form" autocomplete="off">
@@ -726,7 +741,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
       </form>
       <div id="ap-habits"></div>
     </section>
-    <section class="ap-card">
+    <section class="ap-card" data-sub="notas" hidden>
       <h3>Notas <span id="ap-notes-count"></span></h3>
       <p>Lo que Hermes recuerda de ti y usa al conversar.</p>
       <form class="ap-form" id="ap-note-form" autocomplete="off">
@@ -735,7 +750,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
       </form>
       <div id="ap-notes"></div>
     </section>
-    <section class="ap-card">
+    <section class="ap-card" data-sub="fechas" hidden>
       <h3>Fechas <span id="ap-dates-count"></span></h3>
       <p>Hermes avisa un día antes y ese día.</p>
       <form class="ap-form" id="ap-date-form" autocomplete="off">
@@ -747,7 +762,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
       </form>
       <div id="ap-dates"></div>
     </section>
-    <section class="ap-card">
+    <section class="ap-card" data-sub="esperando" hidden>
       <h3>Esperando <span id="ap-waiting-count"></span></h3>
       <p>Lo que te deben otras personas. Dile a Hermes «estoy esperando que…» para agregar.</p>
       <div id="ap-waiting"></div>
@@ -870,7 +885,20 @@ function hideToast() { $("toast").classList.remove("show"); }
 
 /* ---------- Navegación ---------- */
 const VIEWS = ["tareas", "apuntes", "consumo", "historial", "vivo", "ajustes"];
-function currentView() { const v = location.hash.slice(1); return VIEWS.includes(v) ? v : "tareas"; }
+function currentView() { const v = location.hash.slice(1).split("/")[0]; return VIEWS.includes(v) ? v : "tareas"; }
+// Apuntes tiene un submenú: cada apartado es su propia página (#apuntes/listas, #apuntes/habitos…).
+const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", esperando: "Esperando" };
+let lastSub = "listas";
+function currentSub() {
+  const sub = location.hash.slice(1).split("/")[1];
+  if (AP_SUBS[sub]) lastSub = sub;
+  return lastSub;
+}
+function showSub() {
+  const sub = currentSub();
+  document.querySelectorAll("#view-apuntes .ap-card").forEach(card => { card.hidden = card.dataset.sub !== sub; });
+  document.querySelectorAll("#ap-tabs a").forEach(a => a.setAttribute("aria-current", a.dataset.sub === sub ? "page" : "false"));
+}
 function showView() {
   const view = currentView();
   for (const name of VIEWS) $("view-" + name).hidden = name !== view;
@@ -879,7 +907,7 @@ function showView() {
   if (view === "consumo") loadUsage();
   if (view === "historial") loadHistory();
   if (view === "ajustes") loadSettings();
-  if (view === "apuntes") loadApuntes();
+  if (view === "apuntes") { showSub(); loadApuntes(); }
 }
 window.addEventListener("hashchange", showView);
 
@@ -1584,6 +1612,8 @@ function renderApuntes(d) {
     apCheck(false, "Ya llegó: " + w.title, async () => { try { toast((await send("/tasks", { action: "done", id: w.id })).message); loadApuntes(true); } catch (e) { toast(e.message); } }))),
     "No estás esperando nada.");
   $("ap-waiting-count").textContent = d.waiting.length || "";
+  const counts = { listas: d.lists.length, habitos: d.habits.length, notas: d.notes.length, fechas: d.dates.length, esperando: d.waiting.length };
+  for (const key in counts) $("ap-tab-" + key).textContent = counts[key] || "";
   $("ap-quiet").hidden = !d.quiet_until;
   if (d.quiet_until) $("ap-quiet-text").textContent = "En silencio hasta las " + new Date(d.quiet_until * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }) + ". Los avisos salen después.";
 }
