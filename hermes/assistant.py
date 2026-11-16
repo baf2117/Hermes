@@ -229,7 +229,7 @@ class Assistant:
         self.search = search
         self._now = now or (lambda: datetime.now().astimezone())
         self.extras = Extras(store, config, self._now, Reply)
-        self.weather: Callable[[], str] | None = None  # Línea del clima para el resumen, si hay algo que avisar.
+        self.weather: Callable[[], str] | None = None  # Línea del clima para el resumen de la mañana.
         self.agenda: Callable[[datetime], list[str]] | None = None  # Eventos del calendario de un día.
         # Botones y comandos que atienden otras partes de Hermes, como la seguridad de la página.
         self.button_hooks: dict[str, Callable[[int], Reply]] = {}

@@ -41,6 +41,20 @@ WEATHER_API = "https://api.open-meteo.com/v1/forecast"
 RAIN_PERCENT = 50
 HOT_DEGREES = 32
 COLD_DEGREES = 8
+# Códigos de tiempo de Open-Meteo (WMO) -> cómo se ve el día. Los de lluvia y tormenta se avisan aparte.
+SKY = (
+    (0, "☀️", "despejado"), (2, "🌤", "con algunas nubes"), (3, "☁️", "nublado"), (48, "🌫", "con neblina"),
+    (67, "🌦", "con llovizna"), (77, "🌨", "con nieve"), (82, "🌦", "con chubascos"), (99, "⛈", "con tormentas"),
+)
+
+
+def _sky(code: int | None) -> tuple[str, str]:
+    if code is None:
+        return "🌡", ""
+    for top, mark, words in SKY:
+        if code <= top:
+            return mark, words
+    return "🌡", ""
 
 
 class Weather:
@@ -50,26 +64,30 @@ class Weather:
         self.location, self._fetch = location, fetch
 
     def line(self) -> str:
-        """Una frase si hoy llueve, hace mucho calor o mucho frío; cadena vacía en un día normal."""
+        """Cómo estará hoy, todos los días. Si llueve, hace mucho calor o mucho frío, eso va primero."""
         query = urllib.parse.urlencode(
             {
                 "latitude": self.location[0], "longitude": self.location[1], "timezone": "auto", "forecast_days": 1,
-                "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+                "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code",
             }
         )
         try:
             daily = json.loads(self._fetch(f"{WEATHER_API}?{query}").decode("utf-8"))["daily"]
             high, low = round(float(daily["temperature_2m_max"][0])), round(float(daily["temperature_2m_min"][0]))
             rain = int(daily["precipitation_probability_max"][0] or 0)
+            raw_code = (daily.get("weather_code") or [None])[0]
+            code = None if raw_code is None else int(raw_code)
         except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
             raise RuntimeError(f"pronóstico no disponible: {exc}") from exc
         if rain >= RAIN_PERCENT:
             return f"🌧 Hoy es probable que llueva ({rain} %). Entre {low} y {high} °C."
         if high >= HOT_DEGREES:
-            return f"🥵 Hoy hará calor: hasta {high} °C."
+            return f"🥵 Hoy hará calor: hasta {high} °C (mínima de {low} °C)."
         if low <= COLD_DEGREES:
-            return f"🥶 Hoy hará frío: mínima de {low} °C."
-        return ""
+            return f"🥶 Hoy hará frío: mínima de {low} °C (máxima de {high} °C)."
+        mark, words = _sky(code)
+        chance = f", {rain} % de lluvia" if rain else ""
+        return f"{mark} Hoy{' ' + words if words else ''}: entre {low} y {high} °C{chance}."
 
 
 # --- Calendario ---

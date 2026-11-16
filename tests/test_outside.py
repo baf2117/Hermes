@@ -16,24 +16,28 @@ from tests.test_core import TZ, Harness
 NOW = datetime(2026, 11, 10, 8, 0, tzinfo=TZ)
 
 
-def forecast(high, low, rain):
+def forecast(high, low, rain, code=None):
     def fetch(url):
         fetch.urls.append(url)
-        return json.dumps(
-            {"daily": {"temperature_2m_max": [high], "temperature_2m_min": [low], "precipitation_probability_max": [rain]}}
-        ).encode("utf-8")
+        daily = {"temperature_2m_max": [high], "temperature_2m_min": [low], "precipitation_probability_max": [rain]}
+        if code is not None:
+            daily["weather_code"] = [code]
+        return json.dumps({"daily": daily}).encode("utf-8")
 
     fetch.urls = []
     return fetch
 
 
 class WeatherTests(unittest.TestCase):
-    def test_only_speaks_up_when_there_is_something_to_say(self):
+    def test_says_the_weather_every_day_and_warns_first(self):
         for values, expected in (
-            ((24.4, 16.2, 80), "🌧 Hoy es probable que llueva (80 %). Entre 16 y 24 °C."),
-            ((34.6, 20, 10), "🥵 Hoy hará calor: hasta 35 °C."),
-            ((18, 5.2, None), "🥶 Hoy hará frío: mínima de 5 °C."),
-            ((25, 15, 20), ""),
+            ((24.4, 16.2, 80, 61), "🌧 Hoy es probable que llueva (80 %). Entre 16 y 24 °C."),
+            ((34.6, 20, 10, 0), "🥵 Hoy hará calor: hasta 35 °C (mínima de 20 °C)."),
+            ((18, 5.2, None), "🥶 Hoy hará frío: mínima de 5 °C (máxima de 18 °C)."),
+            ((25, 15, 20, 2), "🌤 Hoy con algunas nubes: entre 15 y 25 °C, 20 % de lluvia."),
+            ((26, 14, 0, 0), "☀️ Hoy despejado: entre 14 y 26 °C."),
+            ((22, 15, 30, 3), "☁️ Hoy nublado: entre 15 y 22 °C, 30 % de lluvia."),
+            ((25, 15, 0), "🌡 Hoy: entre 15 y 25 °C."),
         ):
             self.assertEqual(Weather((14.6, -90.5), forecast(*values)).line(), expected)
 
