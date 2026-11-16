@@ -79,6 +79,20 @@ class ValidateTests(unittest.TestCase):
             with self.assertRaises(SettingError, msg=f"{key}={raw!r}"):
                 validate(BY_KEY[key], raw)
 
+    def test_up_to_fifty_categories_with_their_colors(self):
+        categories = BY_KEY["HERMES_CATEGORIES"]
+        fifty = ", ".join(f"cat {i}" for i in range(50))
+        self.assertEqual(validate(categories, fifty), fifty)
+        with self.assertRaises(SettingError):
+            validate(categories, fifty + ", una mas")
+        colors = BY_KEY["HERMES_CATEGORY_COLORS"]
+        self.assertEqual(validate(colors, " Trabajo:#3567B5 , casa:#b36b2a "), "trabajo:#3567b5, casa:#b36b2a")
+        self.assertEqual(validate(colors, ""), "")
+        for bad in ("trabajo:rojo", "trabajo:#123", "trabajo:#12345g", "trabajo #3567b5", "a<b>:#3567b5",
+                    "trabajo:#3567b5;background:url(x)", ", ".join(f"c{i}:#000000" for i in range(51))):
+            with self.assertRaises(SettingError, msg=bad):
+                validate(colors, bad)
+
     def test_claude_model_is_picked_from_a_list(self):
         model = BY_KEY["HERMES_CLAUDE_MODEL"]
         self.assertEqual(len(model.choices), len(model.choice_labels))
@@ -119,6 +133,15 @@ class EditorTests(HomeCase):
         self.assertEqual(self.config.categories, ("casa", "trabajo"))
         self.assertIn("HERMES_SUMMARY_TIME=06:45", self.env.read_text(encoding="utf-8"))
         self.assertFalse(self.editor.snapshot(False)["restart_needed"])
+
+    def test_colors_apply_at_once_and_reach_the_tasks_page(self):
+        from hermes.status import tasks_snapshot
+        from hermes.store import Store
+
+        self.assertEqual(self.change(HERMES_CATEGORY_COLORS="casa:#ff8800")["message"], "Guardado y aplicado.")
+        self.assertEqual(self.config.category_colors, {"casa": "#ff8800"})
+        snapshot = tasks_snapshot(Store(":memory:"), self.config.categories, 0, self.config.category_colors)
+        self.assertEqual(snapshot["colors"], {"casa": "#ff8800"})
 
     def test_the_rest_asks_for_a_restart(self):
         result = self.change(HERMES_MAIL="off")

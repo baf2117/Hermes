@@ -187,7 +187,7 @@ def history_report(store: Any, status: VoiceStatus) -> dict[str, Any]:
     return {"messages": store.message_history(HISTORY_MESSAGES), "voice": status.snapshot()["events"]}
 
 
-def tasks_snapshot(store: Any, categories: Sequence[str], now: int) -> dict[str, Any]:
+def tasks_snapshot(store: Any, categories: Sequence[str], now: int, colors: dict[str, str] | None = None) -> dict[str, Any]:
     """Datos de la pestaña Tareas: pendientes, pasos ya hechos de tareas abiertas y lo completado reciente."""
     pending = [asdict(task) for task in store.pending_tasks()]
     done_steps = [
@@ -200,6 +200,7 @@ def tasks_snapshot(store: Any, categories: Sequence[str], now: int) -> dict[str,
     return {
         "now": now,
         "categories": list(categories),
+        "colors": dict(colors or {}),
         "pending": pending,
         "done_steps": done_steps,
         "finished": [asdict(task) for task in store.finished_tasks()],
@@ -640,7 +641,14 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .chips { display:flex; flex-direction:column; gap:10px; min-width:0; }
 .chip-list { display:flex; flex-wrap:wrap; gap:8px; }
 .chip { display:inline-flex; align-items:center; gap:7px; padding:5px 6px 5px 12px; border:1px solid var(--line); border-radius:999px; background:var(--soft); font-size:14px; font-weight:550; }
-.chip .dot { width:9px; height:9px; border-radius:50%; background:var(--cat); flex:none; }
+.chip { padding-left:6px; }
+.chip-color { -webkit-appearance:none; appearance:none; width:24px; height:24px; padding:0; border:2px solid var(--card); border-radius:50%;
+  background:none; cursor:pointer; flex:none; overflow:hidden; box-shadow:0 0 0 1px var(--line); }
+.chip-color::-webkit-color-swatch-wrapper { padding:0; }
+.chip-color::-webkit-color-swatch { border:0; border-radius:50%; }
+.chip-color::-moz-color-swatch { border:0; border-radius:50%; }
+.chip-color:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.chip-color:disabled { cursor:default; }
 .chip-x { font:inherit; font-size:12px; color:var(--muted); background:none; border:0; border-radius:50%; width:24px; height:24px; cursor:pointer; display:grid; place-items:center; }
 .chip-x:hover:not(:disabled) { color:var(--warn); background:var(--card); }
 .chip-x:disabled { opacity:.35; cursor:default; }
@@ -650,7 +658,7 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .chip-add .ghost { flex:none; }
 .chip-note { font-size:13px; color:var(--warn); min-height:0; }
 .chip-note:empty { display:none; }
-@media (pointer:coarse) { .chip-x { width:32px; height:32px; } }
+@media (pointer:coarse) { .chip-x { width:32px; height:32px; } .chip-color { width:30px; height:30px; } }
 .set-tag { display:inline-block; font-size:11px; font-weight:600; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:1px 8px; margin-left:6px; vertical-align:1px; }
 .set-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 18px; }
 .set-bar .primary { margin-left:0; }
@@ -1115,7 +1123,8 @@ let lastTasks = null;
 let taskMode = "lista";
 try { if (localStorage.getItem("hermes-task-mode") === "calendario") taskMode = "calendario"; } catch {}
 const taskCal = { year: new Date().getFullYear(), month: new Date().getMonth(), picked: new Date().getDate() };
-const catColor = c => "var(--c-" + (KNOWN.includes(c) ? c : "otra") + ")";
+// El color elegido en Ajustes; si no hay, el de siempre para las conocidas y gris para las demás.
+const catColor = c => (lastTasks && lastTasks.colors && lastTasks.colors[c]) || "var(--c-" + (KNOWN.includes(c) ? c : "otra") + ")";
 function interval(minutes) {
   if (!minutes) return "";
   if (minutes % 60 === 0) return minutes === 60 ? "cada hora" : "cada " + minutes / 60 + " h";
@@ -2239,6 +2248,40 @@ function categoryEditor(s) {
   const hidden = document.createElement("input");
   hidden.type = "hidden"; hidden.value = s.value || ""; hidden.dataset.initial = hidden.value; hidden.dataset.key = s.key;
   const current = () => hidden.value.split(",").map(c => c.trim()).filter(Boolean);
+  // Los colores van en su propio ajuste, oculto, que se guarda junto con las categorías.
+  const colorSetting = settingsData.groups.flatMap(g => g.settings).find(x => x.kind === "colors") || null;
+  const colorInput = document.createElement("input");
+  colorInput.type = "hidden";
+  if (colorSetting) { colorInput.value = colorSetting.value || ""; colorInput.dataset.initial = colorInput.value; colorInput.dataset.key = colorSetting.key; }
+  const colors = {};
+  colorInput.value.split(",").forEach(part => {
+    const at = part.lastIndexOf(":");
+    if (at > 0) colors[part.slice(0, at).trim()] = part.slice(at + 1).trim();
+  });
+  const saveColors = () => {
+    colorInput.value = current().filter(c => colors[c]).map(c => c + ":" + colors[c]).join(", ");
+    colorInput.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  // Color actual de una categoría, en #rrggbb: el elegido, o el que la página usa por defecto.
+  const colorOf = category => {
+    if (colors[category]) return colors[category];
+    const value = getComputedStyle(document.body).getPropertyValue("--c-" + (KNOWN.includes(category) ? category : "otra")).trim();
+    return /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : "#7b7870";
+  };
+  const PALETTE = ["#e05d5d", "#e8833a", "#e2c044", "#9bcf53", "#3fae6f", "#33b5b0", "#3fa7e0", "#5a73e8",
+    "#8a63d6", "#c75bd1", "#e0609e", "#a07a5a", "#7f8c99", "#c9a227", "#5fc4c0", "#ec86a7"];
+  // El color más distinto de los que ya tienen las demás categorías.
+  const freeColor = () => {
+    const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+    const used = current().map(c => rgb(colorOf(c)));
+    const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    let best = PALETTE[0], bestScore = -1;
+    for (const candidate of PALETTE) {
+      const score = used.length ? Math.min(...used.map(u => distance(u, rgb(candidate)))) : 999;
+      if (score > bestScore) { best = candidate; bestScore = score; }
+    }
+    return best;
+  };
   const list = text("div", "chip-list", "");
   const form = text("div", "chip-add", "");
   const input = document.createElement("input");
@@ -2262,8 +2305,11 @@ function categoryEditor(s) {
     const values = current();
     for (const category of values) {
       const chip = text("span", "chip", "");
-      const dot = text("span", "dot", ""); dot.style.setProperty("--cat", catColor(category));
-      chip.append(dot, text("span", "", category.charAt(0).toUpperCase() + category.slice(1)));
+      const swatch = document.createElement("input");
+      swatch.type = "color"; swatch.className = "chip-color"; swatch.value = colorOf(category); swatch.disabled = !!s.locked;
+      swatch.setAttribute("aria-label", "Color de la categoría " + category); swatch.title = "Cambiar el color";
+      swatch.oninput = () => { colors[category] = swatch.value.toLowerCase(); saveColors(); };
+      chip.append(swatch, text("span", "", category.charAt(0).toUpperCase() + category.slice(1)));
       if (!s.locked) {
         const remove = text("button", "chip-x", "✕"); remove.type = "button";
         remove.setAttribute("aria-label", "Quitar la categoría " + category);
@@ -2273,15 +2319,17 @@ function categoryEditor(s) {
           const count = await pendingIn(category);
           if (count && !await ask("«" + category + "» tiene " + (count === 1 ? "1 tarea pendiente" : count + " tareas pendientes") +
             ". Las tareas no se borran: siguen apareciendo con esa categoría, pero ya no podrás elegirla para tareas nuevas. ¿Quitarla?", "Quitar")) return;
+          delete colors[category];
           set(current().filter(c => c !== category));
+          saveColors();
         };
         chip.append(remove);
       }
       list.append(chip);
     }
-    const full = values.length >= 15;
+    const full = values.length >= 50;
     input.disabled = add.disabled = !!s.locked || full;
-    note.textContent = full ? "Llegaste al máximo de 15 categorías." : "";
+    note.textContent = full ? "Llegaste al máximo de 50 categorías." : "";
   }
   const tryAdd = () => {
     const raw = input.value.toLowerCase().split(" ").filter(Boolean).join(" ");
@@ -2289,7 +2337,9 @@ function categoryEditor(s) {
     if (raw.length < 2 || !/^[a-záéíóúüñ0-9 ]+$/.test(raw)) { note.textContent = "Usa solo letras, números y espacios (de 2 a 20)."; return; }
     if (current().includes(raw)) { note.textContent = "«" + raw + "» ya está."; return; }
     input.value = "";
+    colors[raw] = freeColor();  // Cada categoría nueva nace con un color propio, que luego puedes cambiar.
     set([...current(), raw]);
+    saveColors();
     input.focus();
   };
   add.onclick = tryAdd;
@@ -2297,6 +2347,7 @@ function categoryEditor(s) {
   input.oninput = () => { note.textContent = ""; };
   form.append(input, add);
   box.append(list, form, note, hidden);
+  if (colorSetting) box.append(colorInput);
   draw();
   return box;
 }
@@ -2336,6 +2387,7 @@ function renderSettings(data) {
   for (const group of data.groups) {
     const card = text("section", "set-group", ""); card.appendChild(text("h3", "", group.name));
     for (const s of group.settings) {
+      if (s.kind === "colors") continue;  // Se edita dentro de las etiquetas de categorías.
       const row = text("div", "set-row" + (s.kind === "list" ? " wide" : ""), "");
       const label = text("label", "", s.label); label.htmlFor = "set-" + s.key;
       if (!s.live) label.appendChild(text("span", "set-tag", "Al reiniciar"));

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import time
 from pathlib import Path
@@ -34,6 +35,21 @@ def _parse_time(value: str) -> time:
 def _optional_time(value: str) -> time | None:
     """Una hora, o None si el valor es «off»: así se apaga un aviso programado."""
     return None if value.strip().lower() in ("off", "no", "") else _parse_time(value)
+
+
+MAX_CATEGORIES = 50
+_HEX_COLOR = re.compile(r"#[0-9a-f]{6}")
+
+
+def parse_colors(value: str) -> dict[str, str]:
+    """«trabajo:#3567b5, casa:#b36b2a» -> {"trabajo": "#3567b5", ...}. Lo que no sea un color exacto se ignora."""
+    colors: dict[str, str] = {}
+    for part in value.split(","):
+        name, _, color = part.rpartition(":")
+        name, color = name.strip().lower(), color.strip().lower()
+        if name and _HEX_COLOR.fullmatch(color):
+            colors[name] = color
+    return colors
 
 
 def _coordinates(value: str) -> tuple[float, float] | None:
@@ -87,6 +103,7 @@ class Config:
     weather_location: tuple[float, float] | None = None  # Latitud y longitud para el clima del resumen.
     heartbeat_url: str = field(default="", repr=False)  # Vigilante externo al que se le avisa «sigo vivo».
     calendar_remind_minutes: int = 15
+    category_colors: dict[str, str] = field(default_factory=dict)  # Color elegido para cada categoría.
 
     @classmethod
     def load(cls) -> "Config":
@@ -100,7 +117,7 @@ class Config:
         raw_chat = get("TELEGRAM_ALLOWED_CHAT_ID")
         raw_categories = get("HERMES_CATEGORIES")
         categories = (
-            tuple(c.strip().lower() for c in raw_categories.split(",") if c.strip())
+            tuple(dict.fromkeys(c.strip().lower() for c in raw_categories.split(",") if c.strip()))[:MAX_CATEGORIES]
             if raw_categories
             else DEFAULT_CATEGORIES
         )
@@ -147,4 +164,5 @@ class Config:
             weather_location=_coordinates(get("HERMES_WEATHER")),
             heartbeat_url=get("HERMES_HEARTBEAT_URL"),
             calendar_remind_minutes=max(0, int(get("HERMES_CALENDAR_REMIND", "15"))),
+            category_colors=parse_colors(get("HERMES_CATEGORY_COLORS")),
         )

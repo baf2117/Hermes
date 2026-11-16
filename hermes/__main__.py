@@ -332,7 +332,7 @@ def run(config: Config) -> int:
         status.set_paused(True)  # La pausa del micrófono se conserva entre reinicios.
     status.on_pause = lambda paused: store.kv_set(PAUSED_KEY, "1" if paused else "0")
     status.set_usage_source(lambda: usage_snapshot(store))
-    status.set_task_source(lambda: tasks_snapshot(store, config.categories, int(time.time())))
+    status.set_task_source(lambda: tasks_snapshot(store, config.categories, int(time.time()), config.category_colors))
     status.set_source("usage", lambda: usage_report(store, datetime.now().astimezone()))
     status.set_source("history", lambda: history_report(store, status))
     status.set_action("tasks", TaskEditor(assistant).apply)

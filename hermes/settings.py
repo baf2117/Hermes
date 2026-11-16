@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from .config import Config, _coordinates, _load_env_file
+from .config import MAX_CATEGORIES, Config, _coordinates, _load_env_file, parse_colors
 from .remote import MIN_PASSWORD, clean_host, hash_password
 from .speakers import DEFAULT_VOICES
 
@@ -35,7 +35,7 @@ _CATEGORY = re.compile(r"[a-záéíóúüñ0-9 ]{2,20}")
 # Lo que estos ajustes cambian en la configuración viva, sin reiniciar.
 LIVE_FIELDS = (
     "summary_time", "evening_time", "weekly_time", "default_task_time", "repeat_quiet_start", "repeat_quiet_end",
-    "categories", "voice",
+    "categories", "voice", "category_colors",
 )
 
 
@@ -69,7 +69,8 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("HERMES_WEEKLY_TIME", "Revisión de la semana", "time_off", "Resúmenes", "Los domingos. Vacío para apagarla.", "18:00", live=True),
     Setting("HERMES_DEFAULT_TASK_TIME", "Hora por defecto de una tarea", "time", "Tareas", "Para «recuérdame el viernes» sin hora.", "09:00", live=True),
     Setting("HERMES_REPEAT_QUIET", "No repetir avisos entre", "range", "Tareas", "Los avisos que se repiten descansan en este horario.", "20:00-10:30", live=True),
-    Setting("HERMES_CATEGORIES", "Categorías", "list", "Tareas", "Las que puedes elegir para tus tareas. Agrega o quita, y guarda.", "trabajo, negocios, casa, personal, salud, finanzas, reptiles", live=True),
+    Setting("HERMES_CATEGORIES", "Categorías", "list", "Tareas", "Las que puedes elegir para tus tareas. Toca el círculo de color para cambiarlo. Agrega o quita, y guarda.", "trabajo, negocios, casa, personal, salud, finanzas, reptiles", live=True),
+    Setting("HERMES_CATEGORY_COLORS", "Colores de las categorías", "colors", "Tareas", "", "", live=True),
     Setting("HERMES_VOICE", "Voz de las respuestas", "voice", "Voz", "piper, kokoro o microsoft; opcionalmente con dos puntos y el nombre de la voz.", "piper", live=True),
     Setting("HERMES_HOME_VOICE", "Escuchar «Hermes» en casa", "switch", "Voz", "Usa el micrófono de esta computadora.", "on"),
     Setting("HERMES_WAKE_WORD", "Palabra de activación", "word", "Voz", "", "hermes"),
@@ -143,9 +144,15 @@ def validate(setting: Setting, raw: Any) -> str:
         return value.lower()
     if kind == "list":
         items = list(dict.fromkeys(item.strip().lower() for item in value.split(",") if item.strip()))
-        if not 1 <= len(items) <= 15 or not all(_CATEGORY.fullmatch(item) for item in items):
-            raise SettingError(f"{setting.label}: de 1 a 15 nombres cortos, separados por comas.")
+        if not 1 <= len(items) <= MAX_CATEGORIES or not all(_CATEGORY.fullmatch(item) for item in items):
+            raise SettingError(f"{setting.label}: de 1 a {MAX_CATEGORIES} nombres cortos, separados por comas.")
         return ", ".join(items)
+    if kind == "colors":
+        pairs = [part.strip() for part in value.split(",") if part.strip()]
+        colors = parse_colors(value)
+        if len(colors) != len(pairs) or len(colors) > MAX_CATEGORIES or not all(_CATEGORY.fullmatch(name) for name in colors):
+            raise SettingError(f"{setting.label}: cada categoría con un color como #3567b5.")
+        return ", ".join(f"{name}:{color}" for name, color in colors.items())
     if kind == "voice":
         engine, _, name = value.partition(":")
         if engine.strip().lower() not in DEFAULT_VOICES or (name and not re.fullmatch(r"[A-Za-z0-9_-]{1,60}", name.strip())):
