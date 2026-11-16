@@ -10,7 +10,7 @@ import socket
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,6 +25,9 @@ from .speakers import VOICE_KEY, SwitchableSpeaker
 from .gmail import DEFAULT_ACCOUNT, GmailAuthError, GmailClient, authorize, find_accounts, token_path, valid_account
 from . import __version__
 from .mailwatch import MailWatcher, run_watchers
+from .outside import (
+    CALENDAR_SCOPE, Agenda, CalendarClient, Weather, calendar_token_path, find_calendars, run_heartbeat, valid_heartbeat,
+)
 from .pagevoice import PageVoice, VoiceRenderer
 from .remote import RemoteAccess
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
@@ -259,6 +262,11 @@ def run(config: Config) -> int:
     llm = build_llm(config, store)
     search = TavilySearch(config.tavily_api_key) if config.tavily_api_key else None
     assistant = Assistant(store, llm, config, search=search)
+    if config.llm_mode not in ("local", "claude"):
+        logging.warning("HERMES_LLM_MODE=%s no existe; uso «local». Los valores son «local» y «claude».", config.llm_mode)
+    if config.weather_location is not None:
+        assistant.weather = Weather(config.weather_location).line
+        logging.info("Clima: encendido para el resumen de la mañana")
     client = TelegramClient(config.telegram_token)
     transcriber = build_transcriber(config)
     if transcriber is None:
@@ -274,6 +282,15 @@ def run(config: Config) -> int:
             client.send_message(chat_id, text, buttons)
 
         scheduler = Scheduler(store, assistant, config, send)
+        calendars = find_calendars(config.gmail_client_path.parent) if config.gmail_client_path.exists() else []
+        if calendars:
+            agenda = Agenda(
+                [(name, CalendarClient(config.gmail_client_path, path)) for name, path in calendars],
+                store, config.calendar_remind_minutes, send,
+            )
+            assistant.agenda = agenda.today_lines
+            scheduler.extra_ticks.append(agenda.tick)
+            logging.info("Calendario: leyendo %s", ", ".join(name for name, _ in calendars))
         threading.Thread(target=scheduler.run_forever, args=(stop,), daemon=True, name="scheduler").start()
         accounts = find_accounts(config.gmail_client_path.parent) if config.gmail_client_path.exists() else []
         if not config.mail_enabled:
@@ -301,6 +318,12 @@ def run(config: Config) -> int:
     else:
         logging.warning("Sin chat autorizado: modo de emparejamiento, sin recordatorios")
 
+    if config.heartbeat_url:
+        if valid_heartbeat(config.heartbeat_url):
+            threading.Thread(target=run_heartbeat, args=(config.heartbeat_url, stop), daemon=True, name="heartbeat").start()
+            logging.info("Vigilante externo: encendido")
+        else:
+            logging.warning("Vigilante externo apagado: HERMES_HEARTBEAT_URL debe empezar con https://")
     status = VoiceStatus()
     if store.kv_get(PAUSED_KEY) == "1":
         status.set_paused(True)  # La pausa del micrófono se conserva entre reinicios.
@@ -362,6 +385,36 @@ def gmail_auth(config: Config, account: str = DEFAULT_ACCOUNT) -> int:
     return 0
 
 
+def calendar_auth(config: Config, account: str = DEFAULT_ACCOUNT) -> int:
+    """Pide en el navegador el permiso de solo lectura del calendario de Google."""
+    import webbrowser
+
+    if not valid_account(account):
+        print("El nombre de la cuenta solo puede llevar letras minúsculas y números, por ejemplo: trabajo", file=sys.stderr)
+        return 2
+    if not config.gmail_client_path.exists():
+        print(f"Falta la credencial de Google en {config.gmail_client_path}", file=sys.stderr)
+        return 2
+    token = calendar_token_path(config.gmail_client_path.parent, account)
+    print(f"Se abrirá el navegador. Elige la cuenta «{account}» y acepta el permiso «ver tus calendarios».")
+    try:
+        authorize(config.gmail_client_path, token, webbrowser.open, scope=CALENDAR_SCOPE)
+        now = datetime.now().astimezone()
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        count = len(CalendarClient(config.gmail_client_path, token).events(start, start + timedelta(days=1), account))
+    except GmailAuthError as exc:
+        print(f"No se pudo autorizar: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Autorizado, pero no pude leer el calendario: {exc}", file=sys.stderr)
+        print("Revisa que la «Google Calendar API» esté habilitada en tu proyecto de Google Cloud.", file=sys.stderr)
+        return 1
+    print(f"Listo: el calendario de «{account}» quedó conectado, con permiso de solo lectura.")
+    print(f"Eventos de hoy: {count}")
+    print("Reinicia Hermes para que empiece a leerlo.")
+    return 0
+
+
 def take_home(arguments: list[str]) -> list[str]:
     """Atiende «--home CARPETA»: otra carpeta de datos, para correr una segunda copia de Hermes
     con sus propias tareas y memoria. Devuelve los argumentos restantes."""
@@ -380,6 +433,8 @@ def main() -> int:
     command = arguments[0] if arguments else "run"
     if command == "gmail-auth":
         return gmail_auth(config, arguments[1].strip().lower() if len(arguments) > 1 else DEFAULT_ACCOUNT)
+    if command == "calendar-auth":
+        return calendar_auth(config, arguments[1].strip().lower() if len(arguments) > 1 else DEFAULT_ACCOUNT)
     if command == "check":
         return check(config)
     if command == "backup":

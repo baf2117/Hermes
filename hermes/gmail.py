@@ -214,8 +214,10 @@ class GmailClient:
         return parse_message(self._get(f"messages/{message_id}", format="full"))
 
 
-def authorize(client_path: Path, token_path: Path, open_browser: Callable[[str], Any], fetch: Fetch = _fetch) -> None:
-    """Pide el permiso de solo lectura en el navegador y guarda la llave de renovación."""
+def authorize(
+    client_path: Path, token_path: Path, open_browser: Callable[[str], Any], fetch: Fetch = _fetch, scope: str = SCOPE
+) -> None:
+    """Pide un permiso de solo lectura en el navegador (el del correo, si no se indica otro) y guarda la llave."""
     client_id, client_secret = load_client(client_path)
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
@@ -246,7 +248,7 @@ def authorize(client_path: Path, token_path: Path, open_browser: Callable[[str],
     server.timeout = 1.0
     url = AUTH_URL + "?" + urllib.parse.urlencode(
         {
-            "client_id": client_id, "redirect_uri": redirect, "response_type": "code", "scope": SCOPE,
+            "client_id": client_id, "redirect_uri": redirect, "response_type": "code", "scope": scope,
             "access_type": "offline", "prompt": "consent", "state": state,
             "code_challenge": challenge, "code_challenge_method": "S256",
         }
@@ -271,7 +273,7 @@ def authorize(client_path: Path, token_path: Path, open_browser: Callable[[str],
         refresh = body["refresh_token"]
     except (ValueError, KeyError, TypeError) as exc:
         raise GmailAuthError("Google no entregó la llave de renovación") from exc
-    if SCOPE not in str(body.get("scope", SCOPE)).split():
+    if scope not in str(body.get("scope", scope)).split():
         raise GmailAuthError("Google no concedió el permiso de solo lectura")
     token_path = Path(token_path)
-    token_path.write_text(json.dumps({"refresh_token": refresh, "scope": SCOPE, "created_at": int(time.time())}), encoding="utf-8")
+    token_path.write_text(json.dumps({"refresh_token": refresh, "scope": scope, "created_at": int(time.time())}), encoding="utf-8")

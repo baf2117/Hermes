@@ -328,7 +328,7 @@ class PageTests(V2Harness):
             self.assertEqual(response.status, 200)
             self.assertEqual(json.loads(body)["display"], "standalone")
             response, body = get("/icon-192.png", "hermes.example")
-            self.assertEqual((response.status, body[:4]), (200, b"PNG"))
+            self.assertEqual((response.status, body[1:4]), (200, b"PNG"))
             self.assertEqual(get("/status", "hermes.example")[0].status, 401)
             self.assertEqual(get("/manifest.webmanifest", "otro.example")[0].status, 403)
         finally:
