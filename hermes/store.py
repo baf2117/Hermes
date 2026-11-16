@@ -770,6 +770,17 @@ class Store:
             rows = self._conn.execute("SELECT id, title, remind_at FROM habits ORDER BY id").fetchall()
         return [dict(row) for row in rows]
 
+    def update_habit(self, habit_id: int, title: str, remind_at: str | None) -> str | None:
+        """Cambia nombre y hora: "ok", "duplicate" si ya hay otro con ese nombre, o None si no existe."""
+        with self._lock, self._conn:
+            if self._conn.execute("SELECT 1 FROM habits WHERE id = ?", (habit_id,)).fetchone() is None:
+                return None
+            others = self._conn.execute("SELECT title FROM habits WHERE id != ?", (habit_id,)).fetchall()
+            if any(row["title"].casefold() == title.casefold() for row in others):
+                return "duplicate"
+            self._conn.execute("UPDATE habits SET title = ?, remind_at = ? WHERE id = ?", (title, remind_at, habit_id))
+            return "ok"
+
     def delete_habit(self, habit_id: int) -> bool:
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM habit_log WHERE habit_id = ?", (habit_id,))

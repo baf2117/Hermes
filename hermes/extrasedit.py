@@ -5,11 +5,11 @@ Igual que con las tareas, la página manda valores exactos y aquí se valida cad
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from .assistant import Assistant
-from .extras import MAX_ITEM, MONTH_NAMES, Extras, days_word, streak
+from .extras import MAX_ITEM, MONTH_NAMES, Extras, best_streak, days_word, streak
 
 MAX_NOTE = 500
 MAX_LISTS = 30
@@ -55,10 +55,7 @@ class ExtrasEditor:
                 for name, _ in self.store.list_names()
             ],
             "notes": [{"id": fact_id, "text": text} for fact_id, text in self.store.list_facts(200)],
-            "habits": [
-                {"id": habit["id"], "title": habit["title"], "remind_at": habit["remind_at"], "done": done, "streak": run}
-                for habit, done, run in self.extras.habit_status(now.date())
-            ],
+            "habits": [self._habit_view(habit, done, run, now.date()) for habit, done, run in self.extras.habit_status(now.date())],
             "dates": [
                 {
                     "id": entry["id"], "day": entry["day"], "month": entry["month"], "year": entry["year"],
@@ -71,6 +68,15 @@ class ExtrasEditor:
                 for task in self.store.pending_tasks() if task.kind == "waiting"
             ],
             "quiet_until": quiet,
+        }
+
+    def _habit_view(self, habit: dict[str, Any], done: bool, run: int, today: date) -> dict[str, Any]:
+        days = self.store.habit_days(habit["id"])
+        week = [today - timedelta(days=offset) for offset in range(6, -1, -1)]  # Los últimos 7 días, hasta hoy.
+        return {
+            "id": habit["id"], "title": habit["title"], "remind_at": habit["remind_at"], "done": done, "streak": run,
+            "best": best_streak(days), "total": len(days),
+            "week": [{"day": d.isoformat(), "done": d.isoformat() in days} for d in week],
         }
 
     # --- Cambios ---
@@ -94,6 +100,7 @@ class ExtrasEditor:
             "habit_add": self._habit_add,
             "habit_done": self._habit_done,
             "habit_delete": self._habit_delete,
+            "habit_edit": self._habit_edit,
             "date_add": self._date_add,
             "date_delete": self._date_delete,
             "waiting_add": self._waiting_add,
@@ -198,17 +205,30 @@ class ExtrasEditor:
             raise ApunteError("Esa nota ya no estaba. Recarga la página.")
         return "Nota borrada."
 
+    @staticmethod
+    def _habit_time(raw: Any) -> tuple[int, int] | None:
+        if not raw:
+            return None
+        try:
+            moment = datetime.strptime(raw, "%H:%M")
+        except (TypeError, ValueError):
+            raise ApunteError("Escribe la hora como 08:00, o déjala vacía.") from None
+        return moment.hour, moment.minute
+
     def _habit_add(self, payload: dict[str, Any]) -> str:
         title = _text(payload.get("title"), 100, "Escribe el hábito.")
-        raw_time = payload.get("time")
-        at = None
-        if raw_time:
-            try:
-                moment = datetime.strptime(raw_time, "%H:%M")
-            except (TypeError, ValueError):
-                raise ApunteError("Escribe la hora como 08:00, o déjala vacía.") from None
-            at = (moment.hour, moment.minute)
-        return self.extras._habit_new(title, at).text
+        return self.extras._habit_new(title, self._habit_time(payload.get("time"))).text
+
+    def _habit_edit(self, payload: dict[str, Any]) -> str:
+        habit_id = _number(payload.get("id"), "Falta el hábito.")
+        title = _text(payload.get("title"), 100, "El hábito no puede quedar sin nombre.")
+        at = self._habit_time(payload.get("time"))
+        result = self.store.update_habit(habit_id, title[:1].upper() + title[1:], f"{at[0]:02d}:{at[1]:02d}" if at else None)
+        if result is None:
+            raise ApunteError("Ese hábito ya no existe. Recarga la página.")
+        if result == "duplicate":
+            raise ApunteError("Ya tienes otro hábito con ese nombre.")
+        return "Hábito guardado."
 
     def _habit_done(self, payload: dict[str, Any]) -> str:
         habit_id = _number(payload.get("id"), "Falta el hábito.")

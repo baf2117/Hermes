@@ -111,6 +111,17 @@ def streak(days: set[str], today: date) -> int:
     return count
 
 
+def best_streak(days: set[str]) -> int:
+    """La racha más larga de días seguidos en todo el historial."""
+    best = run = 0
+    previous = None
+    for day in sorted(date.fromisoformat(d) for d in days):
+        run = run + 1 if previous is not None and day - previous == timedelta(days=1) else 1
+        best = max(best, run)
+        previous = day
+    return best
+
+
 def second_person(name: str) -> str:
     """«mi mamá» -> «tu mamá», para cuando Hermes le habla al dueño."""
     return re.sub(r"^mis\s+", "tus ", re.sub(r"^mi\s+", "tu ", name, flags=re.IGNORECASE), flags=re.IGNORECASE)

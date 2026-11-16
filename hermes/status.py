@@ -602,6 +602,38 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .ap-link:disabled { opacity:.4; cursor:default; text-decoration:none; }
 .ap-link.danger-link { color:var(--warn); }
 .ap-empty.card { padding:28px 16px; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:14px; }
+/* Hábitos: una tarjeta por hábito, con el botón de hoy, la racha y la semana */
+.hb-today { margin:0 0 12px; font-size:14px; color:var(--muted); }
+.hb-today:empty { display:none; }
+.hb-today b { color:var(--ink); }
+.hb-bar { height:6px; border-radius:3px; background:var(--soft); overflow:hidden; margin-top:6px; max-width:420px; }
+.hb-bar i { display:block; height:100%; background:var(--accent); border-radius:3px; transition:width .3s; }
+.hb-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap:14px; align-items:start; }
+.hb-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:12px; min-width:0; }
+.hb-card.done { border-color:color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.hb-top { display:flex; align-items:center; gap:12px; }
+.hb-check { flex:none; width:46px; height:46px; border-radius:50%; border:2px solid var(--faint); background:none; cursor:pointer; position:relative; transition:background .15s, border-color .15s; }
+.hb-check:hover { border-color:var(--accent); }
+.hb-check:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.hb-check.on { background:var(--accent); border-color:var(--accent); }
+.hb-check.on::after { content:""; position:absolute; left:16px; top:9px; width:9px; height:18px; border:solid #14110a; border-width:0 3px 3px 0; transform:rotate(45deg); }
+.hb-name { flex:1; min-width:0; }
+.hb-name .ap-item { font-size:16px; font-weight:650; overflow-wrap:anywhere; }
+.hb-name small { display:block; color:var(--muted); font-size:13px; }
+.hb-stats { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted); }
+.hb-stats b { color:var(--ink); font-size:15px; }
+.hb-stats .fire b { color:var(--accent); }
+.hb-week { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; }
+.hb-day { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--faint); }
+.hb-day i { width:22px; height:22px; border-radius:50%; background:var(--soft); border:1px solid var(--line); }
+.hb-day.on i { background:var(--accent); border-color:var(--accent); }
+.hb-day.today { color:var(--ink); font-weight:600; }
+.hb-edit { display:flex; flex-wrap:wrap; gap:8px; }
+.hb-edit input { font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:7px 10px; min-width:0; }
+.hb-edit input:not([type]) { flex:1 1 100%; }
+.hb-edit input[type="time"] { flex:1 1 120px; border-color:var(--line); }
+.hb-edit .primary { margin-left:0; }
+.hb-foot { display:flex; justify-content:flex-end; }
 .ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
 .ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
 .ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
@@ -844,15 +876,14 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
       </form>
       <div class="ap-drawers" id="ap-lists"></div>
     </section>
-    <section class="ap-card" data-sub="habitos" hidden>
-      <h3>Hábitos <span id="ap-habits-count"></span></h3>
-      <p>Márcalos cada día para mantener la racha.</p>
-      <form class="ap-form" id="ap-habit-form" autocomplete="off">
-        <input id="ap-habit-title" maxlength="100" placeholder="Nuevo hábito" aria-label="Hábito">
-        <input id="ap-habit-time" type="time" aria-label="Hora del recordatorio (opcional)">
-        <button type="submit" class="primary">Crear</button>
+    <section class="ap-page" data-sub="habitos" hidden>
+      <form class="ap-form ap-create" id="ap-habit-form" autocomplete="off">
+        <input id="ap-habit-title" maxlength="100" placeholder="Hábito nuevo (tomar agua, leer…)" aria-label="Hábito nuevo">
+        <input id="ap-habit-time" type="time" aria-label="Hora del recordatorio (opcional)" title="Hora del recordatorio (opcional)">
+        <button type="submit" class="primary">+ Crear hábito</button>
       </form>
-      <div id="ap-habits"></div>
+      <div class="hb-today" id="ap-habits-count"></div>
+      <div class="hb-grid" id="ap-habits"></div>
     </section>
     <section class="ap-card" data-sub="notas" hidden>
       <h3>Notas <span id="ap-notes-count"></span></h3>
@@ -2126,15 +2157,90 @@ function waitingRow(w) {
   setTimeout(() => { if (editingWaiting === w.id && document.activeElement !== input && document.activeElement !== date) input.focus(); }, 0);
   return row;
 }
+let editingHabit = null;  // El hábito que se está corrigiendo, con su nombre y su hora.
+let editingHabitTitle = "", editingHabitTime = "";
+const HB_DAYS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const daysText = n => n === 1 ? "1 día" : n + " días";
+function habitCard(h) {
+  const redraw = () => { if (lastApuntes) renderApuntes(lastApuntes); };
+  const card = text("div", "hb-card" + (h.done ? " done" : ""), "");
+  const top = text("div", "hb-top", "");
+  const check = text("button", "hb-check" + (h.done ? " on" : ""), ""); check.type = "button";
+  check.setAttribute("aria-pressed", String(h.done));
+  check.setAttribute("aria-label", (h.done ? "Desmarcar hoy: " : "Marcar hecho hoy: ") + h.title);
+  check.title = h.done ? "Hecho hoy · toca para desmarcar" : "Marcar como hecho hoy";
+  check.onclick = () => apunte({ action: h.done ? "habit_undo" : "habit_done", id: h.id }, true);
+  const name = text("div", "hb-name", "");
+  if (editingHabit === h.id) {
+    const form = text("form", "hb-edit", ""); form.autocomplete = "off";
+    const title = document.createElement("input");
+    title.maxLength = 100; title.value = editingHabitTitle; title.setAttribute("aria-label", "Nombre del hábito");
+    title.oninput = () => { editingHabitTitle = title.value; };
+    const time = document.createElement("input");
+    time.type = "time"; time.value = editingHabitTime; time.setAttribute("aria-label", "Hora del recordatorio (vacía para no recordar)");
+    time.oninput = () => { editingHabitTime = time.value; };
+    const stop = () => { editingHabit = null; editingHabitTitle = editingHabitTime = ""; };
+    const save = text("button", "primary", "Guardar"); save.type = "submit";
+    const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+    cancel.onclick = () => { stop(); redraw(); };
+    const onKey = event => { if (event.key === "Escape") { stop(); redraw(); } };
+    title.onkeydown = onKey; time.onkeydown = onKey;
+    form.onsubmit = async event => {
+      event.preventDefault();
+      if (!title.value.trim()) { title.focus(); return; }
+      save.disabled = true;
+      try {
+        toast((await send("/extras", { action: "habit_edit", id: h.id, title: title.value.trim(), time: time.value || null })).message);
+        stop();
+        await loadApuntes(true);
+      } catch (e) { toast(e.message); save.disabled = false; }
+    };
+    form.append(title, time, save, cancel);
+    name.append(form);
+    setTimeout(() => { if (editingHabit === h.id && !form.contains(document.activeElement)) title.focus(); }, 0);
+  } else {
+    const label = text("button", "ap-item", h.title); label.type = "button";
+    label.setAttribute("aria-label", "Editar el hábito " + h.title); label.title = "Tocar para editar";
+    label.onclick = () => { editingHabit = h.id; editingHabitTitle = h.title; editingHabitTime = h.remind_at || ""; redraw(); };
+    name.append(label, text("small", "", h.remind_at ? "Te lo recuerdo a las " + h.remind_at : "Sin recordatorio"));
+  }
+  top.append(check, name);
+  const stats = text("div", "hb-stats", "");
+  const stat = (cls, value, label) => { const s = text("span", cls, ""); s.append(text("b", "", value), document.createTextNode(" " + label)); return s; };
+  stats.append(stat("fire", (h.streak ? "🔥 " : "") + daysText(h.streak), h.streak === 1 ? "seguido" : "seguidos"), stat("", daysText(h.best), "de récord"), stat("", String(h.total), "en total"));
+  const week = text("div", "hb-week", "");
+  h.week.forEach((d, i) => {
+    const [y, m, day] = d.day.split("-").map(Number);
+    const label = i === h.week.length - 1 ? "hoy" : HB_DAYS[new Date(y, m - 1, day).getDay()];
+    const cell = text("div", "hb-day" + (d.done ? " on" : "") + (i === h.week.length - 1 ? " today" : ""), "");
+    cell.title = day + "/" + m + (d.done ? ": hecho" : ": sin marcar");
+    cell.append(text("i", "", ""), text("span", "", label));
+    week.append(cell);
+  });
+  const foot = text("div", "hb-foot", "");
+  const remove = text("button", "ap-link danger-link", "Quitar hábito"); remove.type = "button";
+  remove.onclick = async () => { if (await ask("¿Quitar el hábito «" + h.title + "»? Se pierde también su historial y su racha.", "Quitar")) apunte({ action: "habit_delete", id: h.id }); };
+  foot.append(remove);
+  card.append(top, stats, week, foot);
+  return card;
+}
+function renderHabits(habits) {
+  const box = $("ap-habits"); box.textContent = "";
+  if (!habits.length) box.appendChild(text("div", "ap-empty card", "Todavía no tienes hábitos. Crea el primero aquí arriba, con hora si quieres que te lo recuerde."));
+  habits.forEach(h => box.appendChild(habitCard(h)));
+  const summary = $("ap-habits-count"); summary.textContent = "";
+  if (habits.length) {
+    const done = habits.filter(h => h.done).length;
+    summary.append(text("span", "", "Hoy llevas "), text("b", "", done + " de " + habits.length),
+      text("span", "", done === habits.length ? ". ¡Completaste todos!" : "."));
+    const bar = text("div", "hb-bar", ""); const fill = document.createElement("i");
+    fill.style.width = Math.round(100 * done / habits.length) + "%"; bar.append(fill); summary.append(bar);
+  }
+}
 function renderApuntes(d) {
   lastApuntes = d;
   renderLists(d.lists);
-  apFill("ap-habits", d.habits.map(h => apRow(h.title,
-    (h.remind_at ? "Recordatorio " + h.remind_at + " · " : "") + "racha de " + (h.streak === 1 ? "1 día" : h.streak + " días"),
-    apCheck(h.done, (h.done ? "Desmarcar hoy: " : "Marcar hecho hoy: ") + h.title, () => apunte({ action: h.done ? "habit_undo" : "habit_done", id: h.id })),
-    async () => { if (await ask("¿Quitar el hábito «" + h.title + "» y su racha?", "Quitar")) apunte({ action: "habit_delete", id: h.id }); }, "Quitar el hábito " + h.title)),
-    "Todavía no tienes hábitos.");
-  $("ap-habits-count").textContent = d.habits.length ? d.habits.filter(h => h.done).length + " de " + d.habits.length + " hoy" : "";
+  renderHabits(d.habits);
   apFill("ap-notes", d.notes.map(noteRow), "Todavía no hay notas.");
   $("ap-notes-count").textContent = d.notes.length || "";
   renderDatesCalendar(d.dates);

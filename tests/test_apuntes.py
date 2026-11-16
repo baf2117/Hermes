@@ -85,6 +85,27 @@ class ApuntesTests(Harness):
             with self.assertRaises(ApunteError, msg=bad):
                 self.do("list_check", **bad)
 
+    def test_habit_card_has_week_record_and_can_be_edited(self):
+        self.do("habit_add", title="leer", time="21:00")
+        self.do("habit_add", title="correr", time=None)
+        habit = self.editor.snapshot()["habits"][0]
+        for day in ("2026-10-01", "2026-10-02", "2026-10-03", "2026-11-08", "2026-11-09"):
+            self.store.mark_habit(habit["id"], day)
+        self.do("habit_done", id=habit["id"])  # Hoy es martes 10 de noviembre.
+        view = self.editor.snapshot()["habits"][0]
+        self.assertEqual((view["streak"], view["best"], view["total"]), (3, 3, 6))
+        self.assertEqual([d["day"] for d in view["week"]][0], "2026-11-04")
+        self.assertEqual([d["done"] for d in view["week"]], [False, False, False, False, True, True, True])
+        self.assertEqual(self.do("habit_edit", id=habit["id"], title="  leer un capítulo ", time="22:15"), "Hábito guardado.")
+        self.assertEqual((self.store.habits()[0]["title"], self.store.habits()[0]["remind_at"]), ("Leer un capítulo", "22:15"))
+        self.do("habit_edit", id=habit["id"], title="Leer un capítulo", time=None)
+        self.assertIsNone(self.store.habits()[0]["remind_at"])
+        self.assertEqual(self.editor.snapshot()["habits"][0]["total"], 6)  # Editar no toca el historial.
+        for bad in (dict(id=habit["id"], title="CORRER"), dict(id=habit["id"], title=" "), dict(id=habit["id"], title="x", time="tarde"),
+                    dict(id=999, title="x"), dict(title="x")):
+            with self.assertRaises(ApunteError, msg=bad):
+                self.do("habit_edit", **bad)
+
     def test_todays_habit_mark_can_be_undone(self):
         self.do("habit_add", title="leer", time=None)
         habit = self.editor.snapshot()["habits"][0]
