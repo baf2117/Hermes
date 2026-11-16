@@ -1,13 +1,19 @@
 """Versión 2: listas, fechas señaladas, hábitos, pendientes con otros, silencio, avisos previos y cierres."""
+import http.client
+import json
 import unittest
 from dataclasses import replace
 from datetime import datetime, time, timedelta
 
 from hermes.assistant import Assistant, plain_text
 from hermes.extras import plain, split_items, streak
+from hermes.remote import RemoteAccess
 from hermes.scheduler import Scheduler
+from hermes.status import VoiceStatus, start_status_server
 from hermes.store import warn_stage
+from hermes.taskedit import TaskEditor
 from tests.test_core import TZ, Harness
+from tests.test_status import free_port
 
 
 class V2Harness(Harness):
@@ -286,6 +292,48 @@ class FormattingTests(unittest.TestCase):
             plain_text("# Título\n**Hola** *mundo* y __esto__\n* uno\n- dos\n`código` 2*3*4"),
             "Título\nHola mundo y esto\n• uno\n• dos\ncódigo 2*3*4",
         )
+
+
+class PageTests(V2Harness):
+    def test_orders_typed_on_the_page_follow_the_usual_path(self):
+        editor = TaskEditor(self.assistant)
+        result = editor.apply({"action": "say", "text": "  agrega   pilas a la lista del super "})
+        self.assertIn("pilas", result["message"])
+        self.assertEqual([text for _, text in self.store.list_items("super")], ["pilas"])
+        for bad in ({"action": "say"}, {"action": "say", "text": "   "}, {"action": "say", "text": 5}):
+            with self.assertRaises(ValueError):
+                editor.apply(bad)
+
+    def test_microphone_pause_is_reported_to_be_saved(self):
+        status = VoiceStatus()
+        seen = []
+        status.on_pause = seen.append
+        status.set_paused(True)
+        status.set_paused(False)
+        self.assertEqual(seen, [True, False])
+
+    def test_app_install_files_need_no_session_but_keep_the_host_check(self):
+        port = free_port()
+        server = start_status_server(VoiceStatus(), port, RemoteAccess("hermes.example", "clave-de-prueba-larga"))
+        try:
+            def get(path, host):
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                connection.request("GET", path, headers={"Host": host, "X-Forwarded-For": "203.0.113.9"})
+                response = connection.getresponse()
+                body = response.read()
+                connection.close()
+                return response, body
+
+            response, body = get("/manifest.webmanifest", "hermes.example")
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.loads(body)["display"], "standalone")
+            response, body = get("/icon-192.png", "hermes.example")
+            self.assertEqual((response.status, body[:4]), (200, b"PNG"))
+            self.assertEqual(get("/status", "hermes.example")[0].status, 401)
+            self.assertEqual(get("/manifest.webmanifest", "otro.example")[0].status, 403)
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

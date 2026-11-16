@@ -23,6 +23,7 @@ from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
 from .speakers import VOICE_KEY, SwitchableSpeaker
 from .gmail import DEFAULT_ACCOUNT, GmailAuthError, GmailClient, authorize, find_accounts, token_path, valid_account
+from . import __version__
 from .mailwatch import MailWatcher, run_watchers
 from .pagevoice import PageVoice, VoiceRenderer
 from .remote import RemoteAccess
@@ -33,6 +34,9 @@ from .telegram import TelegramBot, TelegramClient, TelegramError
 from .voice import WhisperTranscriber
 from .websearch import SearchError, TavilySearch
 
+
+
+PAUSED_KEY = "voice_paused"
 
 
 def configure_logging(config: Config) -> None:
@@ -298,6 +302,9 @@ def run(config: Config) -> int:
         logging.warning("Sin chat autorizado: modo de emparejamiento, sin recordatorios")
 
     status = VoiceStatus()
+    if store.kv_get(PAUSED_KEY) == "1":
+        status.set_paused(True)  # La pausa del micrófono se conserva entre reinicios.
+    status.on_pause = lambda paused: store.kv_set(PAUSED_KEY, "1" if paused else "0")
     status.set_usage_source(lambda: usage_snapshot(store))
     status.set_task_source(lambda: tasks_snapshot(store, config.categories, int(time.time())))
     status.set_source("usage", lambda: usage_report(store, datetime.now().astimezone()))
@@ -314,7 +321,7 @@ def run(config: Config) -> int:
     else:
         start_home_voice(config, assistant, transcriber, status, stop, piper)
 
-    logging.info("Hermes en marcha desde %s", datetime.now().astimezone().isoformat(timespec="seconds"))
+    logging.info("Hermes %s en marcha desde %s", __version__, datetime.now().astimezone().isoformat(timespec="seconds"))
     try:
         bot.run_forever(stop.is_set)
     except KeyboardInterrupt:

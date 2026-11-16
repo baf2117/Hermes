@@ -11,6 +11,7 @@ from .assistant import URGENCIES, Assistant, clean_repeat
 from .store import Task
 
 MAX_TITLE = 200
+MAX_ORDER = 500
 # Fechas razonables: del año 2000 al 2100. Evita valores absurdos que romperían los avisos.
 MIN_TIMESTAMP, MAX_TIMESTAMP = 946_684_800, 4_102_444_800
 
@@ -64,10 +65,18 @@ class TaskEditor:
             "cancel": lambda p: self._finish(p, "cancelled"),
             "add_step": self._add_step,
             "reopen": self._reopen,
+            "say": self._say,
         }.get(action)  # type: ignore[arg-type]
         if handler is None:
             raise EditError("Acción desconocida.")
         return {"ok": True, "message": handler(payload)}
+
+    def _say(self, payload: dict[str, Any]) -> str:
+        """Una orden escrita en la página: sigue el mismo camino que un mensaje de Telegram."""
+        text = payload.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise EditError("Escribe una tarea o una orden.")
+        return self.assistant.handle_text(" ".join(text.split())[:MAX_ORDER]).text
 
     def _edit(self, payload: dict[str, Any]) -> str:
         task = self._pending(payload)

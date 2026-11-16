@@ -18,7 +18,25 @@ from .remote import RemoteAccess, login_page
 
 log = logging.getLogger(__name__)
 
-LOGO_PATH = Path(__file__).resolve().parent / "assets" / "logo.webp"
+ASSETS = Path(__file__).resolve().parent / "assets"
+LOGO_PATH = ASSETS / "logo.webp"
+MANIFEST = json.dumps(
+    {
+        "name": "Hermes",
+        "short_name": "Hermes",
+        "lang": "es",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#0a0c0f",
+        "theme_color": "#0a0c0f",
+        "icons": [
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }
+).encode("utf-8")
+# Lo que el teléfono pide para instalar la página como app. No dice nada privado: el nombre y el ícono.
+PUBLIC_FILES = {"/icon-192.png": "image/png", "/icon-512.png": "image/png"}
 MAX_EVENTS = 25
 USAGE_REFRESH_SECONDS = 3.0
 RECENT_DONE_DAYS = 7
@@ -38,6 +56,7 @@ class VoiceStatus:
         self._sources: dict[str, Callable[[], dict[str, Any]]] = {}
         self._paused = False
         self._actions: dict[str, Callable[[Any], dict[str, Any]]] = {}
+        self.on_pause: Callable[[bool], None] | None = None  # Para recordar la pausa entre reinicios.
 
     @property
     def paused(self) -> bool:
@@ -51,6 +70,11 @@ class VoiceStatus:
                 self._state = "pausada"
                 self._level = 0.0
         log.info("Voz en casa %s desde la página", "en pausa" if paused else "reactivada")
+        if self.on_pause is not None:
+            try:
+                self.on_pause(paused)
+            except Exception:
+                log.exception("No se pudo guardar la pausa del micrófono")
 
     def set_usage_source(self, source: Callable[[], dict[str, Any]]) -> None:
         self._usage_source = source
@@ -188,6 +212,12 @@ PAGE = """<!doctype html>
 <meta name="robots" content="noindex">
 <title>Hermes</title>
 <meta name="hermes-token" content="__CSRF_TOKEN__">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hermes">
 <style>
 :root {
   --bg:#f4f3ef; --card:#ffffff; --ink:#1d1d1b; --muted:#6b6962; --faint:#9a978e; --line:#e4e1d8; --soft:#eeece6;
@@ -461,6 +491,13 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
   dialog#editor { max-height:calc(100dvh - 24px); }
   .stage-wrap { min-height:calc(100dvh - 150px); }
 }
+/* Escribirle desde la página */
+.say { display:flex; gap:8px; margin:0 0 16px; }
+.say input { flex:1; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.say input:focus { outline:none; border-color:var(--accent); }
+.say .primary { margin-left:0; }
+.say .primary:disabled { opacity:.5; cursor:default; }
+
 /* Hablarle desde la página */
 .talk-btn { position:fixed; right:max(18px, env(safe-area-inset-right)); bottom:calc(18px + env(safe-area-inset-bottom)); z-index:15;
   width:60px; height:60px; border-radius:50%; border:0; cursor:pointer; display:grid; place-items:center;
@@ -551,6 +588,10 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
 <div class="view" id="view-tareas">
   <h2>Tus tareas</h2>
   <div class="subtitle" id="updated">Cargando…</div>
+  <form class="say" id="say-form" autocomplete="off">
+    <input id="say-input" maxlength="500" enterkeyhint="send" placeholder="Escribe una tarea o una orden…" aria-label="Escribe una tarea o una orden">
+    <button type="submit" class="primary" id="say-send">Enviar</button>
+  </form>
   <div class="stats">
     <div class="stat"><b id="s-pending">–</b><span id="s-pending-label">Pendientes</span></div>
     <div class="stat" id="s-urgent-box"><b id="s-urgent">–</b><span>Urgentes</span></div>
@@ -1349,6 +1390,19 @@ $("talk-btn").addEventListener("click", () => {
   else if (state === "hablando") talkSilence();
 });
 $("talk-close").addEventListener("click", () => { $("talk-panel").hidden = true; });
+$("say-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const order = $("say-input").value.trim();
+  if (!order) return;
+  $("say-send").disabled = true;
+  try {
+    const data = await send("/tasks", { action: "say", text: order });
+    $("say-input").value = "";
+    talkShow("", data.message);
+    loadTasks(true);
+  } catch (e) { talkShow("", e.message, true); }
+  $("say-send").disabled = false;
+});
 let orbLevel = 0;
 function updateOrb(s) {
   const orb = $("orb");
@@ -1435,7 +1489,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; "
-                "img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+                "img-src 'self'; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             )
             for name, value in (extra or {}).items():
                 self.send_header(name, value)
@@ -1472,9 +1526,13 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
         def do_GET(self) -> None:
             # Valida el Host para que una web externa no pueda leer esto mediante DNS rebinding.
             path = urlsplit(self.path).path
+            if self._is_remote() and not self._remote_allowed():
+                return self._send(403, "text/plain; charset=utf-8", b"Solo desde esta computadora.")
+            if path == "/manifest.webmanifest":
+                return self._send(200, "application/manifest+json", MANIFEST)
+            if path in PUBLIC_FILES and (ASSETS / path[1:]).exists():
+                return self._send(200, PUBLIC_FILES[path], (ASSETS / path[1:]).read_bytes())
             if self._is_remote():
-                if not self._remote_allowed():
-                    return self._send(403, "text/plain; charset=utf-8", b"Solo desde esta computadora.")
                 if path == "/login":
                     return self._send(200, "text/html; charset=utf-8", login_page())
                 if not remote.valid(self.headers.get("Cookie")):
