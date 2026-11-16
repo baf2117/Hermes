@@ -81,6 +81,7 @@ class ExtrasEditor:
             "list_create": self._list_create,
             "list_delete": self._list_delete,
             "list_add": self._list_add,
+            "list_edit": self._list_edit,
             "list_remove": self._list_remove,
             "list_clear": self._list_clear,
             "note_add": self._note_add,
@@ -125,6 +126,15 @@ class ExtrasEditor:
         if not self.store.list_add(name, item, int(self._now().timestamp())):
             raise ApunteError(f"«{item}» ya estaba en la lista de {name}.")
         return f"Agregué «{item}» a la lista de {name}."
+
+    def _list_edit(self, payload: dict[str, Any]) -> str:
+        item = _text(payload.get("text"), MAX_ITEM, "El elemento no puede quedar vacío.")
+        result = self.store.list_edit(_number(payload.get("id"), "Falta el elemento."), item)
+        if result is None:
+            raise ApunteError("Ese elemento ya no estaba. Recarga la página.")
+        if result == "duplicate":
+            raise ApunteError(f"«{item}» ya está en esa lista.")
+        return "Guardado."
 
     def _list_remove(self, payload: dict[str, Any]) -> str:
         if not self.store.list_remove(_number(payload.get("id"), "Falta el elemento.")):

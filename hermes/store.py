@@ -663,6 +663,19 @@ class Store:
             ).fetchall()
         return [(r["name"], r["n"]) for r in rows]
 
+    def list_edit(self, item_id: int, text: str) -> str | None:
+        """Cambia el texto de un elemento: "ok", "duplicate" si ya hay otro igual en su lista, o None si no existe."""
+        with self._lock, self._conn:
+            row = self._conn.execute("SELECT list FROM list_items WHERE id = ?", (item_id,)).fetchone()
+            if row is None:
+                return None
+            if self._conn.execute(
+                "SELECT 1 FROM list_items WHERE list = ? AND lower(text) = lower(?) AND id != ?", (row["list"], text, item_id)
+            ).fetchone():
+                return "duplicate"
+            self._conn.execute("UPDATE list_items SET text = ? WHERE id = ?", (text, item_id))
+            return "ok"
+
     def list_remove(self, item_id: int) -> bool:
         with self._lock, self._conn:
             return self._conn.execute("DELETE FROM list_items WHERE id = ?", (item_id,)).rowcount > 0

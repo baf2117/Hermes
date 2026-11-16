@@ -53,6 +53,18 @@ class ApuntesTests(Harness):
         with self.assertRaises(ApunteError):
             self.do("list_delete", list="super")
 
+    def test_list_items_can_be_corrected(self):
+        self.do("list_add", list="super", text="lehce")
+        self.do("list_add", list="super", text="pan")
+        first, second = self.editor.snapshot()["lists"][0]["items"]
+        self.assertEqual(self.do("list_edit", id=first["id"], text="  leche   entera "), "Guardado.")
+        self.do("list_edit", id=first["id"], text="Leche entera")  # Cambiar solo mayúsculas no choca consigo mismo.
+        self.assertEqual([i["text"] for i in self.editor.snapshot()["lists"][0]["items"]], ["Leche entera", "pan"])
+        for bad in (dict(id=second["id"], text="LECHE ENTERA"), dict(id=second["id"], text="  "), dict(id=999, text="x"), dict(text="x")):
+            with self.assertRaises(ApunteError, msg=bad):
+                self.do("list_edit", **bad)
+        self.assertEqual([i["text"] for i in self.editor.snapshot()["lists"][0]["items"]], ["Leche entera", "pan"])
+
     def test_notes_are_the_memory(self):
         self.do("note_add", text="  la clave del wifi   está en el cajón ")
         notes = self.editor.snapshot()["notes"]

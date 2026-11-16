@@ -538,6 +538,13 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
 .ap-drawer-body { padding:0 16px 12px; border-top:1px solid var(--line); }
 .ap-drawer-body .ap-row:first-child { border-top:0; }
 .ap-add { margin:10px 0 4px; }
+.ap-item { font:inherit; color:inherit; background:none; border:0; padding:2px 0; text-align:left; cursor:text; border-radius:6px; }
+.ap-item:hover { color:var(--accent); }
+.ap-item:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.ap-editing { gap:8px; }
+.ap-editing input { flex:1; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:7px 10px; }
+.ap-editing input:focus { outline:none; }
+.ap-editing .primary { margin-left:0; padding:7px 12px; flex:none; }
 .ap-drawer-foot { display:flex; justify-content:space-between; gap:12px; margin-top:4px; }
 .ap-link:disabled { opacity:.4; cursor:default; text-decoration:none; }
 .ap-link.danger-link { color:var(--warn); }
@@ -1692,6 +1699,43 @@ function apFill(id, rows, empty) {
 let closedLists = new Set();
 try { closedLists = new Set(JSON.parse(localStorage.getItem("hermes-lists-closed") || "[]")); } catch {}
 let focusList = null;
+let editingItem = null;  // El elemento que se está corrigiendo, y lo escrito hasta ahora.
+let editingText = "";
+function listItemRow(item, lists) {
+  const check = apCheck(false, "Quitar " + item.text, () => apunte({ action: "list_remove", id: item.id }, true));
+  if (editingItem !== item.id) {
+    const row = text("div", "ap-row", "");
+    const name = text("button", "grow ap-item", item.text); name.type = "button";
+    name.setAttribute("aria-label", "Editar " + item.text); name.title = "Tocar para editar";
+    name.onclick = () => { editingItem = item.id; editingText = item.text; renderLists(lists); };
+    row.append(check, name);
+    return row;
+  }
+  const row = text("form", "ap-row ap-editing", ""); row.autocomplete = "off";
+  const input = document.createElement("input");
+  input.maxLength = 100; input.value = editingText; input.setAttribute("aria-label", "Nuevo texto del elemento"); input.enterKeyHint = "done";
+  input.oninput = () => { editingText = input.value; };
+  const stop = () => { editingItem = null; editingText = ""; };
+  input.onkeydown = event => { if (event.key === "Escape") { stop(); renderLists(lists); } };
+  const save = text("button", "primary", "Guardar"); save.type = "submit";
+  const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+  cancel.onclick = () => { stop(); renderLists(lists); };
+  row.onsubmit = async event => {
+    event.preventDefault();
+    const value = input.value.trim();
+    if (!value) { input.focus(); return; }
+    if (value === item.text) { stop(); renderLists(lists); return; }
+    save.disabled = true;
+    try {
+      await send("/extras", { action: "list_edit", id: item.id, text: value });
+      stop();
+      await loadApuntes(true);
+    } catch (e) { toast(e.message); save.disabled = false; }
+  };
+  row.append(input, save, cancel);
+  setTimeout(() => { if (document.activeElement !== input && editingItem === item.id) { input.focus(); input.select(); } }, 0);
+  return row;
+}
 function renderLists(lists) {
   const box = $("ap-lists");
   const typed = {};  // Lo que estabas escribiendo en cada cajón no se pierde al refrescar.
@@ -1713,7 +1757,7 @@ function renderLists(lists) {
     if (!closed) {
       const body = text("div", "ap-drawer-body", "");
       if (!list.items.length) body.appendChild(text("div", "ap-empty", "Esta lista está vacía."));
-      for (const item of list.items) body.appendChild(apRow(item.text, "", apCheck(false, "Quitar " + item.text, () => apunte({ action: "list_remove", id: item.id }, true))));
+      for (const item of list.items) body.appendChild(listItemRow(item, lists));
       const form = text("form", "ap-form ap-add", ""); form.autocomplete = "off";
       const input = document.createElement("input");
       input.maxLength = 100; input.placeholder = "Agregar a " + list.name + "…"; input.dataset.list = list.name;
