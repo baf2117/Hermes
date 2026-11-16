@@ -1061,7 +1061,7 @@ function finishedRow(t, steps) {
     meta.append(text("span", "tag" + (late ? " alta" : ""), late ? "Con retraso" : "A tiempo"));
   }
   const info = text("div", "meta", "");
-  info.append(text("span", "", "Urgencia " + URGENCY[t.urgency].toLowerCase()));
+  info.append(text("span", "", "Urgencia " + t.urgency));
   info.append(text("span", "", t.due_at ? "Inicio " + stamp(t.due_at) : "Sin fecha de inicio"));
   if (t.deadline_at) info.append(text("span", "", "Vencía " + stamp(t.deadline_at)));
   if (t.repeat_minutes) info.append(text("span", "tag", "🔁 " + interval(t.repeat_minutes)));
