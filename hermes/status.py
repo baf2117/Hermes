@@ -511,6 +511,43 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
   dialog#editor { max-height:calc(100dvh - 24px); }
   .stage-wrap { min-height:calc(100dvh - 150px); }
 }
+/* Calendario mensual (Tareas y Fechas) */
+.mode { display:inline-flex; background:var(--soft); border-radius:10px; padding:3px; margin:0 0 12px; }
+.mode button { font:inherit; font-size:14px; font-weight:550; color:var(--muted); background:none; border:0; border-radius:8px; padding:6px 14px; cursor:pointer; }
+.mode button[aria-pressed="true"] { background:var(--card); color:var(--ink); box-shadow:var(--shadow); }
+.mode button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.cal { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:14px; }
+.cal-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.cal-head b { flex:1; text-transform:capitalize; font-size:16px; text-align:center; }
+.cal-nav { font:inherit; font-size:14px; color:inherit; background:var(--soft); border:1px solid var(--line); border-radius:8px; min-width:38px; height:36px; cursor:pointer; padding:0 10px; }
+.cal-nav:hover { border-color:var(--faint); }
+.cal-grid { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:4px; }
+.cal-wd { text-align:center; font-size:12px; color:var(--muted); padding:4px 0; }
+.cal-day { font:inherit; color:inherit; background:none; border:1px solid transparent; border-radius:10px; min-height:70px; padding:4px; cursor:pointer;
+  display:flex; flex-direction:column; align-items:stretch; gap:2px; text-align:left; overflow:hidden; }
+.cal-day:hover { background:var(--soft); }
+.cal-day:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.cal-day .n { font-size:13px; font-weight:600; width:24px; height:24px; display:grid; place-items:center; border-radius:50%; flex:none; }
+.cal-day.today .n { background:var(--accent); color:#14110a; }
+.cal-day.picked { border-color:var(--accent); background:var(--accent-soft); }
+.cal-day .m { font-size:11px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:4px; padding:0 4px; background:var(--soft); color:var(--muted); }
+.cal-day.picked .m { background:var(--card); }
+.cal-day .m.alta { background:color-mix(in srgb, var(--u-alta) 18%, transparent); color:var(--u-alta); }
+.cal-day .m.late { color:var(--u-alta); }
+.cal-day .more { font-size:10px; color:var(--faint); padding-left:4px; }
+.cal-day .dots { display:none; gap:3px; justify-content:center; }
+.cal-day .dots i { width:5px; height:5px; border-radius:50%; background:var(--accent); }
+.cal-day .dots i.alta, .cal-day .dots i.late { background:var(--u-alta); }
+.cal-none { padding:14px 16px; color:var(--faint); font-size:14px; }
+.cal-picked { margin:-4px 0 12px; font-size:14px; color:var(--muted); }
+.cal-picked b { color:var(--ink); }
+@media (max-width:640px) {
+  .cal { padding:8px; }
+  .cal-day { min-height:46px; align-items:center; padding:3px 0; }
+  .cal-day .m, .cal-day .more { display:none; }
+  .cal-day .dots { display:flex; }
+}
+
 /* Apuntes: listas, notas, hábitos, fechas y esperas */
 .tabs { overflow-x:auto; scrollbar-width:none; }
 .tabs::-webkit-scrollbar { display:none; }
@@ -712,6 +749,10 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <button type="button" class="stat" data-state="hoy" aria-pressed="false"><b id="s-today">–</b><span>Para hoy</span></button>
     <button type="button" class="stat" data-state="terminadas" aria-pressed="false"><b id="s-finished">–</b><span>Terminadas</span></button>
   </div>
+  <div class="mode" id="task-mode" role="group" aria-label="Cómo ver las tareas">
+    <button type="button" data-mode="lista" aria-pressed="true">Lista</button>
+    <button type="button" data-mode="calendario" aria-pressed="false">Calendario</button>
+  </div>
   <div class="filters" id="filters" role="group" aria-label="Filtrar por categoría"></div>
   <div class="groups" id="groups"></div>
 </div>
@@ -797,7 +838,8 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     </section>
     <section class="ap-card" data-sub="fechas" hidden>
       <h3>Fechas <span id="ap-dates-count"></span></h3>
-      <p>Hermes avisa un día antes y ese día.</p>
+      <p>Hermes avisa un día antes y ese día. Toca un día del calendario para anotar algo en él.</p>
+      <div id="ap-dates-cal"></div>
       <form class="ap-form" id="ap-date-form" autocomplete="off">
         <select id="ap-date-kind" aria-label="Tipo"><option value="cumpleaños">Cumpleaños</option><option value="aniversario">Aniversario</option></select>
         <input id="ap-date-name" maxlength="80" placeholder="De quién" aria-label="De quién">
@@ -979,6 +1021,47 @@ function showView() {
 }
 window.addEventListener("hashchange", showView);
 
+/* ---------- Calendario mensual ---------- */
+const CAL_MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+// cal: { year, month (0-11), picked (día del mes o null) }. marks: { día: [{ label, cls }] }. redraw: vuelve a pintar.
+function monthGrid(cal, marks, redraw) {
+  const today = new Date();
+  const box = text("div", "cal", "");
+  const head = text("div", "cal-head", "");
+  const nav = (label, aria, step) => {
+    const b = text("button", "cal-nav", label); b.type = "button"; b.setAttribute("aria-label", aria);
+    b.onclick = () => { const d = new Date(cal.year, cal.month + step, 1); cal.year = d.getFullYear(); cal.month = d.getMonth(); cal.picked = null; redraw(); };
+    return b;
+  };
+  const now = text("button", "cal-nav", "Hoy"); now.type = "button";
+  now.onclick = () => { cal.year = today.getFullYear(); cal.month = today.getMonth(); cal.picked = today.getDate(); redraw(); };
+  head.append(nav("‹", "Mes anterior", -1), text("b", "", CAL_MONTHS[cal.month] + " " + cal.year), now, nav("›", "Mes siguiente", 1));
+  const grid = text("div", "cal-grid", "");
+  for (const day of ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]) grid.append(text("div", "cal-wd", day));
+  const offset = (new Date(cal.year, cal.month, 1).getDay() + 6) % 7;  // La semana empieza en lunes.
+  for (let i = 0; i < offset; i++) grid.append(document.createElement("span"));
+  const days = new Date(cal.year, cal.month + 1, 0).getDate();
+  for (let day = 1; day <= days; day++) {
+    const items = marks[day] || [];
+    const isToday = day === today.getDate() && cal.month === today.getMonth() && cal.year === today.getFullYear();
+    const cell = text("button", "cal-day" + (isToday ? " today" : "") + (day === cal.picked ? " picked" : ""), ""); cell.type = "button";
+    cell.setAttribute("aria-label", day + " de " + CAL_MONTHS[cal.month] + (items.length ? ": " + items.map(i => i.label).join(", ") : ""));
+    cell.setAttribute("aria-pressed", String(day === cal.picked));
+    cell.append(text("span", "n", String(day)));
+    items.slice(0, 2).forEach(i => cell.append(text("span", "m " + (i.cls || ""), i.label)));
+    if (items.length > 2) cell.append(text("span", "more", "+" + (items.length - 2)));
+    if (items.length) {
+      const dots = text("span", "dots", "");
+      items.slice(0, 4).forEach(i => dots.append(text("i", i.cls || "", "")));
+      cell.append(dots);
+    }
+    cell.onclick = () => { cal.picked = day; redraw(); };
+    grid.append(cell);
+  }
+  box.append(head, grid);
+  return box;
+}
+
 /* ---------- Tareas ---------- */
 const URGENCY = { alta: "Urgente", media: "Normal", baja: "Baja" };
 const URGENCY_ORDER = { alta: 0, media: 1, baja: 2 };
@@ -996,6 +1079,10 @@ const STATE_EMPTY = {
   terminadas: ["Todavía no hay tareas terminadas", "Aquí aparecen las que marques como hechas o canceles."],
 };
 let lastTasks = null;
+// Lista o calendario: se recuerda en este navegador.
+let taskMode = "lista";
+try { if (localStorage.getItem("hermes-task-mode") === "calendario") taskMode = "calendario"; } catch {}
+const taskCal = { year: new Date().getFullYear(), month: new Date().getMonth(), picked: new Date().getDate() };
 const catColor = c => "var(--c-" + (KNOWN.includes(c) ? c : "otra") + ")";
 function interval(minutes) {
   if (!minutes) return "";
@@ -1155,6 +1242,48 @@ function finishedRow(t, steps) {
   row.append(main);
   return row;
 }
+function renderTaskCalendar(tasks, ended, stepsOf, finished, nowTs) {
+  const groups = $("groups");
+  const entries = [];  // Cada fecha de cada tarea: su inicio, su vencimiento y las de sus pasos pendientes.
+  for (const t of tasks) {
+    if (ended) { if (t.completed_at) entries.push({ t, ts: t.completed_at }); continue; }
+    if (t.due_at) entries.push({ t, ts: t.due_at });
+    if (t.deadline_at) entries.push({ t, ts: t.deadline_at, label: "Vence: " + t.title });
+    for (const step of stepsOf(t.id)) {
+      if (step.status !== "pending") continue;
+      if (step.due_at) entries.push({ t, ts: step.due_at, label: step.title });
+      if (step.deadline_at) entries.push({ t, ts: step.deadline_at, label: "Vence: " + step.title });
+    }
+  }
+  entries.sort((a, b) => a.ts - b.ts);
+  const marks = {}, picked = [];
+  for (const e of entries) {
+    const d = new Date(e.ts * 1000);
+    if (d.getFullYear() !== taskCal.year || d.getMonth() !== taskCal.month) continue;
+    const cls = (e.t.urgency === "alta" ? "alta" : "") + (!ended && e.ts < nowTs ? " late" : "");
+    (marks[d.getDate()] = marks[d.getDate()] || []).push({ label: e.label || e.t.title, cls: cls.trim() });
+    if (d.getDate() === taskCal.picked) picked.push(e.t);
+  }
+  groups.append(monthGrid(taskCal, marks, () => renderTasks(lastTasks)));
+  const group = (title, list) => {
+    const card = text("div", "card group", "");
+    const head = text("div", "group-head", "");
+    head.append(text("span", "name", title), text("em", "", list.length + (list.length === 1 ? " tarea" : " tareas")));
+    card.append(head);
+    if (!list.length) card.append(text("div", "cal-none", ended ? "No terminaste nada este día." : "Nada para este día."));
+    list.forEach(t => card.append(ended ? finishedRow(t, finished.filter(x => x.parent_id === t.id).sort((a, b) => a.id - b.id)) : taskRow(t, stepsOf(t.id), nowTs)));
+    groups.append(card);
+  };
+  if (taskCal.picked) {
+    const date = new Date(taskCal.year, taskCal.month, taskCal.picked);
+    group(date.toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long" }), [...new Set(picked)]);
+  }
+  if (!ended) {
+    const dated = t => t.due_at || t.deadline_at || stepsOf(t.id).some(x => x.status === "pending" && (x.due_at || x.deadline_at));
+    const undated = tasks.filter(t => !dated(t)).sort(sortTasks);
+    if (undated.length) group("Sin fecha", undated);
+  }
+}
 function renderTasks(data) {
   const nowTs = data.now;
   const pending = data.pending || [];
@@ -1206,6 +1335,11 @@ function renderTasks(data) {
   categories.filter(c => counts[c]).forEach(c => chip(c, c.charAt(0).toUpperCase() + c.slice(1), counts[c]));
 
   const groups = $("groups"); groups.replaceChildren();
+  document.querySelectorAll("#task-mode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === taskMode)));
+  if (taskMode === "calendario") {
+    renderTaskCalendar(shown.filter(t => filter === "todas" || t.category === filter), ended, stepsOf, finished, nowTs);
+    return;
+  }
   const visible = categories.filter(c => counts[c] && (filter === "todas" || filter === c));
   if (!visible.length) {
     const empty = text("div", "empty-state card", "");
@@ -1234,6 +1368,13 @@ function renderTasks(data) {
     groups.append(card);
   }
 }
+document.querySelectorAll("#task-mode button").forEach(button => {
+  button.addEventListener("click", () => {
+    taskMode = button.dataset.mode;
+    try { localStorage.setItem("hermes-task-mode", taskMode); } catch {}
+    if (lastTasks) renderTasks(lastTasks);
+  });
+});
 document.querySelectorAll("#stats .stat").forEach(button => {
   button.addEventListener("click", () => {
     const state = button.dataset.state;
@@ -1874,6 +2015,27 @@ function noteRow(n) {
   setTimeout(() => { if (document.activeElement !== input && editingNote === n.id) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } }, 0);
   return row;
 }
+const dateCal = { year: new Date().getFullYear(), month: new Date().getMonth(), picked: null };
+function renderDatesCalendar(dates) {
+  const box = $("ap-dates-cal"); box.textContent = "";
+  const marks = {}, picked = [];
+  for (const x of dates) {
+    if (x.month !== dateCal.month + 1) continue;  // Se repiten cada año: basta con que coincida el mes.
+    const birthday = x.label.startsWith("cumpleaños de ");
+    (marks[x.day] = marks[x.day] || []).push({ label: birthday ? "🎂 " + x.label.slice(14) : "💍 aniversario", cls: "" });
+    if (x.day === dateCal.picked) picked.push(x.label);
+  }
+  box.append(monthGrid(dateCal, marks, () => {
+    if (dateCal.picked) { $("ap-date-day").value = dateCal.picked; $("ap-date-month").value = dateCal.month + 1; }
+    renderDatesCalendar(dates);
+  }));
+  if (dateCal.picked) {
+    const line = text("div", "cal-picked", "");
+    line.append(text("b", "", dateCal.picked + " de " + CAL_MONTHS[dateCal.month] + ": "),
+      text("span", "", picked.length ? picked.join(", ") + "." : "nada anotado. Ya puse el día en el formulario de abajo; escribe de quién es y guarda."));
+    box.append(line);
+  }
+}
 function renderApuntes(d) {
   lastApuntes = d;
   renderLists(d.lists);
@@ -1885,6 +2047,7 @@ function renderApuntes(d) {
   $("ap-habits-count").textContent = d.habits.length ? d.habits.filter(h => h.done).length + " de " + d.habits.length + " hoy" : "";
   apFill("ap-notes", d.notes.map(noteRow), "Todavía no hay notas.");
   $("ap-notes-count").textContent = d.notes.length || "";
+  renderDatesCalendar(d.dates);
   apFill("ap-dates", d.dates.map(x => apRow(x.day + " de " + AP_MONTHS[x.month - 1] + (x.year ? " de " + x.year : ""), x.label, null,
     async () => { if (await ask("¿Borrar el " + x.label + "?")) apunte({ action: "date_delete", id: x.id }); }, "Borrar la fecha")), "Todavía no hay fechas.");
   $("ap-dates-count").textContent = d.dates.length || "";
