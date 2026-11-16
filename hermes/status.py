@@ -1,6 +1,7 @@
 """Página local con las tareas y lo que oye Hermes en vivo. Solo acepta conexiones de esta computadora."""
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import secrets
@@ -37,6 +38,18 @@ MANIFEST = json.dumps(
 ).encode("utf-8")
 # Lo que el teléfono pide para instalar la página como app. No dice nada privado: el nombre y el ícono.
 PUBLIC_FILES = {"/icon-192.png": "image/png", "/icon-512.png": "image/png"}
+
+
+def touch_icon() -> str:
+    """Ícono de la pantalla de inicio del iPhone, dentro de la propia página.
+
+    El iPhone lo descarga por su cuenta, sin la sesión de Cloudflare Access, que se lo bloquea; dentro
+    de la página llega siempre. Si falta el archivo, se usa la dirección normal.
+    """
+    icon = ASSETS / "icon-192.png"
+    if not icon.exists():
+        return "/icon-192.png"
+    return "data:image/png;base64," + base64.b64encode(icon.read_bytes()).decode("ascii")
 MAX_EVENTS = 25
 USAGE_REFRESH_SECONDS = 3.0
 
@@ -216,8 +229,9 @@ PAGE = """<!doctype html>
 <meta name="robots" content="noindex">
 <title>Hermes</title>
 <meta name="hermes-token" content="__CSRF_TOKEN__">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="__TOUCH_ICON__">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -249,6 +263,7 @@ input[type="time"], input[type="date"], input[type="datetime-local"] { -webkit-a
 input::-webkit-date-and-time-value { text-align:left; }
 body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; }
 header { position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+header { padding-top:env(safe-area-inset-top); }
 .bar { max-width:1040px; margin:0 auto; padding:12px 16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
 .brand { font-weight:650; font-size:17px; letter-spacing:.2px; margin-right:auto; display:flex; align-items:center; gap:8px; }
 .brand-dot { width:10px; height:10px; border-radius:50%; background:var(--accent); }
@@ -2657,7 +2672,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
     allowed_origins = {f"http://{host}" for host in allowed_hosts}
     # Clave nueva en cada arranque: solo la conoce la página servida aquí, así otra web no puede pausar el micrófono.
     token = secrets.token_urlsafe(24)
-    page = PAGE.replace("__CSRF_TOKEN__", token).encode("utf-8")
+    page = PAGE.replace("__CSRF_TOKEN__", token).replace("__TOUCH_ICON__", touch_icon()).encode("utf-8")
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, content_type: str, body: bytes, extra: dict[str, str] | None = None) -> None:
@@ -2671,7 +2686,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; "
-                "img-src 'self'; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+                "img-src 'self' data:; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             )
             for name, value in (extra or {}).items():
                 self.send_header(name, value)

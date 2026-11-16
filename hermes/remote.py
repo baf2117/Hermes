@@ -336,6 +336,7 @@ _PAGE_HEAD = """<!doctype html>
 <meta name="theme-color" content="#0a0c0f">
 <meta name="robots" content="noindex">
 <title>Hermes</title>
+<link rel="icon" type="image/png" href="/icon-192.png">
 <style>
 * { box-sizing:border-box; }
 body { margin:0; min-height:100vh; min-height:100dvh; display:grid; place-items:center; padding:24px; color-scheme:dark;
