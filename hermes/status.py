@@ -806,7 +806,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <a href="#apuntes/habitos" data-sub="habitos">Hábitos<span id="ap-tab-habitos"></span></a>
     <a href="#apuntes/notas" data-sub="notas">Notas<span id="ap-tab-notas"></span></a>
     <a href="#apuntes/fechas" data-sub="fechas">Fechas<span id="ap-tab-fechas"></span></a>
-    <a href="#apuntes/esperando" data-sub="esperando">Esperando<span id="ap-tab-esperando"></span></a>
+    <a href="#apuntes/seguimientos" data-sub="seguimientos">Seguimientos<span id="ap-tab-seguimientos"></span></a>
   </nav>
   <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="primary" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
   <div class="ap-grid">
@@ -849,9 +849,9 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
       </form>
       <div id="ap-dates"></div>
     </section>
-    <section class="ap-card" data-sub="esperando" hidden>
-      <h3>Esperando <span id="ap-waiting-count"></span></h3>
-      <p>Lo que te deben otras personas. Dile a Hermes «estoy esperando que…» para agregar.</p>
+    <section class="ap-card" data-sub="seguimientos" hidden>
+      <h3>Seguimientos <span id="ap-waiting-count"></span></h3>
+      <p>Lo que quedaron de mandarte o hacer otras personas. Hermes te pregunta a los días si ya llegó. Para agregar uno, dile «estoy esperando que…».</p>
       <div id="ap-waiting"></div>
     </section>
   </div>
@@ -997,7 +997,7 @@ function hideToast() { $("toast").classList.remove("show"); }
 const VIEWS = ["tareas", "apuntes", "consumo", "historial", "vivo", "ajustes"];
 function currentView() { const v = location.hash.slice(1).split("/")[0]; return VIEWS.includes(v) ? v : "tareas"; }
 // Apuntes tiene un submenú: cada apartado es su propia página (#apuntes/listas, #apuntes/habitos…).
-const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", esperando: "Esperando" };
+const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", seguimientos: "Seguimientos" };
 let lastSub = "listas";
 function currentSub() {
   const sub = location.hash.slice(1).split("/")[1];
@@ -2053,9 +2053,9 @@ function renderApuntes(d) {
   $("ap-dates-count").textContent = d.dates.length || "";
   apFill("ap-waiting", d.waiting.map(w => apRow(w.title, w.due_at ? "Te pregunto " + new Date(w.due_at * 1000).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" }) : "",
     apCheck(false, "Ya llegó: " + w.title, async () => { try { toast((await send("/tasks", { action: "done", id: w.id })).message); loadApuntes(true); } catch (e) { toast(e.message); } }))),
-    "No estás esperando nada.");
+    "No tienes seguimientos abiertos.");
   $("ap-waiting-count").textContent = d.waiting.length || "";
-  const counts = { listas: d.lists.length, habitos: d.habits.length, notas: d.notes.length, fechas: d.dates.length, esperando: d.waiting.length };
+  const counts = { listas: d.lists.length, habitos: d.habits.length, notas: d.notes.length, fechas: d.dates.length, seguimientos: d.waiting.length };
   for (const key in counts) $("ap-tab-" + key).textContent = counts[key] || "";
   $("ap-quiet").hidden = !d.quiet_until;
   if (d.quiet_until) $("ap-quiet-text").textContent = "En silencio hasta las " + new Date(d.quiet_until * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }) + ". Los avisos salen después.";
