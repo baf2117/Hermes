@@ -65,6 +65,32 @@ CREATE TABLE IF NOT EXISTS emails (
     notified_at INTEGER,
     handled INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS list_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    list TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    month INTEGER NOT NULL,
+    day INTEGER NOT NULL,
+    year INTEGER,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS habits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    remind_at TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS habit_log (
+    habit_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    PRIMARY KEY (habit_id, day)
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     text, content='messages', content_rowid='id', tokenize='unicode61 remove_diacritics 2'
 );
@@ -84,7 +110,20 @@ END;
 
 EDITABLE_FIELDS = {
     "title", "category", "urgency", "due_at", "notified_at", "repeat_minutes", "deadline_at", "deadline_notified_at",
+    "deadline_warned",
 }
+DAY_SECONDS = 86400
+
+
+def warn_stage(deadline_at: int | None, now: int) -> int:
+    """Avisos previos al vencimiento que ya no tocan: 0 ninguno, 1 el de un día antes, 2 también el de una hora.
+
+    Una tarea que nace a pocas horas de vencer no debe avisar «falta un día» en ese mismo momento.
+    """
+    if deadline_at is None:
+        return 0
+    remaining = deadline_at - now
+    return 2 if remaining <= 3600 else 1 if remaining <= DAY_SECONDS else 0
 
 FTS_READY_KEY = "fts_ready"
 STOPWORDS = frozenset(
@@ -131,6 +170,8 @@ class Task:
     parent_id: int | None = None
     deadline_at: int | None = None  # Hora de vencimiento; due_at es la hora de inicio (el aviso).
     deadline_notified_at: int | None = None
+    kind: str = "task"  # "waiting": algo que el dueño espera de otra persona; el aviso pregunta si ya llegó.
+    deadline_warned: int = 0
 
     @property
     def overdue_from(self) -> int | None:
@@ -174,6 +215,8 @@ class Store:
                 ("parent_id", "INTEGER REFERENCES tasks (id)"),
                 ("deadline_at", "INTEGER"),
                 ("deadline_notified_at", "INTEGER"),
+                ("kind", "TEXT NOT NULL DEFAULT 'task'"),
+                ("deadline_warned", "INTEGER NOT NULL DEFAULT 0"),
             ):
                 if name not in columns:
                     self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
@@ -198,6 +241,8 @@ class Store:
             parent_id=row["parent_id"],
             deadline_at=row["deadline_at"],
             deadline_notified_at=row["deadline_notified_at"],
+            kind=row["kind"],
+            deadline_warned=row["deadline_warned"],
         )
 
     def add_task(
@@ -211,12 +256,16 @@ class Store:
         repeat_minutes: int | None = None,
         parent_id: int | None = None,
         deadline_at: int | None = None,
+        kind: str = "task",
     ) -> Task:
         with self._lock, self._conn:
             cursor = self._conn.execute(
                 "INSERT INTO tasks (title, category, urgency, due_at, repeat_minutes, parent_id, deadline_at,"
-                " source_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (title, category, urgency, due_at, repeat_minutes, parent_id, deadline_at, source_text, now, now),
+                " source_text, created_at, updated_at, kind, deadline_warned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    title, category, urgency, due_at, repeat_minutes, parent_id, deadline_at, source_text, now, now,
+                    kind, warn_stage(deadline_at, now),
+                ),
             )
             return self.get_task(int(cursor.lastrowid))  # type: ignore[return-value]
 
@@ -229,6 +278,8 @@ class Store:
         unknown = set(fields) - EDITABLE_FIELDS
         if unknown:
             raise ValueError(f"campos no editables: {sorted(unknown)}")
+        if "deadline_at" in fields and "deadline_warned" not in fields:
+            fields["deadline_warned"] = warn_stage(fields["deadline_at"], now)  # type: ignore[arg-type]
         if fields:
             assignments = ", ".join(f"{name} = ?" for name in fields)
             with self._lock, self._conn:
@@ -297,6 +348,34 @@ class Store:
                 (now,),
             ).fetchall()
         return [self._task(r) for r in rows]
+
+    def deadline_warnings(self, now: int) -> list[Task]:
+        """Tareas que vencen dentro de un día y a las que todavía les falta algún aviso previo."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' AND deadline_at IS NOT NULL AND deadline_at > ?"
+                " AND deadline_at - ? <= ? AND deadline_warned < 2 ORDER BY deadline_at, id",
+                (now, DAY_SECONDS, now),
+            ).fetchall()
+        return [self._task(r) for r in rows]
+
+    def stale_tasks(self, before: int, limit: int = 5) -> list[Task]:
+        """Tareas sin fecha que nadie ha tocado desde `before`: candidatas a posponer o cancelar."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' AND parent_id IS NULL AND kind = 'task'"
+                " AND due_at IS NULL AND deadline_at IS NULL AND updated_at < ? ORDER BY updated_at, id LIMIT ?",
+                (before, limit),
+            ).fetchall()
+        return [self._task(r) for r in rows]
+
+    def finished_count(self, since: int, status: str = "done") -> int:
+        with self._lock:
+            return int(
+                self._conn.execute(
+                    "SELECT COUNT(*) FROM tasks WHERE status = ? AND completed_at >= ?", (status, since)
+                ).fetchone()[0]
+            )
 
     def due_repeats(self, now: int) -> list[Task]:
         """Tareas repetitivas ya avisadas cuyo intervalo se cumplió y que siguen pendientes."""
@@ -492,6 +571,96 @@ class Store:
                 "SELECT * FROM emails WHERE important = 1 AND handled = 0 AND ts >= ? ORDER BY ts DESC", (since,)
             ).fetchall()
         return [self._mail(r) for r in rows]
+
+    # --- Listas simples (súper, compras): elementos sin fecha ni urgencia ---
+
+    def list_add(self, name: str, text: str, now: int) -> bool:
+        """Agrega un elemento; devuelve False si ya estaba en esa lista."""
+        with self._lock, self._conn:
+            if self._conn.execute(
+                "SELECT 1 FROM list_items WHERE list = ? AND lower(text) = lower(?)", (name, text)
+            ).fetchone():
+                return False
+            self._conn.execute("INSERT INTO list_items (list, text, created_at) VALUES (?, ?, ?)", (name, text, now))
+            return True
+
+    def list_items(self, name: str) -> list[tuple[int, str]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT id, text FROM list_items WHERE list = ? ORDER BY id", (name,)).fetchall()
+        return [(r["id"], r["text"]) for r in rows]
+
+    def list_names(self) -> list[tuple[str, int]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT list, COUNT(*) n FROM list_items GROUP BY list ORDER BY list").fetchall()
+        return [(r["list"], r["n"]) for r in rows]
+
+    def list_remove(self, item_id: int) -> bool:
+        with self._lock, self._conn:
+            return self._conn.execute("DELETE FROM list_items WHERE id = ?", (item_id,)).rowcount > 0
+
+    def list_clear(self, name: str) -> int:
+        with self._lock, self._conn:
+            return self._conn.execute("DELETE FROM list_items WHERE list = ?", (name,)).rowcount
+
+    # --- Fechas que se repiten cada año: cumpleaños y aniversarios ---
+
+    def add_date(self, kind: str, name: str, month: int, day: int, year: int | None, now: int) -> int:
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM dates WHERE kind = ? AND lower(name) = lower(?)", (kind, name))
+            cursor = self._conn.execute(
+                "INSERT INTO dates (kind, name, month, day, year, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (kind, name, month, day, year, now),
+            )
+            return int(cursor.lastrowid)
+
+    def list_dates(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM dates ORDER BY month, day, id").fetchall()
+        return [dict(row) for row in rows]
+
+    def dates_on(self, month: int, day: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM dates WHERE month = ? AND day = ? ORDER BY id", (month, day)).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_date(self, date_id: int) -> bool:
+        with self._lock, self._conn:
+            return self._conn.execute("DELETE FROM dates WHERE id = ?", (date_id,)).rowcount > 0
+
+    # --- Hábitos: cosas de todos los días, con su racha ---
+
+    def add_habit(self, title: str, remind_at: str | None, now: int) -> int:
+        with self._lock, self._conn:
+            existing = self._conn.execute("SELECT id FROM habits WHERE lower(title) = lower(?)", (title,)).fetchone()
+            if existing:
+                self._conn.execute("UPDATE habits SET remind_at = ? WHERE id = ?", (remind_at, existing["id"]))
+                return int(existing["id"])
+            cursor = self._conn.execute(
+                "INSERT INTO habits (title, remind_at, created_at) VALUES (?, ?, ?)", (title, remind_at, now)
+            )
+            return int(cursor.lastrowid)
+
+    def habits(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT id, title, remind_at FROM habits ORDER BY id").fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_habit(self, habit_id: int) -> bool:
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM habit_log WHERE habit_id = ?", (habit_id,))
+            return self._conn.execute("DELETE FROM habits WHERE id = ?", (habit_id,)).rowcount > 0
+
+    def mark_habit(self, habit_id: int, day: str) -> bool:
+        """Anota el hábito como cumplido ese día (AAAA-MM-DD); False si ya lo estaba."""
+        with self._lock, self._conn:
+            return self._conn.execute(
+                "INSERT OR IGNORE INTO habit_log (habit_id, day) VALUES (?, ?)", (habit_id, day)
+            ).rowcount > 0
+
+    def habit_days(self, habit_id: int) -> set[str]:
+        with self._lock:
+            rows = self._conn.execute("SELECT day FROM habit_log WHERE habit_id = ?", (habit_id,)).fetchall()
+        return {r["day"] for r in rows}
 
     def kv_get(self, key: str) -> str | None:
         with self._lock:

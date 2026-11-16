@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 from . import spoken
 from .config import Config
+from .extras import Extras
 from .llm import DAY_NAMES, LLMError
 from .speakers import DEFAULT_VOICES, VOICE_HELP, VOICE_KEY, describe_voice
 from .store import MailNote, STOPWORDS, Store, Task
@@ -37,12 +38,36 @@ HELP_TEXT = (
     "/urgente 3: marca la tarea 3 como urgente\n"
     "/sub 3 empacar libros: agrega un paso a la tarea 3\n"
     "/repetir 3 30: repite el aviso de la tarea 3 cada 30 min hasta que esté hecha (0 lo detiene)\n"
+    "/lista súper: muestra una lista; /lista súper: leche, pan agrega; /listas las enumera\n"
+    "/habito tomar agua 08:00: crea un hábito diario; /habitos muestra tus rachas\n"
+    "/espero que Juan mande el contrato: te pregunto en unos días si ya llegó\n"
+    "/fechas: cumpleaños y aniversarios que recuerdo\n"
+    "/silencio 2h: no te aviso durante ese tiempo (/silencio off lo quita)\n"
+    "/noche y /semana: el cierre del día y la revisión de la semana\n"
     "/voz: cambia la voz con la que te contesto en casa\n"
     "/memoria: lo que recuerdo de ti\n"
     "/olvidar 2: borra el dato 2 de mi memoria\n"
     "/ayuda: este mensaje\n\n"
-    "También puedes mandarme notas de voz."
+    "También puedes mandarme notas de voz, o decirlo con tus palabras: «agrega leche a la lista del súper», "
+    "«mi mamá cumple el 3 de marzo», «nuevo hábito: leer a las 9 de la noche», "
+    "«estoy esperando que Juan me mande el contrato», «no me molestes hasta las 3»."
 )
+STALE_DAYS = 14
+MAX_IN_SECTION = 6
+_BOLD = re.compile(r"(\*\*|__)(.+?)\1")
+_EMPHASIS = re.compile(r"(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])")
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE)
+_BULLET = re.compile(r"^(\s*)[*-]\s+", re.MULTILINE)
+
+
+def plain_text(text: str) -> str:
+    """Quita el formato Markdown que el modelo a veces agrega: en Telegram se vería como asteriscos sueltos."""
+    text = _BOLD.sub(r"\2", text)
+    text = _EMPHASIS.sub(r"\1", text)
+    text = _HEADING.sub("", text)
+    text = _BULLET.sub(r"\1• ", text)
+    return text.replace("`", "")
+
 TIME_HINT = re.compile(
     r"\d|\b(hoy|ma[ñn]ana|pasado|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo|semana|mes|"
     r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|"
@@ -171,7 +196,21 @@ class DueProblem(Exception):
 
 
 def reminder_buttons(task_id: int) -> list[list[tuple[str, str]]]:
-    return [[("✅ Hecho", f"done:{task_id}"), ("⏰ +1 h", f"snooze:{task_id}"), ("📅 Mañana", f"tomorrow:{task_id}")]]
+    return [
+        [("✅ Hecho", f"done:{task_id}"), ("⏰ +1 h", f"snooze:{task_id}")],
+        [("📅 Mañana", f"tomorrow:{task_id}"), ("📅 Lunes", f"monday:{task_id}")],
+    ]
+
+
+def buttons_for(task: Task) -> list[list[tuple[str, str]]]:
+    """Los botones de un aviso: lo que se espera de otra persona pregunta si llegó, no si está hecho."""
+    if task.kind == "waiting":
+        return [[("✅ Ya llegó", f"done:{task.id}"), ("⏰ 3 días más", f"wait3:{task.id}")]]
+    return reminder_buttons(task.id)
+
+
+def review_buttons(task_id: int) -> list[list[tuple[str, str]]]:
+    return [[("✅ Hecho", f"done:{task_id}"), ("📅 Lunes", f"monday:{task_id}"), ("🗑 Cancelar", f"cancel:{task_id}")]]
 
 
 class Assistant:
@@ -188,6 +227,9 @@ class Assistant:
         self.config = config
         self.search = search
         self._now = now or (lambda: datetime.now().astimezone())
+        self.extras = Extras(store, config, self._now, Reply)
+        self.weather: Callable[[], str] | None = None  # Línea del clima para el resumen, si hay algo que avisar.
+        self.agenda: Callable[[datetime], list[str]] | None = None  # Eventos del calendario de un día.
 
     # --- Presentación ---
 
@@ -211,6 +253,8 @@ class Assistant:
         )
 
     def reminder_text(self, task: Task, now: datetime, repeated: bool = False) -> str:
+        if task.kind == "waiting":
+            return f"⏳ ¿Ya llegó? {task.title}.\nSi todavía no, te vuelvo a preguntar en 3 días."
         prefix = "🔁 Sigue pendiente:" if repeated else "⏰"
         text = f"{prefix} {URGENCY_MARK[task.urgency]} {task.title}\n{task.category} · urgencia {task.urgency}"
         if repeated:
@@ -227,6 +271,85 @@ class Assistant:
             f"{task.category} · era para {self.format_due(task.deadline_at)}.\n"
             "¿Ya la hiciste? Si no, sigue en tus pendientes."
         )
+
+    def deadline_warning_text(self, task: Task, now: datetime) -> str:
+        remaining = (task.deadline_at or 0) - now.timestamp()
+        lead = "Vence en menos de una hora" if remaining <= 3600 else "Vence en menos de un día"
+        return (
+            f"⌛ {lead}: {URGENCY_MARK[task.urgency]} {task.title}\n"
+            f"{task.category} · vence {self.format_due(task.deadline_at)}."
+        )
+
+    def _extra_lines(self, now: datetime) -> list[str]:
+        """Clima y agenda del día, si están configurados. Un fallo aquí nunca tumba el resumen."""
+        lines: list[str] = []
+        try:
+            if self.weather is not None and (line := self.weather()):
+                lines.append(line)
+        except Exception as exc:
+            log.warning("No se pudo leer el clima: %s", exc)
+        try:
+            if self.agenda is not None and (events := self.agenda(now)):
+                lines.append("Agenda de hoy:\n" + "\n".join(f"• {event}" for event in events))
+        except Exception as exc:
+            log.warning("No se pudo leer el calendario: %s", exc)
+        return lines
+
+    def build_evening(self) -> str:
+        """Cierre del día: lo hecho, lo que quedó y lo que viene mañana."""
+        now = self._now()
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_end = (start + timedelta(days=2)).timestamp()
+        day_end = (start + timedelta(days=1)).timestamp()
+        done = [t for t in self.store.recently_finished(int(start.timestamp())) if t["status"] == "done"]
+        pending = [t for t in self.store.pending_tasks() if t.kind == "task"]
+        left = [t for t in pending if t.overdue_from is not None and t.overdue_from < day_end]
+        ahead = [t for t in pending if t.overdue_from is not None and day_end <= t.overdue_from < tomorrow_end]
+        parts = ["Cierre del día."]
+        if done:
+            titles = ", ".join(t["title"] for t in done[:MAX_IN_SECTION])
+            parts.append(f"\n✅ Hoy completaste {len(done)}: {titles}" + ("…" if len(done) > MAX_IN_SECTION else ""))
+        for label, tasks in (("Quedó pendiente", left), ("Mañana", ahead)):
+            if tasks:
+                listing = "\n".join(self.format_task(t) for t in tasks[:MAX_IN_SECTION])
+                more = f"\n… y {len(tasks) - MAX_IN_SECTION} más" if len(tasks) > MAX_IN_SECTION else ""
+                parts.append(f"\n{label}:\n{listing}{more}")
+        missing = [habit["title"] for habit, marked, _ in self.extras.habit_status(now.date()) if not marked]
+        if missing:
+            parts.append("\nHábitos sin marcar hoy: " + ", ".join(missing))
+        celebrations = [line for line in self.extras.date_lines(now.date()) if line.split()[1] == "Mañana"]
+        if celebrations:
+            parts.append("\n" + "\n".join(celebrations))
+        if len(parts) == 1:
+            parts.append("No quedó nada pendiente de hoy. Descansa.")
+        return "\n".join(parts)
+
+    def build_weekly(self) -> tuple[str, list[Task]]:
+        """Revisión de la semana y las tareas olvidadas, que se mandan aparte con botones."""
+        now = self._now()
+        now_ts = int(now.timestamp())
+        pending = [t for t in self.store.pending_tasks() if t.parent_id is None]
+        overdue = [t for t in pending if t.overdue_from is not None and t.overdue_from < now_ts]
+        coming = [t for t in pending if t.overdue_from is not None and now_ts <= t.overdue_from < now_ts + 7 * 86400]
+        stale = self.store.stale_tasks(now_ts - STALE_DAYS * 86400)
+        parts = [
+            "Revisión de la semana.",
+            f"\n✅ Completaste {self.store.finished_count(now_ts - 7 * 86400)} tareas en los últimos 7 días.",
+            f"Tienes {len(pending)} pendientes; {len(coming)} con fecha en los próximos 7 días.",
+        ]
+        if overdue:
+            listing = "\n".join(self.format_task(t) for t in overdue[:MAX_IN_SECTION])
+            more = f"\n… y {len(overdue) - MAX_IN_SECTION} más" if len(overdue) > MAX_IN_SECTION else ""
+            parts.append(f"\nAtrasadas ({len(overdue)}):\n{listing}{more}")
+        streaks = [f"{habit['title']} ({run})" for habit, _, run in self.extras.habit_status(now.date()) if run]
+        if streaks:
+            parts.append("\nRachas de hábitos, en días: " + ", ".join(streaks))
+        if stale:
+            parts.append(f"\nAbajo van {len(stale)} tareas sin fecha que llevan más de {STALE_DAYS} días sin moverse.")
+        return "\n".join(parts), stale
+
+    def stale_text(self, task: Task) -> str:
+        return f"🕸 Sin moverse hace más de {STALE_DAYS} días:\n{self.format_task(task)}\n¿La hago, la paso al lunes o la cancelo?"
 
     def build_summary(self) -> str:
         now = self._now()
@@ -245,6 +368,11 @@ class Assistant:
                 parts.append(f"\n{label}:\n" + "\n".join(self.format_task(t) for t in tasks))
         if len(parts) == 1:
             parts.append("No tienes tareas para hoy.")
+        if extra := self._extra_lines(now) + self.extras.date_lines(now.date()):
+            parts.append("\n" + "\n".join(extra))
+        habits = [habit["title"] for habit, marked, _ in self.extras.habit_status(now.date()) if not marked]
+        if habits:
+            parts.append("\nHábitos de hoy: " + ", ".join(habits))
         mails = self.store.open_emails(int(now.timestamp()) - MAIL_OPEN_HOURS * 3600)
         if mails:
             lines = [f"• {mail_tag(m)}{m.sender}: {m.subject}" for m in mails[:MAX_MAILS_IN_SUMMARY]]
@@ -540,6 +668,7 @@ class Assistant:
             (urlsplit(r.url).hostname or "").removeprefix("www.") for r in results[:2]
         )
         sources = ", ".join(d for d in domains if d)
+        answer = plain_text(answer)
         return Reply(f"{answer}\n\nFuente: {sources}" if sources else answer)
 
     # --- Cancelar varias tareas: siempre con confirmación y decidido por código ---
@@ -649,8 +778,10 @@ class Assistant:
             facts = "; ".join(fact for _, fact in self.store.search_facts(text, 3))
             return self._web_search({"title": f"{text} ({facts})" if facts else text}, text, reference)
         return Reply(
-            self.llm.reply(
-                text, self.store.recent_messages(HISTORY_TURNS), self._memory_for_chat(text), **self._voice_style()
+            plain_text(
+                self.llm.reply(
+                    text, self.store.recent_messages(HISTORY_TURNS), self._memory_for_chat(text), **self._voice_style()
+                )
             )
         )
 
@@ -675,6 +806,12 @@ class Assistant:
             return self._voice_command(argument.strip())
         if command == "/hoy":
             return Reply(self.build_summary())
+        if command == "/noche":
+            return Reply(self.build_evening())
+        if command == "/semana":
+            return Reply(self.build_weekly()[0])
+        if (extra := self.extras.command(command, argument)) is not None:
+            return extra
         if command in ("/hecho", "/borrar"):
             if not argument.strip().isdigit():
                 return Reply(f"Dime el número de la tarea, por ejemplo: {command} 3")
@@ -727,6 +864,8 @@ class Assistant:
         now_ts = int(reference.timestamp())
         if text.startswith("/"):
             reply = self._command(text)
+        elif (extra := self.extras.handle(text, reference)) is not None:
+            reply = extra
         elif (bulk := self._bulk_cancel_flow(text, now)) is not None:
             reply = bulk
         else:
@@ -762,6 +901,8 @@ class Assistant:
             return self._mail_button(action, int(raw_id))
         if action == "forget":
             return Reply("Listo, lo olvidé." if self.store.delete_fact(int(raw_id)) else "Ese dato ya no estaba.")
+        if (extra := self.extras.button(action, int(raw_id))) is not None:
+            return extra
         task = self._pending_by_id(int(raw_id))
         if task is None:
             return Reply("Esa tarea ya no está pendiente.")
@@ -775,6 +916,11 @@ class Assistant:
             due = now + timedelta(hours=1)
         elif action == "tomorrow":
             due = datetime.combine(now.date() + timedelta(days=1), self.config.default_task_time, now.tzinfo)
+        elif action == "monday":
+            days = (7 - now.weekday()) % 7 or 7  # El próximo lunes; si hoy es lunes, el de la otra semana.
+            due = datetime.combine(now.date() + timedelta(days=days), self.config.default_task_time, now.tzinfo)
+        elif action == "wait3":
+            due = datetime.combine(now.date() + timedelta(days=3), self.config.default_task_time, now.tzinfo)
         else:
             return Reply("No entendí ese botón.")
         self.store.update_task(task.id, now_ts, due_at=int(due.timestamp()), notified_at=None)

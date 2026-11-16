@@ -152,6 +152,9 @@ class MailWatcher:
             self._notify(note, now)
 
     def _notify(self, note: MailNote, now: datetime) -> None:
+        raw_quiet = self.store.kv_get("quiet_until")  # «No me molestes»: el aviso queda guardado y sale después.
+        if raw_quiet and raw_quiet.isdigit() and int(raw_quiet) > now.timestamp():
+            return
         try:
             self.send(self.describe(note), mail_buttons(note))
         except Exception as exc:  # Se reintenta en el siguiente ciclo.

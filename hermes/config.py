@@ -31,6 +31,20 @@ def _parse_time(value: str) -> time:
     return time(int(hour), int(minute))
 
 
+def _optional_time(value: str) -> time | None:
+    """Una hora, o None si el valor es «off»: así se apaga un aviso programado."""
+    return None if value.strip().lower() in ("off", "no", "") else _parse_time(value)
+
+
+def _coordinates(value: str) -> tuple[float, float] | None:
+    """«14.63,-90.51» -> (14.63, -90.51); None si falta o no son coordenadas válidas."""
+    try:
+        latitude, longitude = (float(part) for part in value.split(","))
+    except ValueError:
+        return None
+    return (latitude, longitude) if -90 <= latitude <= 90 and -180 <= longitude <= 180 else None
+
+
 @dataclass(frozen=True)
 class Config:
     telegram_token: str
@@ -68,6 +82,11 @@ class Config:
     claude_model: str = "claude-opus-5-5"
     repeat_quiet_start: time = time(20, 0)
     repeat_quiet_end: time = time(10, 30)
+    evening_time: time | None = time(20, 30)  # Cierre del día; None lo apaga.
+    weekly_time: time | None = time(18, 0)  # Revisión de la semana, los domingos; None la apaga.
+    weather_location: tuple[float, float] | None = None  # Latitud y longitud para el clima del resumen.
+    heartbeat_url: str = field(default="", repr=False)  # Vigilante externo al que se le avisa «sigo vivo».
+    calendar_remind_minutes: int = 15
 
     @classmethod
     def load(cls) -> "Config":
@@ -123,4 +142,9 @@ class Config:
             claude_model=get("HERMES_CLAUDE_MODEL", "claude-opus-5-5"),
             repeat_quiet_start=_parse_time(quiet_start),
             repeat_quiet_end=_parse_time(quiet_end),
+            evening_time=_optional_time(get("HERMES_EVENING_TIME", "20:30")),
+            weekly_time=_optional_time(get("HERMES_WEEKLY_TIME", "18:00")),
+            weather_location=_coordinates(get("HERMES_WEATHER")),
+            heartbeat_url=get("HERMES_HEARTBEAT_URL"),
+            calendar_remind_minutes=max(0, int(get("HERMES_CALENDAR_REMIND", "15"))),
         )

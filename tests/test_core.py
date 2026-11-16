@@ -54,6 +54,7 @@ class Harness(unittest.TestCase):
             telegram_token="x", allowed_chat_id=OWNER, ollama_url="", ollama_model="",
             db_path=":memory:", log_path="", summary_time=time(7, 30),
             default_task_time=time(9, 0), categories=DEFAULT_CATEGORIES,
+            evening_time=None, weekly_time=None,  # Los cierres de día y de semana tienen sus propias pruebas.
         )
         self.store = Store(":memory:")
         self.llm = FakeLLM()
