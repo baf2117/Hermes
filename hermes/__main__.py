@@ -25,6 +25,7 @@ from .speakers import VOICE_KEY, SwitchableSpeaker
 from .gmail import DEFAULT_ACCOUNT, GmailAuthError, GmailClient, authorize, find_accounts, token_path, valid_account
 from . import __version__
 from .mailwatch import MailWatcher, run_watchers
+from .net import prefer_ipv4
 from .outside import (
     CALENDAR_SCOPE, Agenda, CalendarClient, Weather, calendar_token_path, find_calendars, run_heartbeat, valid_heartbeat,
 )
@@ -521,6 +522,7 @@ def take_home(arguments: list[str]) -> list[str]:
 
 def main() -> int:
     arguments = take_home(sys.argv[1:])
+    prefer_ipv4()  # Evita esperas de ~20 s en redes donde IPv6 no sale a internet.
     config = Config.load()
     command = arguments[0] if arguments else "run"
     if command == "gmail-auth":
