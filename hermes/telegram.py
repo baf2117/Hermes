@@ -39,7 +39,12 @@ class TelegramClient:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise TelegramError(f"{method}: HTTP {exc.code}") from None
+            # Telegram explica el error en «description» (p. ej. «query is too old»); nunca trae el token.
+            try:
+                detail = str(json.loads(exc.read().decode("utf-8")).get("description", ""))[:200]
+            except Exception:
+                detail = ""
+            raise TelegramError(f"{method}: HTTP {exc.code}" + (f" ({detail})" if detail else "")) from None
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             # El mensaje de la excepción nunca incluye la URL, que contiene el token.
             raise TelegramError(f"{method}: {type(exc).__name__}") from None
@@ -184,9 +189,17 @@ class TelegramBot:
         if not self._is_allowed(query.get("from", {}).get("id"), chat):
             log.warning("Botón ignorado de un chat no autorizado")
             return
-        self.client.answer_button(query["id"])
+        # Contestar el botón solo quita el relojito en Telegram. Si falla (p. ej. el botón llegó tarde),
+        # la orden se cumple igual: antes un error aquí dejaba sin efecto aprobaciones de acceso.
+        try:
+            self.client.answer_button(query["id"])
+        except TelegramError as exc:
+            log.warning("No se pudo contestar el botón: %s", exc)
         reply = self.assistant.handle_button(query.get("data", ""))
-        self.client.clear_buttons(chat["id"], message["message_id"])
+        try:
+            self.client.clear_buttons(chat["id"], message["message_id"])
+        except TelegramError as exc:
+            log.warning("No se pudieron quitar los botones: %s", exc)
         self.client.send_message(chat["id"], reply.text, reply.buttons)
 
     def poll_once(self) -> None:

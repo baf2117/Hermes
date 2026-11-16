@@ -752,6 +752,24 @@ class TelegramTests(Harness):
         }})
         self.assertEqual(len(self.store.pending_tasks()), 1)
 
+    def test_button_works_even_if_telegram_rejects_the_answer(self):
+        from hermes.telegram import TelegramError
+
+        def fail(*_):
+            raise TelegramError("answerCallbackQuery: HTTP 400 (query is too old)")
+
+        self.client.answer_button = fail
+        self.client.clear_buttons = fail
+        self.say("x", title="A")
+        task_id = self.store.pending_tasks()[0].id
+        with self.assertLogs("hermes.telegram", "WARNING"):
+            self.bot.handle_update({"callback_query": {
+                "id": "1", "from": {"id": OWNER}, "data": f"done:{task_id}",
+                "message": {"message_id": 1, "chat": {"id": OWNER, "type": "private"}},
+            }})
+        self.assertEqual(self.store.pending_tasks(), [])
+        self.assertEqual(len(self.client.sent), 1)
+
     def test_voice_without_transcriber_is_declined(self):
         self.bot.handle_update(self.message(OWNER, voice={"file_id": "a"}))
         self.assertIn("no están disponibles", self.client.sent[0][1])
