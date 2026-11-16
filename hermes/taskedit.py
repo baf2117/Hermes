@@ -65,6 +65,8 @@ class TaskEditor:
             "cancel": lambda p: self._finish(p, "cancelled"),
             "add_step": self._add_step,
             "reopen": self._reopen,
+            "delete": self._delete,
+            "restore": self._restore,
             "say": self._say,
         }.get(action)  # type: ignore[arg-type]
         if handler is None:
@@ -131,9 +133,23 @@ class TaskEditor:
         title = _title(payload.get("title"))
         return self.assistant._add_subtasks({"task_id": parent.id, "subtasks": [title]}, title).text
 
+    def _delete(self, payload: dict[str, Any]) -> str:
+        """Borra una tarea, pendiente o terminada: deja de aparecer, con sus pasos. Se puede deshacer."""
+        task = self.store.get_task(_task_id(payload))
+        if task is None or task.deleted_at is not None:
+            raise EditError("Esa tarea ya estaba borrada. Recarga la página.")
+        self.store.delete_task(task.id, self._now())
+        return f"Borré «{task.title}»."
+
+    def _restore(self, payload: dict[str, Any]) -> str:
+        task = self.store.get_task(_task_id(payload))
+        if task is None or not self.store.restore_task(task.id, self._now()):
+            raise EditError("Esa tarea no estaba borrada.")
+        return f"Recuperé «{task.title}»."
+
     def _reopen(self, payload: dict[str, Any]) -> str:
         task = self.store.get_task(_task_id(payload))
-        if task is None or task.status == "pending":
+        if task is None or task.status == "pending" or task.deleted_at is not None:
             raise EditError("Esa tarea ya está pendiente.")
         now = self._now()
         self.store.reopen(task.id, now)

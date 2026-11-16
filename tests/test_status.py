@@ -168,7 +168,7 @@ class TasksPageTests(unittest.TestCase):
         self.assertEqual(data["categories"], ["casa", "trabajo"])
         self.assertEqual({t["title"] for t in data["pending"]}, {"Mudanza", "Empacar"})
         self.assertEqual([t["title"] for t in data["done_steps"]], ["Flete"])
-        self.assertEqual([t["title"] for t in data["finished"]], ["Flete"])  # "Vieja" es de hace más de 7 días
+        self.assertEqual([t["title"] for t in data["finished"]], ["Flete", "Vieja"])  # Todas, de la más reciente a la más antigua.
         parent = next(t for t in data["pending"] if t["title"] == "Mudanza")
         self.assertEqual((parent["urgency"], parent["due_at"], parent["parent_id"]), ("alta", 5000, None))
 

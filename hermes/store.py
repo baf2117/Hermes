@@ -172,6 +172,8 @@ class Task:
     deadline_notified_at: int | None = None
     kind: str = "task"  # "waiting": algo que el dueño espera de otra persona; el aviso pregunta si ya llegó.
     deadline_warned: int = 0
+    completed_at: int | None = None  # Cuándo se terminó o se canceló.
+    deleted_at: int | None = None  # Borrada: sigue en la base, pero ya no aparece en ninguna parte.
 
     @property
     def overdue_from(self) -> int | None:
@@ -217,6 +219,8 @@ class Store:
                 ("deadline_notified_at", "INTEGER"),
                 ("kind", "TEXT NOT NULL DEFAULT 'task'"),
                 ("deadline_warned", "INTEGER NOT NULL DEFAULT 0"),
+                ("deleted_at", "INTEGER"),
+                ("deleted_from", "TEXT"),
             ):
                 if name not in columns:
                     self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
@@ -243,6 +247,8 @@ class Store:
             deadline_notified_at=row["deadline_notified_at"],
             kind=row["kind"],
             deadline_warned=row["deadline_warned"],
+            completed_at=row["completed_at"],
+            deleted_at=row["deleted_at"],
         )
 
     def add_task(
@@ -304,6 +310,42 @@ class Store:
                 (now, task_id),
             )
 
+    def finished_tasks(self, limit: int = 300) -> list[Task]:
+        """Tareas hechas o canceladas, con toda su información, de la más reciente a la más antigua."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE status != 'pending' AND deleted_at IS NULL"
+                " ORDER BY completed_at DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._task(r) for r in rows]
+
+    def delete_task(self, task_id: int, now: int) -> int:
+        """Borrado lógico de una tarea y sus pasos: dejan de aparecer y de avisar, pero se pueden recuperar."""
+        with self._lock, self._conn:
+            return self._conn.execute(
+                "UPDATE tasks SET deleted_from = status, deleted_at = ?, updated_at = ?,"
+                " completed_at = COALESCE(completed_at, ?),"
+                " status = CASE WHEN status = 'pending' THEN 'cancelled' ELSE status END"
+                " WHERE (id = ? OR parent_id = ?) AND deleted_at IS NULL",
+                (now, now, now, task_id, task_id),
+            ).rowcount
+
+    def restore_task(self, task_id: int, now: int) -> bool:
+        """Deshace un borrado: la tarea y los pasos que se borraron con ella vuelven a como estaban."""
+        with self._lock, self._conn:
+            row = self._conn.execute("SELECT deleted_at FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if row is None or row["deleted_at"] is None:
+                return False
+            self._conn.execute(
+                "UPDATE tasks SET status = COALESCE(deleted_from, status),"
+                " completed_at = CASE WHEN deleted_from = 'pending' THEN NULL ELSE completed_at END,"
+                " deleted_at = NULL, deleted_from = NULL, updated_at = ?"
+                " WHERE (id = ? OR parent_id = ?) AND deleted_at = ?",
+                (now, task_id, task_id, row["deleted_at"]),
+            )
+            return True
+
     def pending_tasks(self) -> list[Task]:
         with self._lock:
             rows = self._conn.execute(
@@ -326,7 +368,8 @@ class Store:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id, title, category, status, completed_at, parent_id FROM tasks"
-                " WHERE status != 'pending' AND completed_at >= ? ORDER BY completed_at DESC, id DESC LIMIT ?",
+                " WHERE status != 'pending' AND deleted_at IS NULL AND completed_at >= ?"
+                " ORDER BY completed_at DESC, id DESC LIMIT ?",
                 (since, limit),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -334,7 +377,7 @@ class Store:
     def subtasks(self, parent_id: int, status: str | None = None) -> list[Task]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM tasks WHERE parent_id = ? AND (? IS NULL OR status = ?) ORDER BY id",
+                "SELECT * FROM tasks WHERE parent_id = ? AND (? IS NULL OR status = ?) AND deleted_at IS NULL ORDER BY id",
                 (parent_id, status, status),
             ).fetchall()
         return [self._task(r) for r in rows]

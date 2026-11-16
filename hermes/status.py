@@ -39,7 +39,7 @@ MANIFEST = json.dumps(
 PUBLIC_FILES = {"/icon-192.png": "image/png", "/icon-512.png": "image/png"}
 MAX_EVENTS = 25
 USAGE_REFRESH_SECONDS = 3.0
-RECENT_DONE_DAYS = 7
+
 
 
 class VoiceStatus:
@@ -202,7 +202,7 @@ def tasks_snapshot(store: Any, categories: Sequence[str], now: int) -> dict[str,
         "categories": list(categories),
         "pending": pending,
         "done_steps": done_steps,
-        "finished": store.recently_finished(now - RECENT_DONE_DAYS * 86400),
+        "finished": [asdict(task) for task in store.finished_tasks()],
     }
 
 
@@ -271,6 +271,18 @@ section { padding:18px; margin-bottom:14px; }
 .stat b { display:block; font-size:28px; font-weight:650; line-height:1.15; font-variant-numeric:tabular-nums; }
 .stat span { color:var(--muted); font-size:13px; }
 .stat.alert b { color:var(--u-alta); }
+#stats { grid-template-columns:repeat(5, 1fr); }
+button.stat { font:inherit; color:inherit; text-align:left; cursor:pointer; width:100%; }
+button.stat:hover { border-color:var(--faint); }
+button.stat:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+button.stat[aria-pressed="true"] { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.tag.ok { background:color-mix(in srgb, var(--u-baja) 16%, transparent); color:var(--u-baja); font-weight:600; }
+.fin-actions { display:flex; gap:18px; margin-top:8px; }
+.fin-actions .undo { padding:4px 0; font-size:13px; }
+.undo.danger-link { color:var(--warn); }
+.fin-mark { color:var(--muted); width:18px; flex:none; }
+.steps li .meta { margin:0 0 0 auto; font-size:12px; }
+@media (max-width:640px) { #stats { grid-template-columns:repeat(2, 1fr); } #stats .stat:last-child { grid-column:1 / -1; } }
 .filters { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
 .filters button { font:inherit; font-size:13px; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:999px; padding:5px 12px; cursor:pointer; display:flex; align-items:center; gap:7px; }
 .filters button[aria-pressed="true"] { background:var(--ink); color:var(--bg); border-color:var(--ink); }
@@ -653,18 +665,15 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <input id="say-input" maxlength="500" enterkeyhint="send" placeholder="Escribe una tarea o una orden…" aria-label="Escribe una tarea o una orden">
     <button type="submit" class="primary" id="say-send">Enviar</button>
   </form>
-  <div class="stats">
-    <div class="stat"><b id="s-pending">–</b><span id="s-pending-label">Pendientes</span></div>
-    <div class="stat" id="s-urgent-box"><b id="s-urgent">–</b><span>Urgentes</span></div>
-    <div class="stat" id="s-overdue-box"><b id="s-overdue">–</b><span>Vencidas</span></div>
-    <div class="stat"><b id="s-today">–</b><span>Para hoy</span></div>
+  <div class="stats" id="stats" role="group" aria-label="Filtrar por estado">
+    <button type="button" class="stat" data-state="pendientes" aria-pressed="true"><b id="s-pending">–</b><span id="s-pending-label">Pendientes</span></button>
+    <button type="button" class="stat" data-state="urgentes" aria-pressed="false" id="s-urgent-box"><b id="s-urgent">–</b><span>Urgentes</span></button>
+    <button type="button" class="stat" data-state="vencidas" aria-pressed="false" id="s-overdue-box"><b id="s-overdue">–</b><span>Vencidas</span></button>
+    <button type="button" class="stat" data-state="hoy" aria-pressed="false"><b id="s-today">–</b><span>Para hoy</span></button>
+    <button type="button" class="stat" data-state="terminadas" aria-pressed="false"><b id="s-finished">–</b><span>Terminadas</span></button>
   </div>
   <div class="filters" id="filters" role="group" aria-label="Filtrar por categoría"></div>
   <div class="groups" id="groups"></div>
-  <details class="finished card" id="finished-box">
-    <summary id="finished-title" style="padding:12px 16px">Completadas en los últimos 7 días</summary>
-    <div class="finished-list" id="finished"></div>
-  </details>
 </div>
 
 <div class="view" id="view-vivo" hidden>
@@ -869,13 +878,13 @@ async function send(path, body) {
   return data;
 }
 let toastTimer = 0;
-function toast(message, undoId) {
+function toast(message, undoId, undoAction) {
   $("toast-text").textContent = message;
   const undo = $("toast-undo");
   undo.hidden = !undoId;
   undo.onclick = async () => {
     hideToast();
-    try { toast((await taskAction({ action: "reopen", id: undoId })).message); } catch (e) { toast(e.message); }
+    try { toast((await taskAction({ action: undoAction || "reopen", id: undoId })).message); } catch (e) { toast(e.message); }
   };
   $("toast").classList.add("show");
   clearTimeout(toastTimer);
@@ -916,6 +925,14 @@ const URGENCY = { alta: "Urgente", media: "Normal", baja: "Baja" };
 const URGENCY_ORDER = { alta: 0, media: 1, baja: 2 };
 const KNOWN = ["trabajo", "negocios", "casa", "personal", "salud", "finanzas", "reptiles"];
 let filter = "todas";
+let stateFilter = "pendientes";  // El estado elegido arriba: pendientes, urgentes, vencidas, hoy o terminadas.
+const STATE_EMPTY = {
+  pendientes: ["No tienes tareas pendientes", "Escríbele o háblale a Hermes para anotar algo."],
+  urgentes: ["Nada urgente", "Ninguna tarea pendiente está marcada como urgente."],
+  vencidas: ["Nada vencido", "Vas al día con todo."],
+  hoy: ["Nada para hoy", "No hay tareas que empiecen o venzan en lo que queda del día."],
+  terminadas: ["Todavía no hay tareas terminadas", "Aquí aparecen las que marques como hechas o canceles."],
+};
 let lastTasks = null;
 const catColor = c => "var(--c-" + (KNOWN.includes(c) ? c : "otra") + ")";
 function interval(minutes) {
@@ -1025,26 +1042,94 @@ function taskRow(t, steps, nowTs) {
   row.append(main);
   return row;
 }
+function stamp(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString("es", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) + ", " +
+    d.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+}
+function finishedRow(t, steps) {
+  const done = t.status === "done";
+  const row = text("div", "task", "");
+  row.append(text("span", "urg " + t.urgency, ""));
+  const main = text("div", "task-main", "");
+  main.append(text("div", "task-title", t.title));
+  const meta = text("div", "meta", "");
+  meta.append(text("span", "", "#" + t.id), text("span", "tag" + (done ? " ok" : ""), done ? "✓ Hecha" : "✕ Cancelada"));
+  if (t.completed_at) meta.append(text("span", "", (done ? "Terminada " : "Cancelada ") + stamp(t.completed_at)));
+  if (done && t.deadline_at && t.completed_at) {
+    const late = t.completed_at > t.deadline_at;
+    meta.append(text("span", "tag" + (late ? " alta" : ""), late ? "Con retraso" : "A tiempo"));
+  }
+  const info = text("div", "meta", "");
+  info.append(text("span", "", "Urgencia " + URGENCY[t.urgency].toLowerCase()));
+  info.append(text("span", "", t.due_at ? "Inicio " + stamp(t.due_at) : "Sin fecha de inicio"));
+  if (t.deadline_at) info.append(text("span", "", "Vencía " + stamp(t.deadline_at)));
+  if (t.repeat_minutes) info.append(text("span", "tag", "🔁 " + interval(t.repeat_minutes)));
+  main.append(meta, info);
+  if (steps.length) {
+    const list = text("ul", "steps", "");
+    for (const s of steps) {
+      const li = text("li", s.status === "done" ? "done" : "", "");
+      li.append(text("span", "fin-mark", s.status === "done" ? "✓" : "✕"), text("span", "", s.title));
+      if (s.completed_at) li.append(text("span", "meta", stamp(s.completed_at)));
+      list.append(li);
+    }
+    main.append(list);
+  }
+  const actions = text("div", "fin-actions", "");
+  const back = text("button", "undo", "Volver a pendientes"); back.type = "button";
+  back.onclick = async () => {
+    back.disabled = true;
+    try { toast((await taskAction({ action: "reopen", id: t.id })).message); } catch (e) { toast(e.message); back.disabled = false; }
+  };
+  const remove = text("button", "undo danger-link", "Borrar"); remove.type = "button";
+  remove.onclick = async () => {
+    if (!confirm("¿Borrar «" + t.title + "»? Dejará de aparecer en la página.")) return;
+    remove.disabled = true;
+    try { toast((await taskAction({ action: "delete", id: t.id })).message, t.id, "restore"); } catch (e) { toast(e.message); remove.disabled = false; }
+  };
+  actions.append(back, remove);
+  main.append(actions);
+  row.append(main);
+  return row;
+}
 function renderTasks(data) {
   const nowTs = data.now;
   const pending = data.pending || [];
   const ids = new Set(pending.map(t => t.id));
   const stepsOf = id => [...pending, ...(data.done_steps || [])].filter(t => t.parent_id === id).sort((a, b) => a.id - b.id);
   const roots = pending.filter(t => t.parent_id === null || !ids.has(t.parent_id));
+  const finished = data.finished || [];
+  const finishedIds = new Set(finished.map(t => t.id));
+  // Un paso terminado de una tarea que sigue abierta se ve dentro de ella, no como tarea aparte.
+  const finishedRoots = finished.filter(t => t.parent_id === null || (!finishedIds.has(t.parent_id) && !ids.has(t.parent_id)));
   const todayEnd = dayStart(new Date(nowTs * 1000)) / 1000 + 86400;
+  const inToday = ts => ts && ts >= nowTs && ts < todayEnd;
+  const isOverdue = t => !!overdueFrom(t) && overdueFrom(t) < nowTs;
+  const MATCH = {
+    pendientes: () => true,
+    urgentes: t => t.urgency === "alta",
+    vencidas: isOverdue,
+    hoy: t => !isOverdue(t) && (inToday(t.due_at) || inToday(t.deadline_at)),
+  };
+  // Una tarea entra en un estado si ella o alguno de sus pasos pendientes lo cumple.
+  const rootsIn = state => roots.filter(r => [r, ...stepsOf(r.id).filter(s => s.status === "pending")].some(MATCH[state]));
   $("s-pending").textContent = roots.length;
   const steps = pending.length - roots.length;
   $("s-pending-label").textContent = steps ? "Pendientes · " + steps + (steps === 1 ? " paso" : " pasos") : "Pendientes";
-  $("s-urgent").textContent = pending.filter(t => t.urgency === "alta").length;
-  const overdue = pending.filter(t => overdueFrom(t) && overdueFrom(t) < nowTs).length;
+  $("s-urgent").textContent = rootsIn("urgentes").length;
+  const overdue = rootsIn("vencidas").length;
   $("s-overdue").textContent = overdue;
   $("s-overdue-box").classList.toggle("alert", overdue > 0);
-  const inToday = ts => ts && ts >= nowTs && ts < todayEnd;
-  $("s-today").textContent = pending.filter(t => !(overdueFrom(t) < nowTs) && (inToday(t.due_at) || inToday(t.deadline_at))).length;
+  $("s-today").textContent = rootsIn("hoy").length;
+  $("s-finished").textContent = finishedRoots.length;
+  document.querySelectorAll("#stats .stat").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.state === stateFilter)));
   $("updated").textContent = "Actualizado " + new Date(nowTs * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 
-  const categories = [...new Set([...(data.categories || []), ...roots.map(t => t.category)])];
-  const counts = Object.fromEntries(categories.map(c => [c, roots.filter(t => t.category === c).length]));
+  const ended = stateFilter === "terminadas";
+  const shown = ended ? finishedRoots : rootsIn(stateFilter);
+  const categories = [...new Set([...(data.categories || []), ...shown.map(t => t.category)])];
+  const counts = Object.fromEntries(categories.map(c => [c, shown.filter(t => t.category === c).length]));
   if (filter !== "todas" && !counts[filter]) filter = "todas";
   const filters = $("filters"); filters.replaceChildren();
   const chip = (value, label, count) => {
@@ -1055,14 +1140,14 @@ function renderTasks(data) {
     b.onclick = () => { filter = value; renderTasks(lastTasks); };
     filters.append(b);
   };
-  chip("todas", "Todas", roots.length);
+  chip("todas", "Todas", shown.length);
   categories.filter(c => counts[c]).forEach(c => chip(c, c.charAt(0).toUpperCase() + c.slice(1), counts[c]));
 
   const groups = $("groups"); groups.replaceChildren();
   const visible = categories.filter(c => counts[c] && (filter === "todas" || filter === c));
   if (!visible.length) {
     const empty = text("div", "empty-state card", "");
-    empty.append(text("b", "", "No tienes tareas pendientes"), text("span", "", "Escríbele o háblale a Hermes para anotar algo."));
+    empty.append(text("b", "", STATE_EMPTY[stateFilter][0]), text("span", "", STATE_EMPTY[stateFilter][1]));
     groups.append(empty);
   }
   for (const c of visible) {
@@ -1071,31 +1156,20 @@ function renderTasks(data) {
     const dot = text("span", "dot", ""); dot.style.setProperty("--cat", catColor(c));
     head.append(dot, text("span", "name", c), text("em", "", counts[c] + (counts[c] === 1 ? " tarea" : " tareas")));
     card.append(head);
-    roots.filter(t => t.category === c).sort(sortTasks).forEach(t => card.append(taskRow(t, stepsOf(t.id), nowTs)));
+    const rows = shown.filter(t => t.category === c);
+    if (ended) rows.forEach(t => card.append(finishedRow(t, finished.filter(s => s.parent_id === t.id).sort((a, b) => a.id - b.id))));
+    else rows.sort(sortTasks).forEach(t => card.append(taskRow(t, stepsOf(t.id), nowTs)));
     groups.append(card);
   }
-
-  const finished = data.finished || [];
-  $("finished-title").textContent = "Completadas en los últimos 7 días (" + finished.length + ")";
-  const list = $("finished"); list.replaceChildren();
-  if (!finished.length) list.append(text("div", "empty", "Nada todavía."));
-  for (const f of finished) {
-    const item = document.createElement("div");
-    item.append(
-      text("span", "", f.status === "done" ? "✓" : "✕"),
-      text("span", "", f.title),
-      text("span", "when", new Date(f.completed_at * 1000).toLocaleDateString("es", { weekday: "short", day: "numeric", month: "short" }))
-    );
-    const undo = text("button", "undo", "Volver a pendientes");
-    undo.type = "button";
-    undo.onclick = async () => {
-      undo.disabled = true;
-      try { toast((await taskAction({ action: "reopen", id: f.id })).message); } catch (e) { toast(e.message); undo.disabled = false; }
-    };
-    item.append(undo);
-    list.append(item);
-  }
 }
+document.querySelectorAll("#stats .stat").forEach(button => {
+  button.addEventListener("click", () => {
+    const state = button.dataset.state;
+    stateFilter = stateFilter === state ? "pendientes" : state;  // Tocar otra vez el mismo estado quita el filtro.
+    filter = "todas";
+    if (lastTasks) renderTasks(lastTasks);
+  });
+});
 let tasksSerialized = "";
 async function loadTasks(force) {
   if (force) tasksSerialized = "";
@@ -1242,8 +1316,8 @@ $("ed-delete").onclick = () => editorRun(async () => {
   if (!t) return;
   const steps = stepsFor(t.id).filter(s => s.status !== "done").length;
   const extra = steps ? " También se borrarán sus " + steps + " pasos pendientes." : "";
-  if (!confirm("¿Borrar «" + t.title + "»?" + extra)) return;
-  toast((await taskAction({ action: "cancel", id: t.id })).message, t.id);
+  if (!confirm("¿Borrar «" + t.title + "»? Dejará de aparecer en la página." + extra)) return;
+  toast((await taskAction({ action: "delete", id: t.id })).message, t.id, "restore");
 });
 function addStep() {
   const title = $("ed-new-step").value.trim();
