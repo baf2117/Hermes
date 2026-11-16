@@ -154,6 +154,16 @@ def parse_message(message: dict[str, Any]) -> Email:
     )
 
 
+@dataclass(frozen=True)
+class ThreadMessage:
+    id: str
+    ts: int
+    sent: bool  # Lo mandaste tú.
+    sender: str
+    to: list[str]
+    subject: str
+
+
 class GmailClient:
     def __init__(self, client_path: Path, token_path: Path, fetch: Fetch = _fetch, clock: Callable[[], float] = time.time):
         self.client_path, self.token_path = Path(client_path), Path(token_path)
@@ -207,6 +217,49 @@ class GmailClient:
         """Los correos de la bandeja principal recibidos después de ese momento, del más viejo al más nuevo."""
         data = self._get("messages", q=f"{INBOX_QUERY} after:{int(after_ts)}", maxResults=MAX_LISTED)
         return [str(m["id"]) for m in reversed(data.get("messages") or []) if "id" in m]
+
+    def sent_threads(self, after_ts: int) -> list[str]:
+        """Conversaciones en las que escribiste desde ese momento, de la más reciente a la más vieja."""
+        data = self._get("messages", q=f"in:sent after:{int(after_ts)}", maxResults=MAX_LISTED * 2)
+        threads: list[str] = []
+        for message in data.get("messages") or []:
+            thread = str(message.get("threadId", ""))
+            if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", thread) and thread not in threads:
+                threads.append(thread)
+        return threads
+
+    def thread_of(self, message_id: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", message_id):
+            raise GmailError("identificador de correo inválido")
+        thread = str(self._get(f"messages/{message_id}", format="minimal").get("threadId", ""))
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", thread):
+            raise GmailError("conversación inválida")
+        return thread
+
+    def thread(self, thread_id: str) -> list[ThreadMessage]:
+        """Los mensajes de una conversación, solo encabezados (quién, a quién, asunto, cuándo): nunca el texto."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", thread_id):
+            raise GmailError("conversación inválida")
+        query = urllib.parse.urlencode(
+            {"format": "metadata", "metadataHeaders": ["From", "To", "Subject"]}, doseq=True
+        )
+        request = urllib.request.Request(
+            f"{API}/threads/{thread_id}?{query}", headers={"Authorization": f"Bearer {self._access_token()}"}
+        )
+        messages = []
+        for message in self._json(request).get("messages") or []:
+            if not isinstance(message, dict):
+                continue
+            headers = {h.get("name", "").lower(): h.get("value", "") for h in (message.get("payload") or {}).get("headers") or []}
+            messages.append(ThreadMessage(
+                id=str(message.get("id", "")),
+                ts=int(message.get("internalDate", 0) or 0) // 1000,
+                sent="SENT" in (message.get("labelIds") or []),
+                sender=display_sender(headers.get("from", "")),
+                to=[display_sender(raw) for raw in headers.get("to", "").split(",") if raw.strip()][:10],
+                subject=re.sub(r"\s+", " ", headers.get("subject", "")).strip()[:200] or "(sin asunto)",
+            ))
+        return sorted(messages, key=lambda m: m.ts)
 
     def get(self, message_id: str) -> Email:
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", message_id):

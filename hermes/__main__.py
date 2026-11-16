@@ -28,6 +28,7 @@ from .mailwatch import MailWatcher, run_watchers
 from .bills import Bills
 from .briefing import Briefing
 from .dayplan import DayPlan
+from .followup import MailFollowup
 from .receipts import Receipts
 from .net import prefer_ipv4
 from .outside import (
@@ -319,6 +320,16 @@ def run(config: Config) -> int:
             logging.info(
                 "Correo: vigilando %s cada %d s", ", ".join(name for name, _ in accounts), config.mail_poll_seconds
             )
+            # Correos que esperan respuesta: una vez al día, solo encabezados y solo lectura.
+            followup = MailFollowup(
+                [(name, GmailClient(config.gmail_client_path, path)) for name, path in accounts],
+                store, config, assistant._now, Reply,
+            )
+            followup.send = send
+            scheduler.extra_ticks.append(followup.tick)
+            assistant.text_hooks.append(followup.handle)
+            assistant.command_hooks["/correos"] = lambda _: followup.report()
+            assistant.button_hooks["fuhide"] = followup.hide
         if problem := backup_problem(config):
             logging.warning("Respaldo desactivado: %s", problem)
         else:
