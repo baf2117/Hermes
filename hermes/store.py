@@ -95,6 +95,29 @@ CREATE TABLE IF NOT EXISTS receipts (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS receipts_day ON receipts (day);
+CREATE TABLE IF NOT EXISTS bills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    amount REAL,
+    currency TEXT NOT NULL,
+    category TEXT NOT NULL,
+    every_months INTEGER NOT NULL,
+    day INTEGER NOT NULL,
+    next_due TEXT NOT NULL,
+    remind_days INTEGER NOT NULL,
+    snooze TEXT,
+    last_reminded TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bill_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bill_id INTEGER NOT NULL,
+    due TEXT NOT NULL,
+    receipt_id INTEGER,
+    total REAL NOT NULL,
+    paid_day TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS budgets (
     category TEXT PRIMARY KEY,
     amount REAL NOT NULL
@@ -948,7 +971,71 @@ class Store:
 
     def delete_receipt(self, receipt_id: int) -> bool:
         with self._lock, self._conn:
+            self._conn.execute("UPDATE bill_payments SET receipt_id = NULL WHERE receipt_id = ?", (receipt_id,))
             return self._conn.execute("DELETE FROM receipts WHERE id = ?", (receipt_id,)).rowcount > 0
+
+    # --- Pagos que se repiten: luz, internet, suscripciones ---
+
+    BILL_FIELDS = ("name", "amount", "currency", "category", "every_months", "day", "next_due", "remind_days", "snooze", "last_reminded")
+
+    def add_bill(self, now: int, **fields: Any) -> int:
+        columns = [name for name in self.BILL_FIELDS if name in fields]
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                f"INSERT INTO bills ({', '.join(columns)}, created_at) VALUES ({', '.join('?' for _ in columns)}, ?)",
+                (*(fields[name] for name in columns), now),
+            )
+            return int(cursor.lastrowid)
+
+    def get_bill(self, bill_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM bills WHERE id = ?", (bill_id,)).fetchone()
+        return dict(row) if row else None
+
+    def bills(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM bills ORDER BY next_due, id").fetchall()
+        return [dict(row) for row in rows]
+
+    def update_bill(self, bill_id: int, **fields: Any) -> bool:
+        columns = [name for name in self.BILL_FIELDS if name in fields]
+        if not columns:
+            return self.get_bill(bill_id) is not None
+        with self._lock, self._conn:
+            return self._conn.execute(
+                f"UPDATE bills SET {', '.join(f'{name} = ?' for name in columns)} WHERE id = ?",
+                (*(fields[name] for name in columns), bill_id),
+            ).rowcount > 0
+
+    def delete_bill(self, bill_id: int) -> bool:
+        """Quita el pago; los gastos que ya se anotaron se quedan en Gastos."""
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM bill_payments WHERE bill_id = ?", (bill_id,))
+            return self._conn.execute("DELETE FROM bills WHERE id = ?", (bill_id,)).rowcount > 0
+
+    def add_bill_payment(self, bill_id: int, due: str, receipt_id: int | None, total: float, paid_day: str, now: int) -> int:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "INSERT INTO bill_payments (bill_id, due, receipt_id, total, paid_day, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (bill_id, due, receipt_id, total, paid_day, now),
+            )
+            return int(cursor.lastrowid)
+
+    def get_bill_payment(self, payment_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM bill_payments WHERE id = ?", (payment_id,)).fetchone()
+        return dict(row) if row else None
+
+    def last_bill_payment(self, bill_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM bill_payments WHERE bill_id = ? ORDER BY paid_day DESC, id DESC LIMIT 1", (bill_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def delete_bill_payment(self, payment_id: int) -> bool:
+        with self._lock, self._conn:
+            return self._conn.execute("DELETE FROM bill_payments WHERE id = ?", (payment_id,)).rowcount > 0
 
     def kv_get(self, key: str) -> str | None:
         with self._lock:

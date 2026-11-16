@@ -657,6 +657,28 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
 .ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
 .ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
+.bl-summary { margin-bottom:14px; }
+.bl-next { color:var(--muted); font-size:14px; }
+.bl-add { max-width:760px; }
+.bl-add input:not([type]) { flex:1 1 100%; }
+.bl-date { display:flex; align-items:center; gap:8px; flex:1 1 220px; color:var(--muted); font-size:14px; }
+.bl-date input { flex:1; }
+#bl-list { max-width:760px; }
+.bl-row { display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; flex-wrap:wrap; }
+.bl-row.soon { border-color:color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.bl-row.soon .when { color:var(--accent); }
+.bl-row.late { border-color:var(--warn); }
+.bl-row.late .when { color:var(--warn); }
+.bl-row.late .dt-badge { background:var(--warn); color:#14110a; }
+.bl-row.late .dt-badge span { color:#14110a; }
+.bl-actions { display:flex; align-items:center; gap:6px; margin-left:auto; }
+.bl-paid { font:inherit; font-size:14px; color:inherit; background:var(--soft); border:1px solid var(--line); border-radius:999px; padding:6px 12px; cursor:pointer; white-space:nowrap; }
+.bl-paid:hover { border-color:var(--accent); }
+.bl-pay { display:flex; align-items:center; gap:6px; }
+.bl-pay input { width:110px; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:6px 9px; }
+.bl-pay input:focus { outline:none; }
+.bl-pay .primary { margin-left:0; padding:6px 12px; }
+@media (max-width:640px) { .bl-actions { flex:1 1 100%; justify-content:flex-end; } }
 .rc-head { display:flex; align-items:center; gap:12px; margin:0 0 12px; }
 .rc-head h3 { margin:0; font-size:18px; min-width:120px; text-align:center; }
 .rc-nav { font:inherit; font-size:20px; line-height:1; width:36px; height:36px; border-radius:50%; border:1px solid var(--line); background:var(--card); color:inherit; cursor:pointer; }
@@ -956,6 +978,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <a href="#apuntes/fechas" data-sub="fechas">Fechas<span id="ap-tab-fechas"></span></a>
     <a href="#apuntes/seguimientos" data-sub="seguimientos">Seguimientos<span id="ap-tab-seguimientos"></span></a>
     <a href="#apuntes/gastos" data-sub="gastos">Gastos<span id="ap-tab-gastos"></span></a>
+    <a href="#apuntes/pagos" data-sub="pagos">Pagos<span id="ap-tab-pagos"></span></a>
   </nav>
   <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="primary" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
   <div class="ap-grid">
@@ -997,6 +1020,18 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
         <button type="submit" class="primary">+ Agregar</button>
       </form>
       <div id="ap-dates"></div>
+    </section>
+    <section class="ap-page" data-sub="pagos" hidden>
+      <div class="rc-summary bl-summary" id="bl-summary"></div>
+      <form class="ap-form ap-create bl-add" id="bl-form" autocomplete="off">
+        <input id="bl-name" maxlength="60" placeholder="Qué pagas (luz, internet, Netflix…)" aria-label="Qué pagas">
+        <input id="bl-amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Monto (opcional)" aria-label="Monto; vacío si cambia cada vez">
+        <select id="bl-every" aria-label="Cada cuánto"></select>
+        <label class="bl-date">Próximo pago <input id="bl-due" type="date" aria-label="Fecha del próximo pago"></label>
+        <button type="submit" class="primary">+ Agregar pago</button>
+      </form>
+      <p class="rc-hint">Hermes te avisa por Telegram 3 días antes y el día que vence. Al marcarlo como pagado queda en Gastos. También puedes decirle «pagué la luz 345».</p>
+      <div id="bl-list"></div>
     </section>
     <section class="ap-page" data-sub="gastos" hidden>
       <div class="rc-head">
@@ -1174,7 +1209,7 @@ function hideToast() { $("toast").classList.remove("show"); }
 const VIEWS = ["tareas", "apuntes", "consumo", "historial", "vivo", "ajustes"];
 function currentView() { const v = location.hash.slice(1).split("/")[0]; return VIEWS.includes(v) ? v : "tareas"; }
 // Apuntes tiene un submenú: cada apartado es su propia página (#apuntes/listas, #apuntes/habitos…).
-const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", seguimientos: "Seguimientos", gastos: "Gastos" };
+const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", seguimientos: "Seguimientos", gastos: "Gastos", pagos: "Pagos" };
 let lastSub = "listas";
 function currentSub() {
   const sub = location.hash.slice(1).split("/")[1];
@@ -2451,6 +2486,148 @@ function renderApuntes(d) {
   $("ap-quiet").hidden = !d.quiet_until;
   if (d.quiet_until) $("ap-quiet-text").textContent = "En silencio hasta las " + new Date(d.quiet_until * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }) + ". Los avisos salen después.";
 }
+/* ---------- Pagos que se repiten ---------- */
+let billsData = null, billsSerialized = "", editingBill = null, editingBillFields = null, payingBill = null;
+function billsMoney(total, currency) {
+  const sign = (billsData && billsData.currencies[currency]) || currency;
+  return sign + " " + Number(total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function billSelect(options, value, label) {
+  const select = document.createElement("select"); select.setAttribute("aria-label", label);
+  options.forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; select.appendChild(o); });
+  select.value = String(value);
+  return select;
+}
+function billRow(b) {
+  const redraw = () => renderBills();
+  if (editingBill === b.id) {
+    const v = editingBillFields;
+    const form = text("form", "ap-form rc-edit", ""); form.autocomplete = "off";
+    const name = document.createElement("input"); name.maxLength = 60; name.value = v.name; name.setAttribute("aria-label", "Qué pagas");
+    const amount = document.createElement("input"); amount.type = "number"; amount.min = "0.01"; amount.step = "0.01"; amount.value = v.amount || "";
+    amount.placeholder = "Variable"; amount.setAttribute("aria-label", "Monto; vacío si cambia cada vez");
+    const currency = billSelect(Object.entries(billsData.currencies), v.currency, "Moneda");
+    const every = billSelect(Object.entries(billsData.frequencies), v.every_months, "Cada cuánto");
+    const category = billSelect(billsData.categories.map(c => [c, capital(c)]), v.category, "Categoría");
+    const dueLabel = text("label", "rc-warranty", "Próximo pago ");
+    const due = document.createElement("input"); due.type = "date"; due.value = v.next_due; due.setAttribute("aria-label", "Fecha del próximo pago");
+    dueLabel.appendChild(due);
+    const remindLabel = text("label", "rc-warranty", "Avisarme ");
+    const remind = billSelect([[0, "solo el día"], [1, "1 día antes"], [2, "2 días antes"], [3, "3 días antes"], [5, "5 días antes"], [7, "una semana antes"]], v.remind_days, "Cuándo avisarte");
+    remindLabel.appendChild(remind);
+    const read = () => ({ name: name.value, amount: amount.value, currency: currency.value, every_months: every.value, category: category.value, next_due: due.value, remind_days: remind.value });
+    [name, amount, currency, every, category, due, remind].forEach(el => { el.oninput = () => { editingBillFields = read(); }; });
+    const stop = () => { editingBill = null; editingBillFields = null; };
+    const save = text("button", "primary", "Guardar"); save.type = "submit";
+    const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+    cancel.onclick = () => { stop(); redraw(); };
+    form.onkeydown = event => { if (event.key === "Escape") { stop(); redraw(); } };
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const f = read();
+      if (!f.name.trim()) { name.focus(); return; }
+      save.disabled = true;
+      try {
+        toast((await send("/bills", { action: "edit", id: b.id, name: f.name.trim(), amount: parseFloat(f.amount) || null, currency: f.currency,
+          every_months: parseInt(f.every_months, 10), category: f.category, next_due: f.next_due, remind_days: parseInt(f.remind_days, 10) })).message);
+        stop();
+        await loadBills(true);
+      } catch (e) { toast(e.message); save.disabled = false; }
+    };
+    form.append(name, amount, currency, every, category, dueLabel, remindLabel, save, cancel);
+    setTimeout(() => { if (editingBill === b.id && !form.contains(document.activeElement)) name.focus(); }, 0);
+    return form;
+  }
+  const row = text("div", "bl-row" + (b.left < 0 ? " late" : b.left <= 3 ? " soon" : ""), "");
+  const [y, m, d] = b.next_due.split("-").map(Number);
+  const badge = text("div", "dt-badge", "");
+  badge.append(text("b", "", String(d)), text("span", "", AP_MONTHS[m - 1].slice(0, 3)));
+  const body = text("div", "dt-body", "");
+  const title = text("button", "ap-item", b.name); title.type = "button"; title.title = "Tocar para corregir";
+  title.setAttribute("aria-label", "Corregir el pago " + b.name);
+  title.onclick = () => { editingBill = b.id; payingBill = null; editingBillFields = { name: b.name, amount: b.amount, currency: b.currency, every_months: b.every_months, category: b.category, next_due: b.next_due, remind_days: b.remind_days }; redraw(); };
+  const small = text("small", "", "");
+  const amount = b.amount ? billsMoney(b.amount, b.currency) : "monto variable";
+  small.append(text("span", "when", capital(b.when)), document.createTextNode(" · " + amount + " · " + billsData.frequencies[b.every_months]));
+  body.append(title, small);
+  if (b.last) {
+    const [ly, lm, ld] = b.last.day.split("-").map(Number);
+    body.appendChild(text("small", "", "Último pago: " + ld + " " + AP_MONTHS[lm - 1].slice(0, 3) + ", " + billsMoney(b.last.total, b.currency)));
+  }
+  const actions = text("div", "bl-actions", "");
+  if (payingBill === b.id) {
+    const form = text("form", "bl-pay", ""); form.autocomplete = "off";
+    const input = document.createElement("input"); input.type = "number"; input.min = "0.01"; input.step = "0.01"; input.inputMode = "decimal";
+    input.value = b.expected || ""; input.placeholder = "Monto"; input.setAttribute("aria-label", "Cuánto pagaste de " + b.name);
+    const ok = text("button", "primary", "Anotar"); ok.type = "submit";
+    const no = text("button", "ap-x", "✕"); no.type = "button"; no.setAttribute("aria-label", "Cancelar");
+    no.onclick = () => { payingBill = null; redraw(); };
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const value = parseFloat(input.value);
+      if (!(value > 0)) { input.focus(); return; }
+      ok.disabled = true;
+      try { toast((await send("/bills", { action: "pay", id: b.id, amount: value })).message); payingBill = null; await loadBills(true); loadReceipts(true); }
+      catch (e) { toast(e.message); ok.disabled = false; }
+    };
+    form.append(input, ok, no);
+    actions.appendChild(form);
+    setTimeout(() => { if (payingBill === b.id && document.activeElement !== input) { input.focus(); input.select(); } }, 0);
+  } else {
+    const pay = text("button", "bl-paid", "✅ Pagado"); pay.type = "button"; pay.setAttribute("aria-label", "Anotar que pagué " + b.name);
+    pay.onclick = () => { payingBill = b.id; editingBill = null; redraw(); };
+    const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Quitar el pago " + b.name);
+    remove.onclick = async () => {
+      if (!(await ask("¿Quitar " + b.name + "? Hermes deja de avisarte. Lo que ya pagaste sigue en Gastos.", "Quitar"))) return;
+      try { toast((await send("/bills", { action: "delete", id: b.id })).message); await loadBills(true); } catch (e) { toast(e.message); }
+    };
+    actions.append(pay, remove);
+  }
+  row.append(badge, body, actions);
+  return row;
+}
+function renderBills() {
+  if (!billsData) return;
+  const summary = $("bl-summary"); summary.textContent = "";
+  const top = text("div", "rc-total", "");
+  const n = billsData.bills.length;
+  top.append(text("b", "", billsMoney(billsData.monthly, "GTQ")), text("span", "", "al mes en " + (n === 1 ? "1 pago" : n + " pagos")));
+  summary.appendChild(top);
+  const next = billsData.bills[0];
+  if (next) summary.appendChild(text("div", "bl-next", "Próximo: " + next.name + ", " + next.when + "."));
+  else summary.appendChild(text("div", "bl-next", "Agrega aquí abajo lo que pagas cada mes o cada año."));
+  const box = $("bl-list"); box.textContent = "";
+  if (!n) { box.appendChild(text("div", "ap-empty card", "Todavía no tienes pagos. Agrega la luz, el agua, el internet, el teléfono o tus suscripciones.")); }
+  billsData.bills.forEach(b => box.appendChild(billRow(b)));
+}
+async function loadBills(force) {
+  try {
+    const res = await fetch("/bills", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.bills) return;
+    const serialized = JSON.stringify(data);
+    $("ap-tab-pagos").textContent = data.bills.filter(b => b.left <= 3).length || "";
+    if (!$("bl-every").options.length) {
+      Object.entries(data.frequencies).forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = capital(t); $("bl-every").appendChild(o); });
+    }
+    if (!force && (serialized === billsSerialized || editingBill !== null || payingBill !== null)) return;  // No pisa lo que estás escribiendo.
+    billsSerialized = serialized; billsData = data;
+    renderBills();
+  } catch {}
+}
+$("bl-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const name = $("bl-name").value.trim();
+  if (!name) { $("bl-name").focus(); return; }
+  if (!$("bl-due").value) { $("bl-due").focus(); toast("Elige la fecha del próximo pago."); return; }
+  try {
+    toast((await send("/bills", { action: "add", name, amount: parseFloat($("bl-amount").value) || null,
+      every_months: parseInt($("bl-every").value, 10), next_due: $("bl-due").value })).message);
+    $("bl-name").value = ""; $("bl-amount").value = ""; $("bl-due").value = ""; $("bl-every").value = "1";
+    await loadBills(true);
+  } catch (e) { toast(e.message); }
+});
 /* ---------- Gastos: recibos leídos de fotos ---------- */
 let receiptsData = null, receiptsSerialized = "", editingReceipt = null, editingReceiptFields = null;
 const rcMonth = { year: new Date().getFullYear(), month: new Date().getMonth() };
@@ -2634,6 +2811,7 @@ $("rc-prev").addEventListener("click", () => { rcMonth.month--; if (rcMonth.mont
 $("rc-next").addEventListener("click", () => { rcMonth.month++; if (rcMonth.month > 11) { rcMonth.month = 0; rcMonth.year++; } editingReceipt = null; renderReceipts(); });
 async function loadApuntes(force) {
   loadReceipts(force);
+  loadBills(force);
   try {
     const res = await fetch("/extras", { cache: "no-store" });
     if (res.status === 401) { location.href = "/login"; return; }
@@ -3129,7 +3307,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 self._send(200, "application/json", json.dumps(status.snapshot()).encode("utf-8"))
             elif path == "/settings" and status.settings is not None:
                 self._json(200, status.settings.snapshot(not self._is_remote()))
-            elif path in ("/tasks", "/usage", "/history", "/extras", "/receipts"):
+            elif path in ("/tasks", "/usage", "/history", "/extras", "/receipts", "/bills"):
                 self._send(200, "application/json", json.dumps(status.read(path[1:])).encode("utf-8"))
             elif path.startswith("/recibo/") and path.endswith(".jpg") and path[8:-4].isdigit() and status.receipt_photo:
                 photo = status.receipt_photo(int(path[8:-4]))
@@ -3238,7 +3416,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 return self._settings()
             if path == "/sessions":
                 return self._sessions()
-            if path not in ("/voice", "/tasks", "/speak", "/extras", "/receipts") or (path != "/voice" and not status.has_action(path[1:])):
+            if path not in ("/voice", "/tasks", "/speak", "/extras", "/receipts", "/bills") or (path != "/voice" and not status.has_action(path[1:])):
                 return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
             if path == "/speak":
                 return self._speak()

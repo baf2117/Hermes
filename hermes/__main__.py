@@ -25,6 +25,7 @@ from .speakers import VOICE_KEY, SwitchableSpeaker
 from .gmail import DEFAULT_ACCOUNT, GmailAuthError, GmailClient, authorize, find_accounts, token_path, valid_account
 from . import __version__
 from .mailwatch import MailWatcher, run_watchers
+from .bills import Bills
 from .receipts import Receipts
 from .net import prefer_ipv4
 from .outside import (
@@ -355,6 +356,16 @@ def run(config: Config) -> int:
     status.set_source("receipts", receipts.snapshot)
     status.set_action("receipts", receipts.apply)
     status.receipt_photo = receipts.photo
+    # Pagos que se repiten: avisan antes de vencer y, al pagarse, quedan en Gastos.
+    bills = Bills(store, receipts, assistant._now, Reply, config.summary_time)
+    assistant.text_hooks.insert(0, bills.handle)  # «Pagué la luz» antes que cualquier otra lectura.
+    assistant.command_hooks["/pagos"] = lambda _: bills.report()
+    assistant.button_hooks.update(billpay=bills.pay, billsnooze=bills.snooze, billundo=bills.undo)
+    if config.allowed_chat_id is not None:
+        bills.send = send
+        scheduler.extra_ticks.append(bills.tick)
+    status.set_source("bills", bills.snapshot)
+    status.set_action("bills", bills.apply)
     piper = shared_piper(config)
     if transcriber is not None:
         # Hablarle desde la página: sirve también fuera de casa, con el micrófono del teléfono.
