@@ -112,6 +112,16 @@ class CalendarClientTests(unittest.TestCase):
         self.assertTrue(query.startswith("https://www.googleapis.com/calendar/v3/calendars/primary/events?"))
         self.assertIn("singleEvents=true", query)
 
+    def test_reads_end_and_other_attendees(self):
+        self.items = [{"id": "a", "summary": "Junta", "start": {"dateTime": "2026-11-10T15:00:00Z"},
+                       "end": {"dateTime": "2026-11-10T16:00:00Z"}, "organizer": {"email": "Jefe@Empresa.com", "displayName": "Jefe"},
+                       "attendees": [{"email": "yo@x.com", "self": True}, {"email": "ana@x.com", "displayName": "Ana https://x.y"},
+                                     {"email": "sala@x.com", "resource": True}, {"email": "jefe@empresa.com"}, {"email": "sin-arroba"}]}]
+        start = NOW.replace(hour=0)
+        (event,) = CalendarClient(self.client_path, self.token_path, self.fetch).events(start, start + timedelta(days=1))
+        self.assertEqual(event.end.hour, 10)
+        self.assertEqual(event.attendees, (("ana@x.com", "Ana"), ("jefe@empresa.com", "")))
+
     def test_accounts_are_found_by_their_own_key_files(self):
         calendar_token_path(self.root, "trabajo").write_text("{}", encoding="utf-8")
         (self.root / "google-token.json").write_text("{}", encoding="utf-8")  # La del correo no cuenta.

@@ -26,6 +26,7 @@ from .gmail import DEFAULT_ACCOUNT, GmailAuthError, GmailClient, authorize, find
 from . import __version__
 from .mailwatch import MailWatcher, run_watchers
 from .bills import Bills
+from .briefing import Briefing
 from .receipts import Receipts
 from .net import prefer_ipv4
 from .outside import (
@@ -295,6 +296,7 @@ def run(config: Config) -> int:
                 store, config.calendar_remind_minutes, send,
             )
             assistant.agenda = agenda.today_lines
+            agenda.briefing = Briefing(store, config).lines
             scheduler.extra_ticks.append(agenda.tick)
             logging.info("Calendario: leyendo %s", ", ".join(name for name, _ in calendars))
         threading.Thread(target=scheduler.run_forever, args=(stop,), daemon=True, name="scheduler").start()

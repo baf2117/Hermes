@@ -120,6 +120,8 @@ class Event:
     title: str
     start: datetime | None  # None: dura todo el día.
     account: str = DEFAULT_ACCOUNT
+    end: datetime | None = None
+    attendees: tuple[tuple[str, str], ...] = ()  # (correo, nombre) de los demás invitados; nunca el propio.
 
     def label(self) -> str:
         tag = "" if self.account == DEFAULT_ACCOUNT else f"[{self.account}] "
@@ -145,13 +147,21 @@ class CalendarClient(GmailClient):
                 continue
             if any(a.get("self") and a.get("responseStatus") == "declined" for a in item.get("attendees") or []):
                 continue
-            raw = item.get("start") or {}
+            raw, raw_end = item.get("start") or {}, item.get("end") or {}
             try:
                 moment = datetime.fromisoformat(raw["dateTime"]).astimezone(start.tzinfo) if "dateTime" in raw else None
+                ends = datetime.fromisoformat(raw_end["dateTime"]).astimezone(start.tzinfo) if "dateTime" in raw_end else None
             except (TypeError, ValueError):
                 continue
             title = clean(item.get("summary"), 80) or "(sin título)"
-            events.append(Event(str(item.get("id", ""))[:200], title, moment, account))
+            people = []
+            for person in [*(item.get("attendees") or []), item.get("organizer") or {}]:
+                if not isinstance(person, dict) or person.get("self") or person.get("resource"):
+                    continue
+                email = str(person.get("email") or "")[:120].strip().lower()
+                if email and "@" in email and email not in [p[0] for p in people]:
+                    people.append((email, clean(person.get("displayName"), 60)))
+            events.append(Event(str(item.get("id", ""))[:200], title, moment, account, ends, tuple(people[:20])))
         return events
 
 
@@ -164,6 +174,7 @@ class Agenda:
         send: Callable[..., Any],
     ):
         self.clients, self.store, self.remind_minutes, self.send = clients, store, remind_minutes, send
+        self.briefing: Callable[[Event, datetime], list[str]] | None = None  # Lo relacionado, para prepararse.
         self._lock = threading.Lock()
         self._cached: list[Event] = []
         self._cached_day = ""
@@ -216,8 +227,16 @@ class Agenda:
             if not 0 <= minutes <= self.remind_minutes:
                 continue
             lead = "Ahora" if minutes < 1 else f"En {round(minutes)} min"
+            text = f"📅 {lead}: {event.label()}"
             try:
-                self.send(f"📅 {lead}: {event.label()}", [])
+                extra = self.briefing(event, now) if self.briefing is not None else []
+            except Exception as exc:  # La preparación nunca impide el aviso.
+                log.warning("Calendario: no pude preparar la reunión: %s", exc)
+                extra = []
+            if extra:
+                text += "\n\nPara prepararte:\n" + "\n".join(extra)
+            try:
+                self.send(text, [])
             except Exception as exc:
                 log.warning("Calendario: no pude avisar del evento: %s", exc)
                 break

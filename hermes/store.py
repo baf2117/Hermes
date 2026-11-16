@@ -684,6 +684,12 @@ class Store:
             ).fetchall()
         return [self._mail(r) for r in rows]
 
+    def recent_emails(self, since: int, limit: int = 300) -> list[MailNote]:
+        """Correos guardados desde ese momento, importantes o no, del más nuevo al más viejo."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM emails WHERE ts >= ? ORDER BY ts DESC LIMIT ?", (since, limit)).fetchall()
+        return [self._mail(r) for r in rows]
+
     def open_emails(self, since: int) -> list[MailNote]:
         """Correos importantes recientes que el dueño todavía no atendió con los botones."""
         with self._lock:
