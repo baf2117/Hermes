@@ -1452,6 +1452,7 @@ function settingControl(s) {
     el = document.createElement("select");
     for (const c of s.choices) { const o = document.createElement("option"); o.value = c; o.textContent = c; el.appendChild(o); }
     el.value = s.value; el.dataset.initial = s.value;
+    if (el.value !== s.value) el.value = s.choices[0];  // Valor del archivo que no existe: queda como cambio por guardar.
   } else {
     el = document.createElement("input");
     const secret = s.kind === "secret" || s.kind === "url";
@@ -1485,7 +1486,7 @@ function renderSettings(data) {
     box.appendChild(card);
   }
   $("set-restart").hidden = !data.restart_needed || !data.can_restart;
-  $("set-save").disabled = true;
+  $("set-save").disabled = !Object.keys(settingChanges()).length;
 }
 async function loadSettings() {
   if (Object.keys(settingChanges()).length) return;  // No pisa lo que estás escribiendo.
