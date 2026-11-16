@@ -4,6 +4,7 @@ Igual que con las tareas, la página manda valores exactos y aquí se valida cad
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -95,6 +96,9 @@ class ExtrasEditor:
             "habit_delete": self._habit_delete,
             "date_add": self._date_add,
             "date_delete": self._date_delete,
+            "waiting_add": self._waiting_add,
+            "waiting_edit": self._waiting_edit,
+            "waiting_delete": self._waiting_delete,
             "quiet_off": lambda p: self.extras._quiet_off().text,
         }.get(payload.get("action"))  # type: ignore[arg-type]
         if handler is None:
@@ -241,6 +245,57 @@ class ExtrasEditor:
         if "no existe" in reply.text:
             raise ApunteError("Esa fecha no existe.")
         return reply.text
+
+    # --- Seguimientos: lo que se espera de otras personas ---
+
+    def _waiting_task(self, payload: dict[str, Any]) -> Any:
+        task = self.store.get_task(_number(payload.get("id"), "Falta el seguimiento."))
+        if task is None or task.kind != "waiting" or task.status != "pending":
+            raise ApunteError("Ese seguimiento ya no está abierto. Recarga la página.")
+        return task
+
+    def _ask_on(self, raw: Any) -> int:
+        """«AAAA-MM-DD» -> el momento de preguntar ese día, a la hora por defecto de las tareas."""
+        now = self._now()
+        try:
+            day = datetime.strptime(raw, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            raise ApunteError("Elige el día en que quieres que te pregunte.") from None
+        if day < now.date():
+            raise ApunteError("Ese día ya pasó. Elige hoy o un día más adelante.")
+        moment = datetime.combine(day, self.assistant.config.default_task_time, now.tzinfo)
+        return int(max(moment, now).timestamp())  # Si es hoy y la hora ya pasó, pregunta enseguida.
+
+    def _waiting_add(self, payload: dict[str, Any]) -> str:
+        what = _text(payload.get("text"), 180, "Escribe qué estás esperando.")
+        what = re.sub(r"^(?:estoy |sigo )?esperando\s+", "", what, flags=re.IGNORECASE) or what
+        days = payload.get("days", 3)
+        if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 60:
+            raise ApunteError("Los días para preguntar van de 1 a 60.")
+        return self.extras._waiting(what, str(days), what, self._now()).text.split("\n")[0]
+
+    def _waiting_edit(self, payload: dict[str, Any]) -> str:
+        task = self._waiting_task(payload)
+        changes: dict[str, Any] = {}
+        if "text" in payload:
+            title = _text(payload.get("text"), 200, "El seguimiento no puede quedar vacío.")
+            if title != task.title:
+                changes["title"] = title
+        if "date" in payload:
+            due_at = self._ask_on(payload.get("date"))
+            if task.due_at is None or datetime.fromtimestamp(task.due_at, self._now().tzinfo).date() != datetime.fromtimestamp(
+                due_at, self._now().tzinfo
+            ).date():
+                changes.update(due_at=due_at, notified_at=None)  # Fecha nueva: se vuelve a preguntar.
+        if not changes:
+            return "Sin cambios."
+        self.store.update_task(task.id, int(self._now().timestamp()), **changes)
+        return "Seguimiento guardado."
+
+    def _waiting_delete(self, payload: dict[str, Any]) -> str:
+        task = self._waiting_task(payload)
+        self.store.delete_task(task.id, int(self._now().timestamp()))
+        return f"Borré el seguimiento «{task.title}»."
 
     def _date_delete(self, payload: dict[str, Any]) -> str:
         if not self.store.delete_date(_number(payload.get("id"), "Falta la fecha.")):

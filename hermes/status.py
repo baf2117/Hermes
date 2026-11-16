@@ -589,6 +589,10 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .ap-editing input:focus { outline:none; }
 .ap-editing .primary { margin-left:0; padding:7px 12px; flex:none; }
 .ap-editing-note { align-items:flex-start; }
+.ap-editing-wait { flex-wrap:wrap; }
+.ap-editing-wait input[type="text"], .ap-editing-wait input:not([type]) { flex:1 1 100%; }
+.ap-editing-wait input[type="date"] { flex:1 1 140px; }
+.ap-item small { display:block; color:var(--muted); font-size:13px; text-decoration:none; }
 .ap-editing textarea { flex:1; min-width:0; font:inherit; font-size:16px; line-height:1.4; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:8px 10px; resize:vertical; }
 .ap-editing textarea:focus { outline:none; }
 .ap-edit-buttons { display:flex; flex-direction:column; align-items:center; gap:4px; flex:none; }
@@ -852,6 +856,11 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <section class="ap-card" data-sub="seguimientos" hidden>
       <h3>Seguimientos <span id="ap-waiting-count"></span></h3>
       <p>Lo que quedaron de mandarte o hacer otras personas. Hermes te pregunta a los días si ya llegó. Para agregar uno, dile «estoy esperando que…».</p>
+      <form class="ap-form" id="ap-waiting-form" autocomplete="off">
+        <input id="ap-waiting-text" maxlength="180" placeholder="Qué esperas (que Juan mande el contrato)" aria-label="Qué estás esperando">
+        <input id="ap-waiting-days" class="narrow" type="number" min="1" max="60" value="3" aria-label="En cuántos días te pregunto" title="En cuántos días te pregunto">
+        <button type="submit" class="primary">Agregar</button>
+      </form>
       <div id="ap-waiting"></div>
     </section>
   </div>
@@ -2036,6 +2045,55 @@ function renderDatesCalendar(dates) {
     box.append(line);
   }
 }
+let editingWaiting = null;  // El seguimiento que se está corrigiendo, con su texto y su día.
+let editingWaitingText = "", editingWaitingDate = "";
+function isoDay(ts) { const d = new Date(ts * 1000); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function waitingRow(w) {
+  const redraw = () => { if (lastApuntes) renderApuntes(lastApuntes); };
+  if (editingWaiting !== w.id) {
+    const row = text("div", "ap-row", "");
+    const check = apCheck(false, "Ya llegó: " + w.title, async () => {
+      try { toast((await send("/tasks", { action: "done", id: w.id })).message, w.id); loadApuntes(true); } catch (e) { toast(e.message); }
+    });
+    const body = text("button", "grow ap-item", w.title); body.type = "button";
+    body.setAttribute("aria-label", "Editar el seguimiento: " + w.title); body.title = "Tocar para editar";
+    if (w.due_at) body.appendChild(text("small", "", "Te pregunto el " + new Date(w.due_at * 1000).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" })));
+    body.onclick = () => { editingWaiting = w.id; editingWaitingText = w.title; editingWaitingDate = w.due_at ? isoDay(w.due_at) : ""; redraw(); };
+    const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Borrar el seguimiento");
+    remove.onclick = async () => { if (await ask("¿Borrar el seguimiento «" + w.title + "»?")) apunte({ action: "waiting_delete", id: w.id }); };
+    row.append(check, body, remove);
+    return row;
+  }
+  const row = text("form", "ap-row ap-editing ap-editing-wait", ""); row.autocomplete = "off";
+  const input = document.createElement("input");
+  input.maxLength = 200; input.value = editingWaitingText; input.setAttribute("aria-label", "Texto del seguimiento"); input.enterKeyHint = "done";
+  input.oninput = () => { editingWaitingText = input.value; };
+  const date = document.createElement("input");
+  date.type = "date"; date.value = editingWaitingDate; date.setAttribute("aria-label", "Día en que Hermes te pregunta"); date.title = "Día en que Hermes te pregunta";
+  date.oninput = () => { editingWaitingDate = date.value; };
+  const stop = () => { editingWaiting = null; editingWaitingText = ""; editingWaitingDate = ""; };
+  const onKey = event => { if (event.key === "Escape") { stop(); redraw(); } };
+  input.onkeydown = onKey; date.onkeydown = onKey;
+  const save = text("button", "primary", "Guardar"); save.type = "submit";
+  const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+  cancel.onclick = () => { stop(); redraw(); };
+  row.onsubmit = async event => {
+    event.preventDefault();
+    const value = input.value.trim();
+    if (!value) { input.focus(); return; }
+    const body = { action: "waiting_edit", id: w.id, text: value };
+    if (date.value) body.date = date.value;
+    save.disabled = true;
+    try {
+      toast((await send("/extras", body)).message);
+      stop();
+      await loadApuntes(true);
+    } catch (e) { toast(e.message); save.disabled = false; }
+  };
+  row.append(input, date, save, cancel);
+  setTimeout(() => { if (editingWaiting === w.id && document.activeElement !== input && document.activeElement !== date) input.focus(); }, 0);
+  return row;
+}
 function renderApuntes(d) {
   lastApuntes = d;
   renderLists(d.lists);
@@ -2051,9 +2109,7 @@ function renderApuntes(d) {
   apFill("ap-dates", d.dates.map(x => apRow(x.day + " de " + AP_MONTHS[x.month - 1] + (x.year ? " de " + x.year : ""), x.label, null,
     async () => { if (await ask("¿Borrar el " + x.label + "?")) apunte({ action: "date_delete", id: x.id }); }, "Borrar la fecha")), "Todavía no hay fechas.");
   $("ap-dates-count").textContent = d.dates.length || "";
-  apFill("ap-waiting", d.waiting.map(w => apRow(w.title, w.due_at ? "Te pregunto " + new Date(w.due_at * 1000).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" }) : "",
-    apCheck(false, "Ya llegó: " + w.title, async () => { try { toast((await send("/tasks", { action: "done", id: w.id })).message); loadApuntes(true); } catch (e) { toast(e.message); } }))),
-    "No tienes seguimientos abiertos.");
+  apFill("ap-waiting", d.waiting.map(waitingRow), "No tienes seguimientos abiertos.");
   $("ap-waiting-count").textContent = d.waiting.length || "";
   const counts = { listas: d.lists.length, habitos: d.habits.length, notas: d.notes.length, fechas: d.dates.length, seguimientos: d.waiting.length };
   for (const key in counts) $("ap-tab-" + key).textContent = counts[key] || "";
@@ -2088,6 +2144,11 @@ apForm("ap-habit-form", () => {
   const title = $("ap-habit-title").value.trim();
   return title ? { action: "habit_add", title, time: $("ap-habit-time").value || null } : null;
 }, () => { $("ap-habit-title").value = ""; $("ap-habit-time").value = ""; });
+apForm("ap-waiting-form", () => {
+  const what = $("ap-waiting-text").value.trim();
+  const days = parseInt($("ap-waiting-days").value, 10);
+  return what ? { action: "waiting_add", text: what, days: days || 3 } : null;
+}, () => { $("ap-waiting-text").value = ""; });
 apForm("ap-note-form", () => {
   const note = $("ap-note-text").value.trim();
   return note ? { action: "note_add", text: note } : null;

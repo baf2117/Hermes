@@ -161,6 +161,34 @@ class ApuntesTests(Harness):
         self.do("quiet_off")
         self.assertIsNone(self.editor.snapshot()["quiet_until"])
 
+    def test_followups_are_added_edited_and_deleted_from_the_page(self):
+        self.assertEqual(self.do("waiting_add", text="  estoy esperando que Juan mande el contrato ", days=5),
+                         "⏳ Anotado: estás esperando que Juan mande el contrato.")
+        self.do("waiting_add", text="la factura del taller")
+        first, second = sorted(self.editor.snapshot()["waiting"], key=lambda w: w["id"])
+        self.assertEqual((first["title"], second["title"]), ("Esperando que Juan mande el contrato", "Esperando la factura del taller"))
+        self.assertEqual(first["due_at"], int(datetime(2026, 11, 15, 9, 0, tzinfo=TZ).timestamp()))  # En 5 días, a las 9.
+        self.assertEqual(second["due_at"], int(datetime(2026, 11, 13, 9, 0, tzinfo=TZ).timestamp()))  # Por defecto, 3.
+        self.store.update_task(first["id"], 0, notified_at=1)
+        self.assertEqual(self.do("waiting_edit", id=first["id"], text="Juan: contrato firmado", date="2026-11-20"), "Seguimiento guardado.")
+        task = self.store.get_task(first["id"])
+        self.assertEqual((task.title, task.due_at, task.notified_at),
+                         ("Juan: contrato firmado", int(datetime(2026, 11, 20, 9, 0, tzinfo=TZ).timestamp()), None))
+        self.assertEqual(self.do("waiting_edit", id=first["id"], text="Juan: contrato firmado", date="2026-11-20"), "Sin cambios.")
+        # Hoy, con la hora por defecto ya pasada: pregunta enseguida en vez de quedar en el pasado.
+        self.do("waiting_edit", id=second["id"], text="Esperando la factura del taller", date="2026-11-10")
+        self.assertEqual(self.store.get_task(second["id"]).due_at, int(self.moment.timestamp()))
+        self.assertIn("Borré el seguimiento", self.do("waiting_delete", id=second["id"]))
+        self.assertEqual([w["id"] for w in self.editor.snapshot()["waiting"]], [first["id"]])
+        ordinary = self.store.add_task("Tarea normal", "casa", "media", None, "", 0)
+        for bad in (dict(action="waiting_add", text="  "), dict(action="waiting_add", text="x", days=0), dict(action="waiting_add", text="x", days="3"),
+                    dict(action="waiting_edit", id=first["id"], text=""), dict(action="waiting_edit", id=first["id"], text="x", date="2026-11-09"),
+                    dict(action="waiting_edit", id=first["id"], text="x", date="mañana"), dict(action="waiting_edit", id=ordinary.id, text="x"),
+                    dict(action="waiting_delete", id=second["id"]), dict(action="waiting_delete", id=ordinary.id)):
+            with self.assertRaises(ApunteError, msg=bad):
+                self.editor.apply(bad)
+        self.assertEqual(self.store.get_task(ordinary.id).status, "pending")
+
     def test_malformed_requests(self):
         for payload in (None, [], {}, {"action": "borrar_todo"}, {"action": "list_add", "list": "", "text": "x"},
                         {"action": "list_add", "list": "super", "text": 5}, {"action": "list_remove", "id": "1"},
