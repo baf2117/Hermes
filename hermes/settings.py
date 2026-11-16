@@ -69,7 +69,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("HERMES_WEEKLY_TIME", "Revisión de la semana", "time_off", "Resúmenes", "Los domingos. Vacío para apagarla.", "18:00", live=True),
     Setting("HERMES_DEFAULT_TASK_TIME", "Hora por defecto de una tarea", "time", "Tareas", "Para «recuérdame el viernes» sin hora.", "09:00", live=True),
     Setting("HERMES_REPEAT_QUIET", "No repetir avisos entre", "range", "Tareas", "Los avisos que se repiten descansan en este horario.", "20:00-10:30", live=True),
-    Setting("HERMES_CATEGORIES", "Categorías", "list", "Tareas", "Separadas por comas.", "trabajo, negocios, casa, personal, salud, finanzas, reptiles", live=True),
+    Setting("HERMES_CATEGORIES", "Categorías", "list", "Tareas", "Las que puedes elegir para tus tareas. Agrega o quita, y guarda.", "trabajo, negocios, casa, personal, salud, finanzas, reptiles", live=True),
     Setting("HERMES_VOICE", "Voz de las respuestas", "voice", "Voz", "piper, kokoro o microsoft; opcionalmente con dos puntos y el nombre de la voz.", "piper", live=True),
     Setting("HERMES_HOME_VOICE", "Escuchar «Hermes» en casa", "switch", "Voz", "Usa el micrófono de esta computadora.", "on"),
     Setting("HERMES_WAKE_WORD", "Palabra de activación", "word", "Voz", "", "hermes"),

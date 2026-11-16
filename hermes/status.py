@@ -636,6 +636,21 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .set-row input:focus, .set-row select:focus { outline:none; border-color:var(--accent); }
 .set-row input:disabled, .set-row select:disabled { opacity:.5; }
 .set-row input[type="checkbox"] { width:22px; height:22px; accent-color:var(--accent); justify-self:start; }
+.set-row.wide { grid-template-columns:1fr; }
+.chips { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.chip-list { display:flex; flex-wrap:wrap; gap:8px; }
+.chip { display:inline-flex; align-items:center; gap:7px; padding:5px 6px 5px 12px; border:1px solid var(--line); border-radius:999px; background:var(--soft); font-size:14px; font-weight:550; }
+.chip .dot { width:9px; height:9px; border-radius:50%; background:var(--cat); flex:none; }
+.chip-x { font:inherit; font-size:12px; color:var(--muted); background:none; border:0; border-radius:50%; width:24px; height:24px; cursor:pointer; display:grid; place-items:center; }
+.chip-x:hover:not(:disabled) { color:var(--warn); background:var(--card); }
+.chip-x:disabled { opacity:.35; cursor:default; }
+.chip-add { display:flex; gap:8px; max-width:420px; }
+.chip-add input { flex:1; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:9px 11px; }
+.chip-add input:focus { outline:none; border-color:var(--accent); }
+.chip-add .ghost { flex:none; }
+.chip-note { font-size:13px; color:var(--warn); min-height:0; }
+.chip-note:empty { display:none; }
+@media (pointer:coarse) { .chip-x { width:32px; height:32px; } }
 .set-tag { display:inline-block; font-size:11px; font-weight:600; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:1px 8px; margin-left:6px; vertical-align:1px; }
 .set-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 18px; }
 .set-bar .primary { margin-left:0; }
@@ -2217,7 +2232,76 @@ $("set-logout").addEventListener("click", async () => { if (await ask("¿Cerrar 
 /* ---------- Ajustes ---------- */
 let settingsData = null;
 let restarting = false;
+// Categorías: etiquetas con color que se agregan y se quitan, en vez de una lista separada por comas.
+// Por debajo sigue siendo el mismo valor ("trabajo, casa, …"), en un campo oculto que lee el guardado.
+function categoryEditor(s) {
+  const box = text("div", "chips", "");
+  const hidden = document.createElement("input");
+  hidden.type = "hidden"; hidden.value = s.value || ""; hidden.dataset.initial = hidden.value; hidden.dataset.key = s.key;
+  const current = () => hidden.value.split(",").map(c => c.trim()).filter(Boolean);
+  const list = text("div", "chip-list", "");
+  const form = text("div", "chip-add", "");
+  const input = document.createElement("input");
+  input.id = "set-" + s.key; input.maxLength = 20; input.placeholder = "Nueva categoría"; input.enterKeyHint = "done";
+  input.setAttribute("aria-label", "Nueva categoría"); input.autocomplete = "off";
+  const add = text("button", "ghost", "+ Agregar"); add.type = "button";
+  const note = text("div", "chip-note", "");
+  const set = values => {
+    hidden.value = values.join(", ");
+    hidden.dispatchEvent(new Event("input", { bubbles: true }));  // Activa «Guardar cambios».
+    draw();
+  };
+  const pendingIn = async category => {
+    try {
+      const data = lastTasks || await (await fetch("/tasks", { cache: "no-store" })).json();
+      return (data.pending || []).filter(t => t.category === category && t.parent_id === null).length;
+    } catch { return 0; }
+  };
+  function draw() {
+    list.textContent = "";
+    const values = current();
+    for (const category of values) {
+      const chip = text("span", "chip", "");
+      const dot = text("span", "dot", ""); dot.style.setProperty("--cat", catColor(category));
+      chip.append(dot, text("span", "", category.charAt(0).toUpperCase() + category.slice(1)));
+      if (!s.locked) {
+        const remove = text("button", "chip-x", "✕"); remove.type = "button";
+        remove.setAttribute("aria-label", "Quitar la categoría " + category);
+        remove.disabled = values.length === 1;
+        remove.title = values.length === 1 ? "Tiene que quedar al menos una" : "Quitar";
+        remove.onclick = async () => {
+          const count = await pendingIn(category);
+          if (count && !await ask("«" + category + "» tiene " + (count === 1 ? "1 tarea pendiente" : count + " tareas pendientes") +
+            ". Las tareas no se borran: siguen apareciendo con esa categoría, pero ya no podrás elegirla para tareas nuevas. ¿Quitarla?", "Quitar")) return;
+          set(current().filter(c => c !== category));
+        };
+        chip.append(remove);
+      }
+      list.append(chip);
+    }
+    const full = values.length >= 15;
+    input.disabled = add.disabled = !!s.locked || full;
+    note.textContent = full ? "Llegaste al máximo de 15 categorías." : "";
+  }
+  const tryAdd = () => {
+    const raw = input.value.toLowerCase().split(" ").filter(Boolean).join(" ");
+    if (!raw) { input.focus(); return; }
+    if (raw.length < 2 || !/^[a-záéíóúüñ0-9 ]+$/.test(raw)) { note.textContent = "Usa solo letras, números y espacios (de 2 a 20)."; return; }
+    if (current().includes(raw)) { note.textContent = "«" + raw + "» ya está."; return; }
+    input.value = "";
+    set([...current(), raw]);
+    input.focus();
+  };
+  add.onclick = tryAdd;
+  input.onkeydown = event => { if (event.key === "Enter") { event.preventDefault(); tryAdd(); } };
+  input.oninput = () => { note.textContent = ""; };
+  form.append(input, add);
+  box.append(list, form, note, hidden);
+  draw();
+  return box;
+}
 function settingControl(s) {
+  if (s.kind === "list") return categoryEditor(s);
   let el;
   if (s.kind === "switch") {
     el = document.createElement("input"); el.type = "checkbox"; el.checked = s.value === "on";
@@ -2252,7 +2336,7 @@ function renderSettings(data) {
   for (const group of data.groups) {
     const card = text("section", "set-group", ""); card.appendChild(text("h3", "", group.name));
     for (const s of group.settings) {
-      const row = text("div", "set-row", "");
+      const row = text("div", "set-row" + (s.kind === "list" ? " wide" : ""), "");
       const label = text("label", "", s.label); label.htmlFor = "set-" + s.key;
       if (!s.live) label.appendChild(text("span", "set-tag", "Al reiniciar"));
       const help = s.locked ? "Solo se cambia desde la computadora de Hermes."
