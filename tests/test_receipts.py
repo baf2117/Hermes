@@ -153,6 +153,47 @@ class ReceiptsTests(unittest.TestCase):
         self.assertEqual(self.receipts.apply({"action": "delete", "id": receipt["id"]})["message"], "Recibo borrado.")
         self.assertEqual(self.receipts.snapshot()["receipts"], [])
 
+    def test_budget_set_by_words_and_reported(self):
+        self.assertIn("No tienes presupuestos", self.ask("¿cómo voy con el presupuesto?"))
+        self.add("Super Uno", "2026-11-02", 850, "supermercado")
+        self.add("Pollo", "2026-11-03", 120, "comida")
+        self.add("Viejo", "2026-10-03", 999, "comida")
+        self.assertEqual(self.ask("Mi presupuesto de súper es Q1,000"),
+                         "📊 Presupuesto de supermercado: Q 1,000.00 al mes. Este mes llevas Q 850.00 (85 %).")
+        self.assertIn("comida: Q 500.00 al mes", self.ask("ponme un presupuesto de 500 para comida"))
+        self.assertEqual(self.ask("como voy con el presupuesto"), "📊 Presupuesto de noviembre:\n"
+                         "• supermercado: Q 850.00 de Q 1,000.00 (85 %) 🟡\n• comida: Q 120.00 de Q 500.00 (24 %)\n"
+                         "En total: Q 970.00 de Q 1,500.00.")
+        self.assertIn("Tu presupuesto es de Q 1,000.00: llevas el 85 %", self.ask("cuanto gaste en el super"))
+        self.assertNotIn("presupuesto", self.ask("cuanto gaste en comida en octubre"))
+        self.assertEqual(self.ask("quita el presupuesto de comida"), "Quité el presupuesto de comida.")
+        self.assertIn("No conozco la categoría «joyas»", self.ask("mi presupuesto de joyas es 100"))
+        self.assertEqual(self.store.budgets(), {"supermercado": 1000})
+        self.assertIn("comida: Q 300.00 al mes", self.receipts.budget_command("comida 300").text)
+        self.assertEqual(self.receipts.budget_command("comida quitar").text, "Quité el presupuesto de comida.")
+        self.assertIn("Uso:", self.receipts.budget_command("comida mucho").text)
+
+    def test_budget_warns_once_at_80_and_once_at_100(self):
+        self.store.set_budget("hogar", 300)
+        self.answers = [answer(total=100, merchant="A"), answer(total=150, merchant="B"), answer(total=10, merchant="C"),
+                        answer(total=50, merchant="D"), answer(total=5, merchant="E")]
+        self.assertNotIn("presupuesto", self.receipts.from_photo(b"a").text)                     # 100 de 300
+        self.assertIn("🟡 Llevas el 83 % del presupuesto de hogar", self.receipts.from_photo(b"b").text)  # 250
+        self.assertNotIn("presupuesto", self.receipts.from_photo(b"c").text)                     # 260: ya avisó
+        self.assertIn("⚠️ Te pasaste del presupuesto de hogar: llevas Q 310.00", self.receipts.from_photo(b"d").text)
+        self.assertNotIn("presupuesto", self.receipts.from_photo(b"e").text)
+
+    def test_page_saves_budgets(self):
+        self.assertEqual(self.receipts.apply({"action": "budgets", "budgets": {"comida": 800, "gasolina": 400.5}})["message"],
+                         "Presupuestos guardados.")
+        self.assertEqual(self.receipts.snapshot()["budgets"], {"comida": 800, "gasolina": 400.5})
+        self.assertEqual(self.receipts.apply({"action": "budgets", "budgets": {"comida": 800}})["message"], "Sin cambios.")
+        self.receipts.apply({"action": "budgets", "budgets": {"comida": None, "gasolina": 0}})
+        self.assertEqual(self.store.budgets(), {})
+        for bad in ({"joyas": 5}, {"comida": -1}, {"comida": "800"}, {"comida": True}, []):
+            with self.assertRaises(ValueError, msg=bad):
+                self.receipts.apply({"action": "budgets", "budgets": bad})
+
     def test_photo_path_cannot_escape_the_folder(self):
         receipt_id = self.add("X", "2026-11-01", 1, "otros")
         self.store.update_receipt(receipt_id, photo="../../secreto.txt")

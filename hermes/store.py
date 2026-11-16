@@ -95,6 +95,10 @@ CREATE TABLE IF NOT EXISTS receipts (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS receipts_day ON receipts (day);
+CREATE TABLE IF NOT EXISTS budgets (
+    category TEXT PRIMARY KEY,
+    amount REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS lists (
     name TEXT PRIMARY KEY,
     created_at INTEGER NOT NULL
@@ -925,6 +929,22 @@ class Store:
                 f"UPDATE receipts SET {', '.join(f'{name} = ?' for name in columns)} WHERE id = ?",
                 (*(fields[name] for name in columns), receipt_id),
             ).rowcount > 0
+
+    def budgets(self) -> dict[str, float]:
+        """Presupuesto mensual por categoría, en quetzales."""
+        with self._lock:
+            rows = self._conn.execute("SELECT category, amount FROM budgets ORDER BY category").fetchall()
+        return {row["category"]: row["amount"] for row in rows}
+
+    def set_budget(self, category: str, amount: float | None) -> None:
+        with self._lock, self._conn:
+            if amount is None:
+                self._conn.execute("DELETE FROM budgets WHERE category = ?", (category,))
+            else:
+                self._conn.execute(
+                    "INSERT INTO budgets (category, amount) VALUES (?, ?) ON CONFLICT(category) DO UPDATE SET amount = excluded.amount",
+                    (category, amount),
+                )
 
     def delete_receipt(self, receipt_id: int) -> bool:
         with self._lock, self._conn:

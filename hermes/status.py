@@ -669,6 +669,19 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .rc-cat-amount { color:var(--muted); font-variant-numeric:tabular-nums; }
 .rc-bar { height:8px; border-radius:4px; background:var(--soft); overflow:hidden; }
 .rc-bar i { display:block; height:100%; border-radius:4px; }
+.rc-cat.near .rc-bar i { background:var(--u-media, #e2b44a); }
+.rc-cat.over .rc-bar i { background:var(--warn); }
+.rc-cat.over .rc-cat-amount { color:var(--warn); font-weight:600; }
+.rc-bar i { background:var(--accent); }
+.rc-total .ap-link { margin-left:auto; font-size:14px; }
+.rc-budgets { border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 0; margin:2px 0 6px; display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap:8px 16px; }
+.rc-budgets p { grid-column:1 / -1; margin:0 0 4px; color:var(--muted); font-size:13px; }
+.rc-budget-row { display:flex; align-items:center; gap:10px; font-size:14px; }
+.rc-budget-row span { flex:1; }
+.rc-budget-row input { width:120px; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:7px 10px; }
+.rc-budget-row input:focus { outline:none; border-color:var(--accent); }
+.rc-budget-buttons { grid-column:1 / -1; display:flex; justify-content:flex-end; gap:10px; }
+.rc-budget-buttons .primary { margin-left:0; }
 .rc-hint { color:var(--muted); font-size:13px; margin:12px 0; max-width:760px; }
 #rc-list { max-width:760px; }
 .rc-row { display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
@@ -688,7 +701,7 @@ dialog#rc-photo { border:1px solid var(--line); border-radius:16px; background:v
 dialog#rc-photo::backdrop { background:rgba(0,0,0,.7); }
 #rc-photo-img { display:block; width:100%; max-height:70vh; object-fit:contain; border-radius:10px; background:#000; }
 #rc-photo-items ul { margin:10px 0 0; padding-left:20px; font-size:14px; color:var(--muted); }
-@media (max-width:640px) { .rc-cat { grid-template-columns:90px 1fr auto; } .rc-total b { font-size:22px; } }
+@media (max-width:640px) { .rc-cat { grid-template-columns:1fr auto; row-gap:4px; } .rc-cat .rc-bar { grid-column:1 / -1; grid-row:2; } .rc-total b { font-size:22px; } }
 .dt-group h4 { font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 8px; }
 .dt-group:first-child h4 { margin-top:6px; }
 .dt-row { display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
@@ -2524,6 +2537,39 @@ function receiptRow(r) {
   row.append(thumb, body, amount, remove);
   return row;
 }
+let editingBudgets = false;
+// Presupuesto mensual de cada categoría, en quetzales. Vacío: sin presupuesto.
+function budgetEditor() {
+  const form = text("form", "rc-budgets", ""); form.autocomplete = "off";
+  form.appendChild(text("p", "", "Cuánto quieres gastar al mes en cada categoría, en quetzales. Hermes te avisa al llegar al 80 % y al pasarte. Deja vacío lo que no quieras controlar."));
+  const inputs = {};
+  receiptsData.categories.forEach(c => {
+    const row = text("label", "rc-budget-row", "");
+    const input = document.createElement("input"); input.type = "number"; input.min = "0"; input.step = "1"; input.inputMode = "decimal";
+    input.placeholder = "Sin límite"; input.value = receiptsData.budgets[c] || "";
+    inputs[c] = input;
+    row.append(text("span", "", capital(c)), input);
+    form.appendChild(row);
+  });
+  const buttons = text("div", "rc-budget-buttons", "");
+  const save = text("button", "primary", "Guardar"); save.type = "submit";
+  const cancel = text("button", "ghost", "Cancelar"); cancel.type = "button";
+  cancel.onclick = () => { editingBudgets = false; renderReceipts(); };
+  buttons.append(cancel, save);
+  form.appendChild(buttons);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const budgets = {};
+    for (const c in inputs) { const v = parseFloat(inputs[c].value); budgets[c] = v > 0 ? v : null; }
+    save.disabled = true;
+    try {
+      toast((await send("/receipts", { action: "budgets", budgets })).message);
+      editingBudgets = false;
+      await loadReceipts(true);
+    } catch (e) { toast(e.message); save.disabled = false; }
+  };
+  return form;
+}
 function renderReceipts() {
   if (!receiptsData) return;
   const key = rcKey(rcMonth.year, rcMonth.month);
@@ -2534,19 +2580,32 @@ function renderReceipts() {
   $("rc-prev").disabled = key <= rcKey(ty - 1, tm - 1);  // Se guardan 13 meses a la vista.
   const month = receiptsData.receipts.filter(r => r.day.slice(0, 7) === key);
   const summary = $("rc-summary"); summary.textContent = "";
+  const budgets = receiptsData.budgets || {};
+  const budgetTotal = Object.values(budgets).reduce((s, v) => s + v, 0);
   const top = text("div", "rc-total", "");
-  top.append(text("b", "", rcSum(month)), text("span", "", month.length === 1 ? "1 recibo" : month.length + " recibos"));
+  top.append(text("b", "", rcSum(month)), text("span", "", (month.length === 1 ? "1 recibo" : month.length + " recibos")
+    + (budgetTotal ? " · presupuesto " + rcMoney(budgetTotal, "GTQ") : "")));
+  const edit = text("button", "ap-link", budgetTotal ? "Cambiar presupuestos" : "Poner presupuestos"); edit.type = "button";
+  edit.onclick = () => { editingBudgets = !editingBudgets; renderReceipts(); };
+  top.appendChild(edit);
   summary.appendChild(top);
+  if (editingBudgets) { summary.appendChild(budgetEditor()); }
   const byCategory = {};
   month.forEach(r => { (byCategory[r.category] = byCategory[r.category] || []).push(r); });
-  const main = month.length ? Object.entries(month.reduce((acc, r) => { acc[r.currency] = (acc[r.currency] || 0) + r.total; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0] : "GTQ";
-  const ranked = Object.entries(byCategory).map(([c, list]) => [c, list, list.filter(r => r.currency === main).reduce((s, r) => s + r.total, 0)]).sort((a, b) => b[2] - a[2]);
-  const biggest = ranked.length ? Math.max(...ranked.map(x => x[2])) || 1 : 1;
+  Object.keys(budgets).forEach(c => { byCategory[c] = byCategory[c] || []; });  // Con presupuesto se ve aunque no haya gasto.
+  // Las barras comparan quetzales: con presupuesto, contra el límite; sin él, contra la categoría más grande.
+  const ranked = Object.entries(byCategory).map(([c, list]) => [c, list, list.filter(r => r.currency === "GTQ").reduce((s, r) => s + r.total, 0)])
+    .sort((a, b) => (budgets[b[0]] ? b[2] / budgets[b[0]] : 0) - (budgets[a[0]] ? a[2] / budgets[a[0]] : 0) || b[2] - a[2]);
+  const biggest = Math.max(1, ...ranked.filter(x => !budgets[x[0]]).map(x => x[2]));
   ranked.forEach(([c, list, amount]) => {
-    const line = text("div", "rc-cat", "");
+    const limit = budgets[c];
+    const line = text("div", "rc-cat" + (limit && amount >= limit ? " over" : limit && amount >= 0.8 * limit ? " near" : ""), "");
     const bar = text("div", "rc-bar", ""); const fill = document.createElement("i");
-    fill.style.width = Math.max(2, Math.round(100 * amount / biggest)) + "%"; fill.style.background = "var(--accent)"; bar.appendChild(fill);
-    line.append(text("span", "rc-cat-name", capital(c)), bar, text("span", "rc-cat-amount", rcSum(list)));
+    fill.style.width = (limit ? Math.min(100, Math.round(100 * amount / limit)) : Math.max(2, Math.round(100 * amount / biggest))) + "%";
+    bar.appendChild(fill);
+    const amountText = limit ? rcMoney(amount, "GTQ") + " de " + rcMoney(limit, "GTQ") : rcSum(list);
+    line.append(text("span", "rc-cat-name", capital(c)), bar, text("span", "rc-cat-amount", amountText));
+    if (limit) line.title = Math.round(100 * amount / limit) + " % del presupuesto";
     summary.appendChild(line);
   });
   const box = $("rc-list"); box.textContent = "";
@@ -2566,7 +2625,7 @@ async function loadReceipts(force) {
     if (!data.receipts) return;
     const serialized = JSON.stringify(data);
     $("ap-tab-gastos").textContent = data.receipts.filter(r => r.day.slice(0, 7) === data.today.slice(0, 7)).length || "";
-    if (!force && (serialized === receiptsSerialized || editingReceipt !== null)) return;  // No pisa lo que estás corrigiendo.
+    if (!force && (serialized === receiptsSerialized || editingReceipt !== null || editingBudgets)) return;  // No pisa lo que estás corrigiendo.
     receiptsSerialized = serialized; receiptsData = data;
     renderReceipts();
   } catch {}

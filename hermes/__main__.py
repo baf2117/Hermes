@@ -349,7 +349,8 @@ def run(config: Config) -> int:
     bot.photo_handler = receipts.from_photo
     assistant.text_hooks.append(receipts.handle)
     assistant.summary_hooks.append(receipts.warranty_lines)
-    assistant.command_hooks.update({"/gastos": receipts.command, "/garantias": lambda _: receipts.warranties()})
+    assistant.command_hooks.update({"/gastos": receipts.command, "/garantias": lambda _: receipts.warranties(),
+                                    "/presupuesto": receipts.budget_command})
     assistant.button_hooks.update(rcpdel=receipts.button_delete)
     status.set_source("receipts", receipts.snapshot)
     status.set_action("receipts", receipts.apply)

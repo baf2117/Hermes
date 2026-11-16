@@ -137,6 +137,17 @@ SPENT = re.compile(
     r"(?:\s+(?P<when>hoy|ayer|esta\s+semana|este\s+mes|el\s+mes\s+pasado|este\s+ano|(?:en\s+)?(?P<month>" + MONTHS + r")(?:\s+(?:de\s+)?(?P<year>\d{4}))?))?$"
 )
 WARRANTIES = re.compile(r"^(?:que\s+|cuales\s+)?garantias(?:\s+(?:tengo|hay))?(?:\s+vigentes)?$")
+AMOUNT = r"(?:q\s*)?(?P<amount>\d[\d,]*(?:\.\d{1,2})?)(?:\s+(?:quetzales|al\s+mes|mensuales|por\s+mes))?"
+WHAT = r"(?:el\s+|la\s+|los\s+|las\s+)?(?P<what>[a-z ]+?)"
+BUDGET_SET = (
+    re.compile(r"^(?:mi\s+)?presupuesto\s+(?:de|para|en)\s+" + WHAT + r"\s+(?:es\s+(?:de\s+)?|sera\s+(?:de\s+)?|de\s+)?" + AMOUNT + "$"),
+    re.compile(r"^(?:ponme|pon|define|fija)\s+(?:un\s+)?presupuesto\s+de\s+" + AMOUNT + r"\s+(?:para|en|de)\s+" + WHAT + "$"),
+)
+BUDGET_DELETE = re.compile(r"^(?:quita|quitame|borra|elimina)\s+(?:el\s+)?presupuesto\s+(?:de|para|en)\s+" + WHAT + "$")
+BUDGET_SHOW = re.compile(
+    r"^(?:como\s+(?:voy|va|vamos)\s+(?:con\s+)?(?:el\s+|mi\s+)?presupuesto|(?:mi|mis|el|los)\s+presupuestos?|presupuestos?)$"
+)
+BUDGET_WARN = 0.8
 
 
 class Receipts:
@@ -190,6 +201,8 @@ class Receipts:
             lines.append(f"🛡 Garantía hasta el {nice_day(saved['warranty_until'])}. Te aviso una semana antes.")
         first, last = _month_bounds(today)
         lines.append(f"Este mes llevas {money_sum(self.store.receipts_between(first, last))}.")
+        if saved["day"][:7] == today.isoformat()[:7] and (alert := self.budget_alert(saved["category"], today)):
+            lines.append(alert)
         buttons = [("🗑 No guardar", f"rcpdel:{receipt_id}")]
         if self.page_url:
             buttons.insert(0, ("✏️ Corregir", self.page_url))
@@ -229,6 +242,13 @@ class Receipts:
         low = plain(text).strip().strip(" .!?¡¿…")
         if WARRANTIES.match(low):
             return self.warranties()
+        if BUDGET_SHOW.match(low):
+            return self.budget_report(reference.date())
+        for pattern in BUDGET_SET:
+            if match := pattern.match(low):
+                return self._budget_from_words(match.group("what"), match.group("amount"))
+        if match := BUDGET_DELETE.match(low):
+            return self._budget_from_words(match.group("what"), None)
         match = SPENT.match(low)
         if not match:
             return None
@@ -257,6 +277,11 @@ class Receipts:
         if not receipts:
             return self.R(f"{label[:1].upper() + label[1:]} no tengo recibos guardados.")
         lines = [f"{label[:1].upper() + label[1:]}: {money_sum(receipts)} en {len(receipts)} {'recibo' if len(receipts) == 1 else 'recibos'}."]
+        category = _category(what) if what else None
+        limit = self.store.budgets().get(category) if category else None
+        if limit and (first, last) == _month_bounds(today):
+            spent_here = sum(r["total"] for r in receipts if r["currency"] == DEFAULT_CURRENCY)
+            lines[0] += f" Tu presupuesto es de {money(limit)}: llevas el {round(100 * spent_here / limit)} %."
         if not what:
             by_category: dict[str, list[dict[str, Any]]] = {}
             for receipt in receipts:
@@ -264,6 +289,71 @@ class Receipts:
             ranked = sorted(by_category.items(), key=lambda kv: -sum(r["total"] for r in kv[1]))
             lines += [f"• {name}: {money_sum(items)}" for name, items in ranked]
         return self.R("\n".join(lines))
+
+    # --- Presupuesto mensual por categoría (en quetzales) ---
+
+    def _spent_by_category(self, today: date) -> dict[str, float]:
+        first, last = _month_bounds(today)
+        spent: dict[str, float] = {}
+        for receipt in self.store.receipts_between(first, last):
+            if receipt["currency"] == DEFAULT_CURRENCY:
+                spent[receipt["category"]] = spent.get(receipt["category"], 0) + receipt["total"]
+        return spent
+
+    def budget_alert(self, category: str, today: date) -> str | None:
+        """Aviso al pasar el 80 % y el 100 % del presupuesto de una categoría; cada uno, una vez al mes."""
+        limit = self.store.budgets().get(category)
+        if not limit:
+            return None
+        spent = self._spent_by_category(today).get(category, 0)
+        level = "100" if spent >= limit else "80" if spent >= BUDGET_WARN * limit else None
+        key = f"budget-alert:{today.isoformat()[:7]}:{category}"
+        sent = self.store.kv_get(key)
+        if level is None or sent == level or (sent == "100" and level == "80"):
+            return None
+        self.store.kv_set(key, level)
+        if level == "100":
+            return f"⚠️ Te pasaste del presupuesto de {category}: llevas {money(spent)} de {money(limit)}."
+        return f"🟡 Llevas el {round(100 * spent / limit)} % del presupuesto de {category}: {money(spent)} de {money(limit)}."
+
+    def budget_report(self, today: date) -> Any:
+        budgets = self.store.budgets()
+        if not budgets:
+            return self.R("No tienes presupuestos. Dime, por ejemplo, «mi presupuesto de comida es 1000», o ponlos en la página, en Gastos.")
+        spent = self._spent_by_category(today)
+        lines = [f"📊 Presupuesto de {MONTH_NAMES[today.month - 1]}:"]
+        for category, limit in sorted(budgets.items(), key=lambda kv: -spent.get(kv[0], 0) / kv[1]):
+            used = spent.get(category, 0)
+            mark = " ⚠️" if used >= limit else " 🟡" if used >= BUDGET_WARN * limit else ""
+            lines.append(f"• {category}: {money(used)} de {money(limit)} ({round(100 * used / limit)} %){mark}")
+        total_used = sum(spent.get(category, 0) for category in budgets)
+        lines.append(f"En total: {money(total_used)} de {money(sum(budgets.values()))}.")
+        return self.R("\n".join(lines))
+
+    def _budget_from_words(self, what: str, amount: str | None) -> Any:
+        category = _category(what)
+        if category is None:
+            return self.R(f"No conozco la categoría «{what}». Las que hay son: {', '.join(CATEGORIES)}.")
+        if amount is None:
+            self.store.set_budget(category, None)
+            return self.R(f"Quité el presupuesto de {category}.")
+        value = float(amount.replace(",", ""))
+        if not 0 < value < 10_000_000:
+            return self.R("Ese monto no es válido.")
+        self.store.set_budget(category, round(value, 2))
+        used = self._spent_by_category(self._now().date()).get(category, 0)
+        return self.R(f"📊 Presupuesto de {category}: {money(value)} al mes. Este mes llevas {money(used)} ({round(100 * used / value)} %).")
+
+    def budget_command(self, argument: str) -> Any:
+        """/presupuesto, /presupuesto comida 1000 o /presupuesto comida quitar."""
+        words = plain(argument).split()
+        if not words:
+            return self.budget_report(self._now().date())
+        if len(words) >= 2 and words[-1] in ("quitar", "borrar", "0"):
+            return self._budget_from_words(" ".join(words[:-1]), None)
+        if len(words) >= 2 and re.fullmatch(r"\d[\d,]*(?:\.\d{1,2})?", words[-1]):
+            return self._budget_from_words(" ".join(words[:-1]), words[-1])
+        return self.R("Uso: /presupuesto, /presupuesto comida 1000 o /presupuesto comida quitar.")
 
     def warranties(self) -> Any:
         today = self._now().date()
@@ -308,11 +398,25 @@ class Receipts:
                 "id": r["id"], "merchant": r["merchant"], "day": r["day"], "total": r["total"], "currency": r["currency"],
                 "category": r["category"], "warranty_until": r["warranty_until"], "items": items, "photo": bool(r["photo"]),
             })
-        return {"receipts": receipts, "categories": list(CATEGORIES), "currencies": CURRENCIES, "today": today.isoformat()}
+        return {"receipts": receipts, "categories": list(CATEGORIES), "currencies": CURRENCIES, "today": today.isoformat(),
+                "budgets": self.store.budgets()}
+
+    def _save_budgets(self, budgets: Any) -> dict[str, Any]:
+        if not isinstance(budgets, dict) or any(category not in CATEGORIES for category in budgets):
+            raise ValueError("Solicitud inválida.")
+        values = {category: _budget_value(value) for category, value in budgets.items()}
+        current = self.store.budgets()
+        if all(current.get(category) == value for category, value in values.items()):
+            return {"ok": True, "message": "Sin cambios."}
+        for category, value in values.items():
+            self.store.set_budget(category, value)
+        return {"ok": True, "message": "Presupuestos guardados."}
 
     def apply(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("Solicitud inválida.")
+        if payload.get("action") == "budgets":
+            return self._save_budgets(payload.get("budgets"))
         receipt_id = payload.get("id")
         if isinstance(receipt_id, bool) or not isinstance(receipt_id, int) or self.store.get_receipt(receipt_id) is None:
             raise ValueError("Ese recibo ya no está. Recarga la página.")
@@ -358,6 +462,14 @@ class Receipts:
             return {"ok": True, "message": "Sin cambios."}
         self.store.update_receipt(receipt_id, **fields)
         return {"ok": True, "message": "Recibo guardado."}
+
+
+def _budget_value(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value < 10_000_000:
+        raise ValueError("Cada presupuesto tiene que ser un número; déjalo vacío para no tener.")
+    return round(float(value), 2) or None
 
 
 def _month_bounds(day: date) -> tuple[str, str]:
