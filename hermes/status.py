@@ -551,6 +551,10 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .ap-editing input { flex:1; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:7px 10px; }
 .ap-editing input:focus { outline:none; }
 .ap-editing .primary { margin-left:0; padding:7px 12px; flex:none; }
+.ap-editing-note { align-items:flex-start; }
+.ap-editing textarea { flex:1; min-width:0; font:inherit; font-size:16px; line-height:1.4; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:8px 10px; resize:vertical; }
+.ap-editing textarea:focus { outline:none; }
+.ap-edit-buttons { display:flex; flex-direction:column; align-items:center; gap:4px; flex:none; }
 .ap-drawer-foot { display:flex; justify-content:space-between; gap:12px; margin-top:4px; flex-wrap:wrap; }
 .ap-link[hidden] { display:none; }
 .ap-link:disabled { opacity:.4; cursor:default; text-decoration:none; }
@@ -784,7 +788,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     </section>
     <section class="ap-card" data-sub="notas" hidden>
       <h3>Notas <span id="ap-notes-count"></span></h3>
-      <p>Lo que Hermes recuerda de ti y usa al conversar.</p>
+      <p>Lo que Hermes recuerda de ti y usa al conversar. Toca una nota para corregirla.</p>
       <form class="ap-form" id="ap-note-form" autocomplete="off">
         <input id="ap-note-text" maxlength="500" placeholder="Nueva nota" aria-label="Nota">
         <button type="submit" class="primary">Guardar</button>
@@ -1825,7 +1829,53 @@ function renderLists(lists) {
     if (target) target.focus();
   }
 }
+let lastApuntes = null;
+let editingNote = null;  // La nota que se está corrigiendo, y lo escrito hasta ahora.
+let editingNoteText = "";
+function noteRow(n) {
+  const redraw = () => { if (lastApuntes) renderApuntes(lastApuntes); };
+  if (editingNote !== n.id) {
+    const row = text("div", "ap-row", "");
+    const body = text("button", "grow ap-item", n.text); body.type = "button";
+    body.setAttribute("aria-label", "Editar la nota: " + n.text); body.title = "Tocar para editar";
+    body.onclick = () => { editingNote = n.id; editingNoteText = n.text; redraw(); };
+    const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Borrar la nota");
+    remove.onclick = async () => { if (await ask("¿Borrar esta nota? «" + n.text + "»")) apunte({ action: "note_delete", id: n.id }); };
+    row.append(body, remove);
+    return row;
+  }
+  const row = text("form", "ap-row ap-editing ap-editing-note", ""); row.autocomplete = "off";
+  const input = document.createElement("textarea");
+  input.maxLength = 500; input.rows = 3; input.value = editingNoteText; input.setAttribute("aria-label", "Nuevo texto de la nota"); input.enterKeyHint = "done";
+  input.oninput = () => { editingNoteText = input.value; };
+  const stop = () => { editingNote = null; editingNoteText = ""; };
+  const save = text("button", "primary", "Guardar"); save.type = "submit";
+  const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+  cancel.onclick = () => { stop(); redraw(); };
+  input.onkeydown = event => {
+    if (event.key === "Escape") { stop(); redraw(); }
+    else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); row.requestSubmit(); }
+  };
+  row.onsubmit = async event => {
+    event.preventDefault();
+    const value = input.value.trim();
+    if (!value) { input.focus(); return; }
+    if (value === n.text) { stop(); redraw(); return; }
+    save.disabled = true;
+    try {
+      toast((await send("/extras", { action: "note_edit", id: n.id, text: value })).message);
+      stop();
+      await loadApuntes(true);
+    } catch (e) { toast(e.message); save.disabled = false; }
+  };
+  const buttons = text("div", "ap-edit-buttons", "");
+  buttons.append(save, cancel);
+  row.append(input, buttons);
+  setTimeout(() => { if (document.activeElement !== input && editingNote === n.id) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } }, 0);
+  return row;
+}
 function renderApuntes(d) {
+  lastApuntes = d;
   renderLists(d.lists);
   apFill("ap-habits", d.habits.map(h => apRow(h.title,
     (h.remind_at ? "Recordatorio " + h.remind_at + " · " : "") + "racha de " + (h.streak === 1 ? "1 día" : h.streak + " días"),
@@ -1833,8 +1883,7 @@ function renderApuntes(d) {
     async () => { if (await ask("¿Quitar el hábito «" + h.title + "» y su racha?", "Quitar")) apunte({ action: "habit_delete", id: h.id }); }, "Quitar el hábito " + h.title)),
     "Todavía no tienes hábitos.");
   $("ap-habits-count").textContent = d.habits.length ? d.habits.filter(h => h.done).length + " de " + d.habits.length + " hoy" : "";
-  apFill("ap-notes", d.notes.map(n => apRow(n.text, "", null,
-    async () => { if (await ask("¿Borrar esta nota? «" + n.text + "»")) apunte({ action: "note_delete", id: n.id }); }, "Borrar la nota")), "Todavía no hay notas.");
+  apFill("ap-notes", d.notes.map(noteRow), "Todavía no hay notas.");
   $("ap-notes-count").textContent = d.notes.length || "";
   apFill("ap-dates", d.dates.map(x => apRow(x.day + " de " + AP_MONTHS[x.month - 1] + (x.year ? " de " + x.year : ""), x.label, null,
     async () => { if (await ask("¿Borrar el " + x.label + "?")) apunte({ action: "date_delete", id: x.id }); }, "Borrar la fecha")), "Todavía no hay fechas.");

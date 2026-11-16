@@ -88,6 +88,7 @@ class ExtrasEditor:
             "habit_undo": self._habit_undo,
             "list_clear": self._list_clear,
             "note_add": self._note_add,
+            "note_edit": self._note_edit,
             "note_delete": self._note_delete,
             "habit_add": self._habit_add,
             "habit_done": self._habit_done,
@@ -177,6 +178,15 @@ class ExtrasEditor:
     def _note_add(self, payload: dict[str, Any]) -> str:
         note = _text(payload.get("text"), MAX_NOTE, "Escribe la nota.")
         self.store.add_fact(note[:1].upper() + note[1:], int(self._now().timestamp()))
+        return "Nota guardada."
+
+    def _note_edit(self, payload: dict[str, Any]) -> str:
+        note = _text(payload.get("text"), MAX_NOTE, "La nota no puede quedar vacía.")
+        result = self.store.edit_fact(_number(payload.get("id"), "Falta la nota."), note[:1].upper() + note[1:])
+        if result is None:
+            raise ApunteError("Esa nota ya no estaba. Recarga la página.")
+        if result == "duplicate":
+            raise ApunteError("Ya tienes otra nota igual.")
         return "Nota guardada."
 
     def _note_delete(self, payload: dict[str, Any]) -> str:

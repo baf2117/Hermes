@@ -106,6 +106,22 @@ class ApuntesTests(Harness):
         with self.assertRaises(ApunteError):
             self.do("note_delete", id=notes[0]["id"])
 
+    def test_notes_can_be_corrected_and_stay_searchable(self):
+        self.do("note_add", text="mi veterinaria se llama Ana")
+        self.do("note_add", text="la clave del wifi está en el cajón")
+        second, first = self.editor.snapshot()["notes"]  # La más nueva va primero.
+        self.assertEqual(self.do("note_edit", id=first["id"], text="  mi veterinaria se llama   Lucía "), "Nota guardada.")
+        self.assertEqual([n["text"] for n in self.editor.snapshot()["notes"]],
+                         ["La clave del wifi está en el cajón", "Mi veterinaria se llama Lucía"])
+        self.assertEqual([fact for _, fact in self.store.search_facts("veterinaria Lucía", 5)], ["Mi veterinaria se llama Lucía"])
+        self.assertEqual(self.store.search_facts("Ana", 5), [])  # El texto viejo ya no aparece al buscar.
+        for bad in (dict(id=first["id"], text="LA CLAVE DEL WIFI ESTÁ EN EL CAJÓN"), dict(id=first["id"], text="  "),
+                    dict(id=999, text="x"), dict(text="x")):
+            with self.assertRaises(ApunteError, msg=bad):
+                self.do("note_edit", **bad)
+        self.assertEqual(len(self.editor.snapshot()["notes"]), 2)
+        self.assertEqual(second["text"], "La clave del wifi está en el cajón")
+
     def test_habits_and_their_streak(self):
         self.assertIn("08:00", self.do("habit_add", title="tomar agua", time="08:00"))
         self.do("habit_add", title="leer", time=None)

@@ -110,6 +110,10 @@ END;
 CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
     INSERT INTO facts_fts (facts_fts, rowid, text) VALUES ('delete', old.id, old.text);
 END;
+CREATE TRIGGER IF NOT EXISTS facts_au AFTER UPDATE OF text ON facts BEGIN
+    INSERT INTO facts_fts (facts_fts, rowid, text) VALUES ('delete', old.id, old.text);
+    INSERT INTO facts_fts (rowid, text) VALUES (new.id, new.text);
+END;
 """
 
 EDITABLE_FIELDS = {
@@ -523,6 +527,18 @@ class Store:
                 return int(existing["id"])
             cursor = self._conn.execute("INSERT INTO facts (text, created_at) VALUES (?, ?)", (text, now))
             return int(cursor.lastrowid)
+
+    def edit_fact(self, fact_id: int, text: str) -> str | None:
+        """Corrige un dato: "ok", "duplicate" si ya hay otro igual, o None si no existe. La búsqueda se actualiza sola."""
+        with self._lock, self._conn:
+            if self._conn.execute("SELECT 1 FROM facts WHERE id = ?", (fact_id,)).fetchone() is None:
+                return None
+            # Se compara aquí y no en SQL: SQLite no pasa a minúsculas las letras con tilde.
+            others = self._conn.execute("SELECT text FROM facts WHERE id != ?", (fact_id,)).fetchall()
+            if any(row["text"].casefold() == text.casefold() for row in others):
+                return "duplicate"
+            self._conn.execute("UPDATE facts SET text = ? WHERE id = ?", (text, fact_id))
+            return "ok"
 
     def list_facts(self, limit: int = 50) -> list[tuple[int, str]]:
         with self._lock:
