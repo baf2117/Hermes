@@ -244,6 +244,9 @@ PAGE = """<!doctype html>
   }
 }
 * { box-sizing:border-box; }
+/* Safari del iPhone da a los campos de hora y fecha un ancho propio que ignora width:100% y se sale de la tarjeta. */
+input[type="time"], input[type="date"], input[type="datetime-local"] { -webkit-appearance:none; appearance:none; min-width:0; max-width:100%; min-height:42px; }
+input::-webkit-date-and-time-value { text-align:left; }
 body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; }
 header { position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
 .bar { max-width:1040px; margin:0 auto; padding:12px 16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
