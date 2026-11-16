@@ -4,7 +4,7 @@ Reglas:
 - Solo se pueden tocar los ajustes de esta lista; rutas, puertos y programas a ejecutar quedan fuera.
 - Las claves y lo que decide quién entra (token de Telegram, chat autorizado, contraseña y dominio de la
   página) solo se cambian desde esta computadora, nunca por el túnel, y las claves jamás se muestran.
-- Cada valor se valida antes de escribirlo. El archivo anterior queda como .env.bak.
+- Cada valor se valida antes de escribirlo. La contraseña de la página se guarda cifrada de un solo sentido.
 - Algunos ajustes se aplican al instante; el resto, al reiniciar Hermes (también desde la página).
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import Config, _coordinates, _load_env_file
-from .remote import MIN_PASSWORD, clean_host
+from .remote import MIN_PASSWORD, clean_host, hash_password
 from .speakers import DEFAULT_VOICES
 
 log = logging.getLogger(__name__)
@@ -182,17 +182,22 @@ def write_env(path: Path, changes: dict[str, str]) -> None:
         else:
             result.append(line)
     result.extend(f"{key}={value}" for key, value in pending.items())
-    if path.exists():
-        backup = path.with_name(path.name + ".bak")
-        backup.write_bytes(path.read_bytes())
+    # No se deja copia del archivo anterior: llevaría las claves a un segundo lugar. La escritura es
+    # atómica (archivo temporal y reemplazo), así que un corte a medias no daña el original.
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text("\n".join(result) + "\n", encoding="utf-8")
     os.replace(temporary, path)
 
 
 class SettingsEditor:
-    def __init__(self, env_path: Path, config: Config, restart: Callable[[], None] | None = None):
-        self.env_path, self.config, self._restart = Path(env_path), config, restart
+    def __init__(
+        self,
+        env_path: Path,
+        config: Config,
+        restart: Callable[[], None] | None = None,
+        on_change: Callable[[set[str]], None] | None = None,
+    ):
+        self.env_path, self.config, self._restart, self._on_change = Path(env_path), config, restart, on_change
         self.restart_needed = False
 
     def snapshot(self, local: bool) -> dict[str, Any]:
@@ -239,12 +244,16 @@ class SettingsEditor:
             if setting.local_only and not local:
                 raise SettingError(f"{setting.label}: solo se cambia desde la computadora de Hermes.")
             value = validate(setting, raw)
+            if key == "HERMES_PAGE_PASSWORD" and value:
+                value = hash_password(value)  # Al archivo llega solo la huella, nunca la contraseña.
             if value != current.get(key, ""):
                 changes[key] = value
         if not changes:
             return {"ok": True, "message": "Sin cambios.", "restart_needed": self.restart_needed}
         write_env(self.env_path, changes)
         log.info("Ajustes: cambió %s desde %s", ", ".join(sorted(changes)), "esta computadora" if local else "fuera")
+        if self._on_change is not None:
+            self._on_change(set(changes))
         fresh = Config.load()
         for name in LIVE_FIELDS:
             object.__setattr__(self.config, name, getattr(fresh, name))

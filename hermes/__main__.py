@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from .assistant import Assistant
+from .assistant import Assistant, Reply
 from .backup import MIN_PASSWORD_LENGTH, BackupError, BackupService, restore_backup, upload_to_azure
 from .claude_cli import ClaudeCodeClient, ClaudeUnavailable, HybridLLM
 from .config import Config, hermes_home
@@ -30,8 +30,8 @@ from .outside import (
 )
 from .pagevoice import PageVoice, VoiceRenderer
 from .extrasedit import ExtrasEditor
-from .settings import SettingsEditor
-from .remote import RemoteAccess
+from .settings import SettingsEditor, write_env
+from .remote import MIN_PASSWORD, RemoteAccess, hash_password, is_hashed
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
 from .store import LLMUsage, Store
 from .taskedit import TaskEditor
@@ -350,8 +350,14 @@ def run(config: Config) -> int:
         restart.set()
         stop.set()  # El lector de Telegram termina su espera en curso (hasta medio minuto) y se vuelve a arrancar.
 
-    status.settings = SettingsEditor(hermes_home() / ".env", config, request_restart)
-    server = start_status_server(status, config.status_port, RemoteAccess(config.public_host, config.page_password))
+    remote = build_remote(config, store, client, assistant)
+
+    def settings_changed(keys: set[str]) -> None:
+        if "HERMES_PAGE_PASSWORD" in keys:
+            remote.revoke_all()  # Contraseña nueva: todos los dispositivos vuelven a entrar.
+
+    status.settings = SettingsEditor(hermes_home() / ".env", config, request_restart, settings_changed)
+    server = start_status_server(status, config.status_port, remote)
     if problem := home_voice_problem(config):
         logging.warning("Voz en casa no disponible: %s", problem)
     else:
@@ -399,6 +405,60 @@ def gmail_auth(config: Config, account: str = DEFAULT_ACCOUNT) -> int:
     print(f"Correos en su bandeja principal en las últimas 24 h: {count}")
     print("Reinicia Hermes para que empiece a vigilar.")
     return 0
+
+
+def build_remote(config: Config, store: Store, client: TelegramClient, assistant: Assistant) -> RemoteAccess:
+    """El acceso desde fuera: contraseña cifrada, sesiones guardadas y aprobación de cada dispositivo por Telegram."""
+    password = config.page_password
+    if password and not is_hashed(password) and len(password) >= MIN_PASSWORD:
+        # Venía en texto claro de una versión anterior: en el archivo queda solo su huella.
+        password = hash_password(password)
+        try:
+            write_env(hermes_home() / ".env", {"HERMES_PAGE_PASSWORD": password})
+            logging.info("Página: la contraseña quedó guardada cifrada en .env")
+        except OSError as exc:
+            logging.warning("Página: no pude guardar la contraseña cifrada: %s", exc)
+    remote = RemoteAccess(config.public_host, password, store=store)
+    chat_id = config.allowed_chat_id
+    if chat_id is not None:
+
+        def approver(session_id: int, device: str, ip: str) -> None:
+            client.send_message(
+                chat_id,
+                "🔐 Alguien puso bien la contraseña de tu página y quiere entrar.\n"
+                f"Dispositivo: {device}\nOrigen: {ip or 'desconocido'}\n\n"
+                "¿Eres tú? Sin tu aprobación no entra.",
+                [[("✅ Sí, soy yo", f"sessok:{session_id}"), ("🚫 No soy yo", f"sessno:{session_id}")]],
+            )
+
+        remote.approver = approver
+
+    def approve(session_id: int) -> Reply:
+        if remote.approve(session_id):
+            return Reply("✅ Aprobado. Ese dispositivo ya puede entrar a tu página.")
+        return Reply("Esa solicitud ya venció o ya estaba atendida. Si eras tú, vuelve a entrar con tu contraseña.")
+
+    def reject(session_id: int) -> Reply:
+        remote.revoke(session_id)
+        return Reply(
+            "🚫 Rechazado: ese intento no entra.\n"
+            "Si no eras tú, alguien conoce tu contraseña. Cámbiala desde tu computadora, en Ajustes → Acceso."
+        )
+
+    def close_all(_: int) -> Reply:
+        count = remote.revoke_all()
+        return Reply(f"Cerré {count} {'sesión' if count == 1 else 'sesiones'}. Cada dispositivo tendrá que entrar de nuevo.")
+
+    def list_sessions(_: str) -> Reply:
+        sessions = remote.sessions()
+        if not sessions:
+            return Reply("No hay ningún dispositivo con tu página abierta desde fuera.")
+        lines = [f"• {s['label']} · {s['ip'] or 'origen desconocido'}" for s in sessions]
+        return Reply("Dispositivos con tu página abierta:\n" + "\n".join(lines), [[("Cerrar todas", "sessall:0")]])
+
+    assistant.button_hooks.update(sessok=approve, sessno=reject, sessall=close_all)
+    assistant.command_hooks["/sesiones"] = list_sessions
+    return remote
 
 
 def calendar_auth(config: Config, account: str = DEFAULT_ACCOUNT) -> int:

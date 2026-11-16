@@ -43,6 +43,7 @@ HELP_TEXT = (
     "/espero que Juan mande el contrato: te pregunto en unos días si ya llegó\n"
     "/fechas: cumpleaños y aniversarios que recuerdo\n"
     "/silencio 2h: no te aviso durante ese tiempo (/silencio off lo quita)\n"
+    "/sesiones: quién tiene abierta tu página, y cerrarlas\n"
     "/noche y /semana: el cierre del día y la revisión de la semana\n"
     "/voz: cambia la voz con la que te contesto en casa\n"
     "/memoria: lo que recuerdo de ti\n"
@@ -230,6 +231,9 @@ class Assistant:
         self.extras = Extras(store, config, self._now, Reply)
         self.weather: Callable[[], str] | None = None  # Línea del clima para el resumen, si hay algo que avisar.
         self.agenda: Callable[[datetime], list[str]] | None = None  # Eventos del calendario de un día.
+        # Botones y comandos que atienden otras partes de Hermes, como la seguridad de la página.
+        self.button_hooks: dict[str, Callable[[int], Reply]] = {}
+        self.command_hooks: dict[str, Callable[[str], Reply]] = {}
 
     # --- Presentación ---
 
@@ -810,6 +814,8 @@ class Assistant:
             return Reply(self.build_evening())
         if command == "/semana":
             return Reply(self.build_weekly()[0])
+        if command in self.command_hooks:
+            return self.command_hooks[command](argument)
         if (extra := self.extras.command(command, argument)) is not None:
             return extra
         if command in ("/hecho", "/borrar"):
@@ -901,6 +907,8 @@ class Assistant:
             return self._mail_button(action, int(raw_id))
         if action == "forget":
             return Reply("Listo, lo olvidé." if self.store.delete_fact(int(raw_id)) else "Ese dato ya no estaba.")
+        if action in self.button_hooks:
+            return self.button_hooks[action](int(raw_id))
         if (extra := self.extras.button(action, int(raw_id))) is not None:
             return extra
         task = self._pending_by_id(int(raw_id))

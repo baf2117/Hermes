@@ -96,7 +96,7 @@ class WriteEnvTests(HomeCase):
             self.env.read_text(encoding="utf-8"),
             ORIGINAL.replace("HERMES_MAIL=on", "HERMES_MAIL=off") + "HERMES_WEATHER=14.6,-90.5\n",
         )
-        self.assertIn("HERMES_MAIL=on", (self.home / ".env.bak").read_text(encoding="utf-8"))
+        self.assertFalse((self.home / ".env.bak").exists())  # Sin copias: las claves no se duplican.
         self.assertFalse((self.home / ".env.tmp").exists())
 
 

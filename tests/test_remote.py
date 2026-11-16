@@ -48,19 +48,12 @@ class RemoteAccessTests(unittest.TestCase):
 
     def test_forged_sessions_are_rejected(self):
         session = self.remote.login(PASSWORD)
-        expires, _, signature = session.partition(".")
-        for cookie in (
-            None,
-            "",
-            f"{COOKIE}=",
-            f"{COOKIE}={int(expires) + 999}.{signature}",
-            f"{COOKIE}={expires}.{'0' * len(signature)}",
-            f"{COOKIE}=ñ.ñ",
-        ):
+        for cookie in (None, "", f"{COOKIE}=", f"{COOKIE}={session}x", f"{COOKIE}={'0' * len(session)}", f"{COOKIE}=ñ.ñ"):
             self.assertFalse(self.remote.valid(cookie), cookie)
-        # Una sesión firmada con otra contraseña no sirve.
-        other = RemoteAccess(HOST, "otra-clave-bien-larga", self.clock).login("otra-clave-bien-larga")
+        # La llave de otra instalación, aunque tenga la misma contraseña, no sirve aquí.
+        other = RemoteAccess(HOST, PASSWORD, self.clock).login(PASSWORD)
         self.assertFalse(self.remote.valid(f"{COOKIE}={other}"))
+        self.assertTrue(self.remote.valid(f"otra=1; {COOKIE}={session}"))
 
     def test_repeated_failures_lock_even_the_right_password(self):
         for _ in range(FREE_ATTEMPTS):

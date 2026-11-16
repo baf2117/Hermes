@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 from urllib.parse import parse_qs, urlsplit
 
-from .remote import RemoteAccess, login_page
+from .remote import ApprovalUnavailable, RemoteAccess, login_page, wait_page
 
 log = logging.getLogger(__name__)
 
@@ -873,6 +873,14 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <span>Hay cambios que se aplican al reiniciar Hermes.</span>
     <button type="button" class="primary" id="set-restart-btn" style="margin-left:0">Reiniciar Hermes</button>
   </div>
+  <section class="set-group" id="set-sessions" hidden>
+    <h3>Dispositivos con la página abierta</h3>
+    <div id="set-sessions-list"></div>
+    <div class="set-bar" style="margin:10px 0 8px">
+      <button type="button" class="ghost" id="set-sessions-all" hidden>Cerrar las demás</button>
+      <button type="button" class="ghost" id="set-logout" hidden>Cerrar sesión aquí</button>
+    </div>
+  </section>
   <form id="set-form" autocomplete="off">
     <div id="set-groups"><div class="empty">Cargando…</div></div>
     <div class="set-bar"><button type="submit" class="primary" id="set-save" disabled>Guardar cambios</button><span class="subtitle" id="set-status" style="margin:0"></span></div>
@@ -1025,7 +1033,7 @@ function showView() {
   if (view === "tareas") loadTasks();
   if (view === "consumo") loadUsage();
   if (view === "historial") loadHistory();
-  if (view === "ajustes") loadSettings();
+  if (view === "ajustes") { loadSettings(); loadSessions(); }
   if (view === "apuntes") { showSub(); loadApuntes(); }
 }
 window.addEventListener("hashchange", showView);
@@ -2161,6 +2169,51 @@ apForm("ap-date-form", () => {
 $("ap-quiet-off").addEventListener("click", () => apunte({ action: "quiet_off" }));
 setInterval(() => { if (currentView() === "apuntes") loadApuntes(); }, 5000);
 
+/* ---------- Sesiones abiertas ---------- */
+function ago(ts) {
+  const minutes = Math.max(0, Math.round((Date.now() / 1000 - ts) / 60));
+  if (minutes < 2) return "ahora";
+  if (minutes < 60) return "hace " + minutes + " min";
+  if (minutes < 1440) return "hace " + Math.round(minutes / 60) + " h";
+  return "hace " + Math.round(minutes / 1440) + " días";
+}
+async function sessionAction(body) {
+  try {
+    const data = await send("/sessions", body);
+    toast(data.message);
+    if (body.action === "logout") { location.href = "/login"; return; }
+    loadSessions();
+  } catch (e) { toast(e.message); }
+}
+async function loadSessions() {
+  try {
+    const res = await fetch("/sessions", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    $("set-sessions").hidden = !data.enabled;
+    const box = $("set-sessions-list"); box.textContent = "";
+    if (!data.sessions.length) box.appendChild(text("div", "ap-empty", "No hay ningún dispositivo con la página abierta desde fuera."));
+    for (const s of data.sessions) {
+      const row = text("div", "ap-row", "");
+      const body = text("div", "grow", s.label + (s.current ? " · este dispositivo" : ""));
+      body.appendChild(text("small", "", (s.ip || "origen desconocido") + " · entró " + ago(s.created_at) + " · activo " + ago(s.last_seen)));
+      row.appendChild(body);
+      if (!s.current) {
+        const close = text("button", "ap-link danger-link", "Cerrar"); close.type = "button";
+        close.onclick = async () => { if (await ask("¿Cerrar la sesión de " + s.label + "? Tendrá que entrar de nuevo.", "Cerrar")) sessionAction({ action: "revoke", id: s.id }); };
+        row.appendChild(close);
+      }
+      box.appendChild(row);
+    }
+    const others = data.sessions.filter(s => !s.current).length;
+    $("set-sessions-all").hidden = !others;
+    $("set-sessions-all").textContent = data.remote ? "Cerrar las demás" : "Cerrar todas";
+    $("set-logout").hidden = !data.remote;
+  } catch {}
+}
+$("set-sessions-all").addEventListener("click", async () => { if (await ask("¿Cerrar todas las demás sesiones? Cada dispositivo tendrá que entrar de nuevo.", "Cerrar")) sessionAction({ action: "revoke_all" }); });
+$("set-logout").addEventListener("click", async () => { if (await ask("¿Cerrar la sesión en este dispositivo?", "Cerrar sesión", true)) sessionAction({ action: "logout" }); });
+
 /* ---------- Ajustes ---------- */
 let settingsData = null;
 let restarting = false;
@@ -2353,10 +2406,14 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 password = parse_qs(self.rfile.read(length).decode("utf-8")).get("password", [""])[0]
             except ValueError:
                 return self._send(400, "text/html; charset=utf-8", login_page("Solicitud inválida."))
-            session = remote.login(password)
+            ip = remote.client_ip(self.headers)
+            try:
+                session = remote.login(password, ip, self.headers.get("User-Agent", ""))
+            except ApprovalUnavailable:
+                return self._send(503, "text/html; charset=utf-8", login_page("No pude avisarte por Telegram. Intenta de nuevo en un momento."))
             if session:
                 return self._send(303, "text/plain; charset=utf-8", b"", {"Location": "/", "Set-Cookie": remote.cookie(session)})
-            wait = remote.locked_for()
+            wait = remote.locked_for(ip)
             if wait:
                 minutes = -(-wait // 60)
                 message = f"Demasiados intentos. Espera {minutes} min y vuelve a intentar."
@@ -2375,10 +2432,19 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
             if self._is_remote():
                 if path == "/login":
                     return self._send(200, "text/html; charset=utf-8", login_page())
-                if not remote.valid(self.headers.get("Cookie")):
+                state = remote.state(self.headers.get("Cookie"))
+                if path == "/login/state":
+                    return self._json(200, {"state": state})
+                if state == "pending" and path == "/":
+                    # La contraseña fue correcta, pero falta que el dueño apruebe este dispositivo en Telegram.
+                    return self._send(200, "text/html; charset=utf-8", wait_page())
+                if state != "ok":
                     if path == "/":
                         return self._send(303, "text/plain; charset=utf-8", b"", {"Location": "/login"})
                     return self._send(401, "text/plain; charset=utf-8", "Sesión requerida.".encode("utf-8"))
+            if path == "/sessions":
+                is_remote = self._is_remote()
+                return self._json(200, {"sessions": remote.sessions(self.headers.get("Cookie")), "remote": is_remote, "enabled": remote.enabled})
             if path == "/":
                 self._send(200, "text/html; charset=utf-8", page)
             elif path == "/logo.webp" and LOGO_PATH.exists():
@@ -2412,6 +2478,31 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 log.exception("Falló el cambio de ajustes pedido desde la página")
                 self._json(500, {"error": "Ocurrió un error. Revisa el registro de Hermes."})
 
+        def _sessions(self) -> None:
+            """Cerrar sesiones de la página: la de este dispositivo, una en particular o todas las demás."""
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_POST_BYTES or self.headers.get("Content-Type") != "application/json":
+                    raise ValueError
+                payload = json.loads(self.rfile.read(length))
+                action = payload.get("action") if isinstance(payload, dict) else None
+                if action not in ("logout", "revoke", "revoke_all"):
+                    raise ValueError
+            except ValueError:
+                return self._json(400, {"error": "Solicitud inválida."})
+            cookie = self.headers.get("Cookie")
+            if action == "logout":
+                remote.logout(cookie)
+                body = json.dumps({"ok": True, "message": "Sesión cerrada."}).encode("utf-8")
+                return self._send(200, "application/json", body, {"Set-Cookie": remote.clear_cookie()})
+            if action == "revoke":
+                session_id = payload.get("id")
+                if isinstance(session_id, bool) or not isinstance(session_id, int) or not remote.revoke(session_id):
+                    return self._json(400, {"error": "Esa sesión ya estaba cerrada."})
+                return self._json(200, {"ok": True, "message": "Sesión cerrada."})
+            count = remote.revoke_all(cookie)
+            self._json(200, {"ok": True, "message": "Cerré " + str(count) + (" sesión." if count == 1 else " sesiones.")})
+
         def _speak(self) -> None:
             """Una orden grabada en la página: el cuerpo es el audio tal como lo entrega el navegador."""
             try:
@@ -2443,6 +2534,8 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 return self._send(403, "text/plain; charset=utf-8", b"No permitido.")
             if path == "/settings" and status.settings is not None:
                 return self._settings()
+            if path == "/sessions":
+                return self._sessions()
             if path not in ("/voice", "/tasks", "/speak", "/extras") or (path != "/voice" and not status.has_action(path[1:])):
                 return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
             if path == "/speak":

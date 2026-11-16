@@ -71,6 +71,17 @@ CREATE TABLE IF NOT EXISTS list_items (
     text TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    approved INTEGER NOT NULL,
+    revoked_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS lists (
     name TEXT PRIMARY KEY,
     created_at INTEGER NOT NULL
@@ -782,6 +793,44 @@ class Store:
         with self._lock:
             rows = self._conn.execute("SELECT day FROM habit_log WHERE habit_id = ?", (habit_id,)).fetchall()
         return {r["day"] for r in rows}
+
+    # --- Sesiones de la página: se guarda la huella de la llave, nunca la llave ---
+
+    def session_add(self, hashed: str, now: int, expires_at: int, label: str, ip: str, approved: bool) -> int:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "INSERT INTO sessions (token_hash, created_at, last_seen, expires_at, label, ip, approved)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (hashed, now, now, expires_at, label[:80], ip[:45], int(approved)),
+            )
+            return int(cursor.lastrowid)
+
+    def session_find(self, hashed: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM sessions WHERE token_hash = ?", (hashed,)).fetchone()
+        return dict(row) if row else None
+
+    def session_get(self, session_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        return dict(row) if row else None
+
+    def session_update(self, session_id: int, **fields: Any) -> None:
+        allowed = {"last_seen", "expires_at", "approved", "revoked_at"}
+        if set(fields) - allowed:
+            raise ValueError("campo de sesión no editable")
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        with self._lock, self._conn:
+            self._conn.execute(f"UPDATE sessions SET {assignments} WHERE id = ?", (*fields.values(), session_id))
+
+    def sessions_open(self, now: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM sessions WHERE revoked_at IS NULL AND approved = 1 AND expires_at > ?"
+                " ORDER BY last_seen DESC, id DESC",
+                (now,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def kv_get(self, key: str) -> str | None:
         with self._lock:
