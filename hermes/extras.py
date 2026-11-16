@@ -5,6 +5,7 @@ cancelar varias tareas. Si la frase no encaja, `handle` devuelve None y el mensa
 """
 from __future__ import annotations
 
+import calendar
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
@@ -125,6 +126,26 @@ def best_streak(days: set[str]) -> int:
 def second_person(name: str) -> str:
     """«mi mamá» -> «tu mamá», para cuando Hermes le habla al dueño."""
     return re.sub(r"^mis\s+", "tus ", re.sub(r"^mi\s+", "tu ", name, flags=re.IGNORECASE), flags=re.IGNORECASE)
+
+
+def next_occurrence(month: int, day: int, today: date) -> date:
+    """La próxima vez que toca una fecha de cada año, hoy incluido. El 29 de febrero cae el 28 en años no bisiestos."""
+    for year in (today.year, today.year + 1):
+        try:
+            when = date(year, month, day)
+        except ValueError:
+            when = date(year, 2, 28)
+        if when >= today:
+            return when
+    raise AssertionError("inalcanzable")
+
+
+def date_fact(kind: str, name: str, day: int, month: int) -> str:
+    """La nota que acompaña a una fecha, para que Hermes la tenga presente al conversar."""
+    when = f"{day} de {MONTH_NAMES[month - 1]}"
+    if kind == "cumpleaños":
+        return f"{name[:1].upper() + name[1:]} cumple años el {when}"
+    return f"Mi aniversario{f' con {name}' if name else ''} es el {when}"
 
 
 def days_word(count: int) -> str:
@@ -280,11 +301,10 @@ class Extras:
         now = int(self._now().timestamp())
         self.store.add_date(kind, name, month, day, year, now)
         when = f"{day} de {month_name}"
+        self.store.add_fact(date_fact(kind, name, day, month), now)
         if kind == "cumpleaños":
-            self.store.add_fact(f"{name[:1].upper() + name[1:]} cumple años el {when}", now)
             return self.R(f"🎂 Anotado: {second_person(name)} cumple años el {when}. Te aviso un día antes y ese día.")
         who = f" con {name}" if name else ""
-        self.store.add_fact(f"Mi aniversario{who} es el {when}", now)
         return self.R(f"💍 Anotado: tu aniversario{who} es el {when}. Te aviso un día antes y ese día.")
 
     def _dates(self) -> Any:
@@ -305,7 +325,10 @@ class Extras:
         lines = []
         for offset, label in ((0, "Hoy"), (1, "Mañana")):
             day = today + timedelta(days=offset)
-            for entry in self.store.dates_on(day.month, day.day):
+            entries = self.store.dates_on(day.month, day.day)
+            if (day.month, day.day) == (2, 28) and not calendar.isleap(day.year):
+                entries += self.store.dates_on(2, 29)  # En años no bisiestos, el 29 de febrero se celebra el 28.
+            for entry in entries:
                 mark = "🎂" if entry["kind"] == "cumpleaños" else "💍"
                 age = f" ({day.year - entry['year']} años)" if entry["year"] and day.year > entry["year"] else ""
                 lines.append(f"{mark} {label} es el {self._date_label(entry)}{age}.")

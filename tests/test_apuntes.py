@@ -173,6 +173,48 @@ class ApuntesTests(Harness):
                 self.do("date_add", **bad)
         self.assertEqual(len(self.editor.snapshot()["dates"]), 1)
 
+    def test_dates_come_in_order_with_countdown_and_age(self):
+        # Hoy es 10 de noviembre de 2026.
+        self.do("date_add", kind="cumpleaños", name="mi mamá", day=3, month=3, year=1966)
+        self.do("date_add", kind="cumpleaños", name="Ana", day=10, month=11)
+        self.do("date_add", kind="aniversario", name="Laura", day=12, month=11, year=2020)
+        dates = self.editor.snapshot()["dates"]
+        self.assertEqual([(d["name"], d["in_days"], d["next"], d["turns"]) for d in dates], [
+            ("Ana", 0, "2026-11-10", None), ("Laura", 2, "2026-11-12", 6), ("mi mamá", 113, "2027-03-03", 61),
+        ])
+
+    def test_edit_a_date_keeps_its_note_in_step(self):
+        self.do("date_add", kind="cumpleaños", name="Ana", day=3, month=3)
+        self.do("date_add", kind="cumpleaños", name="Luis", day=4, month=4)
+        ana = next(d for d in self.editor.snapshot()["dates"] if d["name"] == "Ana")
+        self.assertEqual(self.do("date_edit", id=ana["id"], kind="cumpleaños", name="Ana María", day=5, month=3, year=1990), "Fecha guardada.")
+        edited = next(d for d in self.editor.snapshot()["dates"] if d["id"] == ana["id"])
+        self.assertEqual((edited["name"], edited["day"], edited["month"], edited["year"]), ("Ana María", 5, 3, 1990))
+        notes = [text for _, text in self.store.list_facts()]
+        self.assertIn("Ana María cumple años el 5 de marzo", notes)
+        self.assertNotIn("Ana cumple años el 3 de marzo", notes)
+        self.assertEqual(self.do("date_edit", id=ana["id"], kind="cumpleaños", name="Ana María", day=5, month=3, year=1990), "Sin cambios.")
+        luis = next(d for d in self.editor.snapshot()["dates"] if d["name"] == "Luis")
+        for bad in (dict(id=luis["id"], kind="cumpleaños", name="ana maría", day=4, month=4),  # Ya existe.
+                    dict(id=luis["id"], kind="cumpleaños", name="Luis", day=30, month=2),
+                    dict(id=luis["id"], kind="cumpleaños", name="Luis", day=29, month=2, year=2023),
+                    dict(id=999, kind="cumpleaños", name="Luis", day=4, month=4)):
+            with self.assertRaises(ApunteError, msg=bad):
+                self.do("date_edit", **bad)
+        self.do("date_delete", id=ana["id"])
+        self.assertNotIn("Ana María cumple años el 5 de marzo", [text for _, text in self.store.list_facts()])
+
+    def test_leap_day_is_celebrated_on_the_28th(self):
+        from datetime import date
+
+        from hermes.extras import next_occurrence
+
+        self.assertEqual(next_occurrence(2, 29, date(2026, 11, 10)), date(2027, 2, 28))
+        self.assertEqual(next_occurrence(2, 29, date(2027, 11, 10)), date(2028, 2, 29))
+        self.do("date_add", kind="cumpleaños", name="Pepe", day=29, month=2)
+        self.assertTrue(any("Pepe" in line for line in self.assistant.extras.date_lines(date(2027, 2, 28))))
+        self.assertFalse(any("Pepe" in line for line in self.assistant.extras.date_lines(date(2028, 2, 27))))  # En bisiesto, el 28 aún no es (mañana tampoco).
+
     def test_waiting_and_silence_show_up(self):
         self.assistant.handle_text("estoy esperando que Juan me mande el contrato")
         self.assistant.handle_text("no me molestes hasta las 3")

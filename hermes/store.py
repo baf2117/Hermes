@@ -748,6 +748,25 @@ class Store:
             rows = self._conn.execute("SELECT * FROM dates WHERE month = ? AND day = ? ORDER BY id", (month, day)).fetchall()
         return [dict(row) for row in rows]
 
+    def get_date(self, date_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM dates WHERE id = ?", (date_id,)).fetchone()
+        return dict(row) if row else None
+
+    def update_date(self, date_id: int, kind: str, name: str, month: int, day: int, year: int | None) -> str | None:
+        """Corrige una fecha: "ok", "duplicate" si ya hay otra igual (mismo tipo y nombre), o None si no existe."""
+        with self._lock, self._conn:
+            if self._conn.execute("SELECT 1 FROM dates WHERE id = ?", (date_id,)).fetchone() is None:
+                return None
+            others = self._conn.execute("SELECT name FROM dates WHERE id != ? AND kind = ?", (date_id, kind)).fetchall()
+            if any(row["name"].casefold() == name.casefold() for row in others):
+                return "duplicate"
+            self._conn.execute(
+                "UPDATE dates SET kind = ?, name = ?, month = ?, day = ?, year = ? WHERE id = ?",
+                (kind, name, month, day, year, date_id),
+            )
+            return "ok"
+
     def delete_date(self, date_id: int) -> bool:
         with self._lock, self._conn:
             return self._conn.execute("DELETE FROM dates WHERE id = ?", (date_id,)).rowcount > 0

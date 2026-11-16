@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from .assistant import Assistant
-from .extras import MAX_ITEM, MONTH_NAMES, Extras, best_streak, days_word, streak
+from .extras import MAX_ITEM, MONTH_NAMES, Extras, best_streak, date_fact, days_word, next_occurrence, streak
 
 MAX_NOTE = 500
 MAX_LISTS = 30
@@ -56,19 +56,27 @@ class ExtrasEditor:
             ],
             "notes": [{"id": fact_id, "text": text} for fact_id, text in self.store.list_facts(200)],
             "habits": [self._habit_view(habit, done, run, now.date()) for habit, done, run in self.extras.habit_status(now.date())],
-            "dates": [
-                {
-                    "id": entry["id"], "day": entry["day"], "month": entry["month"], "year": entry["year"],
-                    "label": self.extras._date_label(entry),
-                }
-                for entry in self.store.list_dates()
-            ],
+            "dates": self._dates_view(now.date()),
             "waiting": [
                 {"id": task.id, "title": task.title, "due_at": task.due_at}
                 for task in self.store.pending_tasks() if task.kind == "waiting"
             ],
             "quiet_until": quiet,
         }
+
+    def _dates_view(self, today: date) -> list[dict[str, Any]]:
+        """Las fechas en el orden en que van a llegar, con cuántos días faltan y cuántos años se cumplen."""
+        views = []
+        for entry in self.store.list_dates():
+            upcoming = next_occurrence(entry["month"], entry["day"], today)
+            views.append({
+                "id": entry["id"], "kind": entry["kind"], "name": entry["name"],
+                "day": entry["day"], "month": entry["month"], "year": entry["year"],
+                "label": self.extras._date_label(entry),
+                "next": upcoming.isoformat(), "in_days": (upcoming - today).days,
+                "turns": upcoming.year - entry["year"] if entry["year"] and upcoming.year > entry["year"] else None,
+            })
+        return sorted(views, key=lambda view: (view["in_days"], view["id"]))
 
     def _habit_view(self, habit: dict[str, Any], done: bool, run: int, today: date) -> dict[str, Any]:
         days = self.store.habit_days(habit["id"])
@@ -103,6 +111,7 @@ class ExtrasEditor:
             "habit_edit": self._habit_edit,
             "date_add": self._date_add,
             "date_delete": self._date_delete,
+            "date_edit": self._date_edit,
             "waiting_add": self._waiting_add,
             "waiting_edit": self._waiting_edit,
             "waiting_delete": self._waiting_delete,
@@ -239,21 +248,35 @@ class ExtrasEditor:
             raise ApunteError("Ese hábito ya no estaba. Recarga la página.")
         return "Hábito quitado."
 
-    def _date_add(self, payload: dict[str, Any]) -> str:
+    def _date_fields(self, payload: dict[str, Any]) -> tuple[str, str, int, int, int | None]:
+        """Valida tipo, nombre, día, mes y año (opcional) de una fecha, igual al crearla que al corregirla."""
         kind = payload.get("kind")
         if kind not in ("cumpleaños", "aniversario"):
             raise ApunteError("Elige cumpleaños o aniversario.")
         day, month = payload.get("day"), payload.get("month")
         if isinstance(day, bool) or isinstance(month, bool) or not isinstance(day, int) or not isinstance(month, int) or not 1 <= month <= 12:
             raise ApunteError("Esa fecha no existe.")
+        try:
+            date(2000, month, day)  # 2000 es bisiesto: admite el 29 de febrero.
+        except ValueError:
+            raise ApunteError("Esa fecha no existe.") from None
         year = payload.get("year")
         if year is not None and (isinstance(year, bool) or not isinstance(year, int) or not 1900 <= year <= self._now().year):
             raise ApunteError("El año no es válido; puedes dejarlo vacío.")
+        if year is not None:
+            try:
+                date(year, month, day)
+            except ValueError:
+                raise ApunteError(f"El {day} de {MONTH_NAMES[month - 1]} no existió en {year}.") from None
         name = payload.get("name") or ""
         if kind == "cumpleaños" or name:
             name = _text(name, 80, "Escribe de quién es el cumpleaños.")
             if not all(char.isalnum() or char in " .'-" for char in name):
                 raise ApunteError("El nombre solo puede llevar letras, números y espacios.")
+        return kind, name, day, month, year
+
+    def _date_add(self, payload: dict[str, Any]) -> str:
+        kind, name, day, month, year = self._date_fields(payload)
         when = f"{day} de {MONTH_NAMES[month - 1]}" + (f" de {year}" if year else "")
         if kind == "cumpleaños":
             phrase = f"el cumpleaños de {name} es el {when}"
@@ -317,7 +340,36 @@ class ExtrasEditor:
         self.store.delete_task(task.id, int(self._now().timestamp()))
         return f"Borré el seguimiento «{task.title}»."
 
-    def _date_delete(self, payload: dict[str, Any]) -> str:
-        if not self.store.delete_date(_number(payload.get("id"), "Falta la fecha.")):
+    def _date_note(self, entry: dict[str, Any]) -> int | None:
+        """La nota que se guardó junto con la fecha, si sigue tal cual."""
+        wanted = date_fact(entry["kind"], entry["name"], entry["day"], entry["month"]).casefold()
+        return next((fact_id for fact_id, text in self.store.list_facts(1000) if text.casefold() == wanted), None)
+
+    def _date_edit(self, payload: dict[str, Any]) -> str:
+        date_id = _number(payload.get("id"), "Falta la fecha.")
+        old = self.store.get_date(date_id)
+        if old is None:
             raise ApunteError("Esa fecha ya no estaba. Recarga la página.")
+        kind, name, day, month, year = self._date_fields(payload)
+        if (kind, name, day, month, year) == (old["kind"], old["name"], old["day"], old["month"], old["year"]):
+            return "Sin cambios."
+        note = self._date_note(old)
+        result = self.store.update_date(date_id, kind, name, month, day, year)
+        if result is None:
+            raise ApunteError("Esa fecha ya no estaba. Recarga la página.")
+        if result == "duplicate":
+            raise ApunteError("Ya tienes esa fecha anotada.")
+        fact = date_fact(kind, name, day, month)
+        if note is None or self.store.edit_fact(note, fact) == "duplicate":
+            self.store.add_fact(fact, int(self._now().timestamp()))  # add_fact no repite una nota que ya existe.
+        return "Fecha guardada."
+
+    def _date_delete(self, payload: dict[str, Any]) -> str:
+        date_id = _number(payload.get("id"), "Falta la fecha.")
+        entry = self.store.get_date(date_id)
+        note = self._date_note(entry) if entry else None
+        if not self.store.delete_date(date_id):
+            raise ApunteError("Esa fecha ya no estaba. Recarga la página.")
+        if note is not None:
+            self.store.delete_fact(note)  # Sin la fecha, la nota que la acompañaba ya no aplica.
         return "Fecha borrada."

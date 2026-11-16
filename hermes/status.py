@@ -655,6 +655,23 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
 .ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
 .ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
+.dt-group h4 { font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 8px; }
+.dt-group:first-child h4 { margin-top:6px; }
+.dt-row { display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
+.dt-row.soon { border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.dt-row.today { background:var(--accent-soft); border-color:var(--accent); }
+.dt-badge { flex:none; width:52px; padding:5px 0; border-radius:10px; background:var(--soft); text-align:center; line-height:1.1; }
+.dt-badge b { display:block; font-size:20px; }
+.dt-badge span { font-size:11px; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; }
+.dt-row.today .dt-badge { background:var(--accent); color:#14110a; }
+.dt-row.today .dt-badge span { color:#14110a; }
+.dt-body { flex:1; min-width:0; }
+.dt-body .ap-item { font-weight:600; font-size:15px; overflow-wrap:anywhere; }
+.dt-body small { display:block; color:var(--muted); font-size:13px; }
+.dt-body .when { color:var(--ink); font-weight:600; }
+.dt-row.today .when, .dt-row.soon .when { color:var(--accent); }
+.dt-edit { border:1px solid var(--accent); border-radius:12px; padding:10px; margin-bottom:8px; align-items:center; }
+.dt-edit input:not([type]) { flex:1 1 100%; }
 .ap-form { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 10px; }
 .ap-form input, .ap-form select { flex:1 1 110px; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
 .ap-form input:focus, .ap-form select:focus { outline:none; border-color:var(--accent); }
@@ -921,14 +938,15 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     </section>
     <section class="ap-card" data-sub="fechas" hidden>
       <h3>Fechas <span id="ap-dates-count"></span></h3>
-      <p>Hermes avisa un día antes y ese día. Toca un día del calendario para anotar algo en él.</p>
+      <p>Hermes avisa un día antes y ese día. Toca un día del calendario para anotar algo en él, o el nombre de una fecha para corregirla. El año es opcional: sirve para saber cuántos cumple.</p>
       <div id="ap-dates-cal"></div>
       <form class="ap-form" id="ap-date-form" autocomplete="off">
         <select id="ap-date-kind" aria-label="Tipo"><option value="cumpleaños">Cumpleaños</option><option value="aniversario">Aniversario</option></select>
         <input id="ap-date-name" maxlength="80" placeholder="De quién" aria-label="De quién">
         <input id="ap-date-day" class="narrow" type="number" min="1" max="31" placeholder="Día" aria-label="Día">
         <select id="ap-date-month" aria-label="Mes"></select>
-        <button type="submit" class="primary">Guardar</button>
+        <input id="ap-date-year" class="narrow" type="number" min="1900" placeholder="Año" aria-label="Año (opcional)" title="Año (opcional): para saber cuántos cumple">
+        <button type="submit" class="primary">+ Agregar</button>
       </form>
       <div id="ap-dates"></div>
     </section>
@@ -2262,6 +2280,98 @@ function renderHabits(habits) {
     fill.style.width = Math.round(100 * done / habits.length) + "%"; bar.append(fill); summary.append(bar);
   }
 }
+let editingDate = null;  // La fecha que se está corrigiendo y lo escrito hasta ahora.
+let editingDateFields = null;
+const DT_DAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const capital = s => s.charAt(0).toUpperCase() + s.slice(1);
+function dateTitle(x) { return (x.kind === "cumpleaños" ? "🎂 " : "💍 ") + capital(x.label); }
+function dateWhen(x) {
+  const [y, m, d] = x.next.split("-").map(Number);
+  const parts = [x.in_days === 0 ? "¡Hoy! 🎉" : x.in_days === 1 ? "Mañana" : "En " + x.in_days + " días"];
+  if (x.turns) parts.push(x.kind === "cumpleaños" ? "cumple " + x.turns + (x.turns === 1 ? " año" : " años") : (x.turns === 1 ? "1 año" : x.turns + " años"));
+  if (x.in_days > 1) parts.push(DT_DAYS[new Date(y, m - 1, d).getDay()]);
+  return parts;
+}
+// Campos de una fecha (tipo, de quién, día, mes y año), para el formulario de corregir.
+function dateFields(values, onInput) {
+  const kind = document.createElement("select"); kind.setAttribute("aria-label", "Tipo");
+  [["cumpleaños", "Cumpleaños"], ["aniversario", "Aniversario"]].forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; kind.appendChild(o); });
+  kind.value = values.kind;
+  const name = document.createElement("input"); name.maxLength = 80; name.value = values.name; name.placeholder = "De quién"; name.setAttribute("aria-label", "De quién");
+  const day = document.createElement("input"); day.type = "number"; day.min = 1; day.max = 31; day.className = "narrow"; day.value = values.day; day.setAttribute("aria-label", "Día");
+  const month = document.createElement("select"); month.setAttribute("aria-label", "Mes");
+  AP_MONTHS.forEach((m, i) => { const o = document.createElement("option"); o.value = i + 1; o.textContent = m; month.appendChild(o); });
+  month.value = values.month;
+  const year = document.createElement("input"); year.type = "number"; year.min = 1900; year.max = new Date().getFullYear(); year.className = "narrow";
+  year.value = values.year || ""; year.placeholder = "Año"; year.setAttribute("aria-label", "Año (opcional)"); year.title = "Año (opcional): para saber cuántos cumple";
+  const read = () => ({ kind: kind.value, name: name.value, day: day.value, month: month.value, year: year.value });
+  [kind, name, day, month, year].forEach(el => { el.oninput = () => onInput(read()); });
+  return { els: [kind, name, day, month, year], first: name, read };
+}
+function datePayload(v) {
+  const body = { kind: v.kind, name: v.name.trim(), day: parseInt(v.day, 10), month: parseInt(v.month, 10) };
+  const year = parseInt(v.year, 10);
+  body.year = year || null;
+  return body;
+}
+function dateRow(x) {
+  const redraw = () => { if (lastApuntes) renderApuntes(lastApuntes); };
+  if (editingDate === x.id) {
+    const form = text("form", "ap-form dt-edit", ""); form.autocomplete = "off";
+    const fields = dateFields(editingDateFields, v => { editingDateFields = v; });
+    const stop = () => { editingDate = null; editingDateFields = null; };
+    const save = text("button", "primary", "Guardar"); save.type = "submit";
+    const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+    cancel.onclick = () => { stop(); redraw(); };
+    form.onkeydown = event => { if (event.key === "Escape") { stop(); redraw(); } };
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const body = datePayload(fields.read());
+      if (!body.day) { fields.els[2].focus(); return; }
+      save.disabled = true;
+      try {
+        toast((await send("/extras", Object.assign({ action: "date_edit", id: x.id }, body))).message);
+        stop();
+        await loadApuntes(true);
+      } catch (e) { toast(e.message); save.disabled = false; }
+    };
+    form.append(...fields.els, save, cancel);
+    setTimeout(() => { if (editingDate === x.id && !form.contains(document.activeElement)) fields.first.focus(); }, 0);
+    return form;
+  }
+  const row = text("div", "dt-row" + (x.in_days === 0 ? " today" : x.in_days <= 7 ? " soon" : ""), "");
+  const badge = text("div", "dt-badge", "");
+  badge.append(text("b", "", String(Number(x.next.slice(8)))), text("span", "", AP_MONTHS[Number(x.next.slice(5, 7)) - 1].slice(0, 3)));
+  const body = text("div", "dt-body", "");
+  const title = text("button", "ap-item", dateTitle(x)); title.type = "button";
+  title.title = "Tocar para corregir"; title.setAttribute("aria-label", "Corregir: " + x.label);
+  title.onclick = () => { editingDate = x.id; editingDateFields = { kind: x.kind, name: x.name, day: x.day, month: x.month, year: x.year }; redraw(); };
+  const when = dateWhen(x);
+  const small = text("small", "", "");
+  small.append(text("span", "when", when[0]), document.createTextNode(when.length > 1 ? " · " + when.slice(1).join(" · ") : ""));
+  body.append(title, small);
+  const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Borrar: " + x.label);
+  remove.onclick = async () => { if (await ask("¿Borrar el " + x.label + "? Hermes dejará de avisarte.", "Borrar")) apunte({ action: "date_delete", id: x.id }); };
+  row.append(badge, body, remove);
+  return row;
+}
+// Las fechas en el orden en que llegan, agrupadas por mes, empezando por el actual.
+function renderDates(dates) {
+  const box = $("ap-dates"); box.textContent = "";
+  if (!dates.length) { box.appendChild(text("div", "ap-empty card", "Todavía no hay fechas. Anota cumpleaños y aniversarios aquí arriba y Hermes te avisa un día antes y ese día.")); return; }
+  const thisYear = new Date().getFullYear();
+  let group = null, key = "";
+  for (const x of dates) {
+    const [y, m] = x.next.split("-").map(Number);
+    if (y + "-" + m !== key) {
+      key = y + "-" + m;
+      group = text("div", "dt-group", "");
+      group.appendChild(text("h4", "", capital(AP_MONTHS[m - 1]) + (y !== thisYear ? " " + y : "")));
+      box.appendChild(group);
+    }
+    group.appendChild(dateRow(x));
+  }
+}
 function renderApuntes(d) {
   lastApuntes = d;
   renderLists(d.lists);
@@ -2269,8 +2379,7 @@ function renderApuntes(d) {
   apFill("ap-notes", d.notes.map(noteRow), "Todavía no hay notas.");
   $("ap-notes-count").textContent = d.notes.length || "";
   renderDatesCalendar(d.dates);
-  apFill("ap-dates", d.dates.map(x => apRow(x.day + " de " + AP_MONTHS[x.month - 1] + (x.year ? " de " + x.year : ""), x.label, null,
-    async () => { if (await ask("¿Borrar el " + x.label + "?")) apunte({ action: "date_delete", id: x.id }); }, "Borrar la fecha")), "Todavía no hay fechas.");
+  renderDates(d.dates);
   $("ap-dates-count").textContent = d.dates.length || "";
   apFill("ap-waiting", d.waiting.map(waitingRow), "No tienes seguimientos abiertos.");
   $("ap-waiting-count").textContent = d.waiting.length || "";
@@ -2319,8 +2428,9 @@ apForm("ap-note-form", () => {
 apForm("ap-date-form", () => {
   const day = parseInt($("ap-date-day").value, 10);
   if (!day) return null;
-  return { action: "date_add", kind: $("ap-date-kind").value, name: $("ap-date-name").value.trim(), day, month: parseInt($("ap-date-month").value, 10) };
-}, () => { $("ap-date-name").value = ""; $("ap-date-day").value = ""; });
+  const year = parseInt($("ap-date-year").value, 10);
+  return { action: "date_add", kind: $("ap-date-kind").value, name: $("ap-date-name").value.trim(), day, month: parseInt($("ap-date-month").value, 10), year: year || null };
+}, () => { $("ap-date-name").value = ""; $("ap-date-day").value = ""; $("ap-date-year").value = ""; });
 $("ap-quiet-off").addEventListener("click", () => apunte({ action: "quiet_off" }));
 setInterval(() => { if (currentView() === "apuntes") loadApuntes(); }, 5000);
 
