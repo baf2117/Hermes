@@ -104,6 +104,16 @@ class Config:
     heartbeat_url: str = field(default="", repr=False)  # Vigilante externo al que se le avisa «sigo vivo».
     calendar_remind_minutes: int = 15
     category_colors: dict[str, str] = field(default_factory=dict)  # Color elegido para cada categoría.
+    # Funciones que se encienden y se apagan en Ajustes, sin reiniciar.
+    receipts_enabled: bool = True
+    budget_enabled: bool = True
+    bills_enabled: bool = True
+    briefing_enabled: bool = True
+    day_plan_enabled: bool = True
+    work_start: time = time(8, 0)  # Horario en el que «Planear mi día» acomoda tareas.
+    work_end: time = time(18, 0)
+    followup_enabled: bool = True
+    followup_days: int = 3  # Días sin respuesta para mencionar un correo.
 
     @classmethod
     def load(cls) -> "Config":
@@ -114,6 +124,11 @@ class Config:
             return os.environ.get(key) or file_values.get(key) or default
 
         quiet_start, _, quiet_end = get("HERMES_REPEAT_QUIET", "20:00-10:30").partition("-")
+        work_start, _, work_end = get("HERMES_WORK_HOURS", "08:00-18:00").partition("-")
+
+        def on(key: str) -> bool:
+            return get(key, "on").lower() != "off"
+
         raw_chat = get("TELEGRAM_ALLOWED_CHAT_ID")
         raw_categories = get("HERMES_CATEGORIES")
         categories = (
@@ -165,4 +180,13 @@ class Config:
             heartbeat_url=get("HERMES_HEARTBEAT_URL"),
             calendar_remind_minutes=max(0, int(get("HERMES_CALENDAR_REMIND", "15"))),
             category_colors=parse_colors(get("HERMES_CATEGORY_COLORS")),
+            receipts_enabled=on("HERMES_RECEIPTS"),
+            budget_enabled=on("HERMES_BUDGET"),
+            bills_enabled=on("HERMES_BILLS"),
+            briefing_enabled=on("HERMES_BRIEFING"),
+            day_plan_enabled=on("HERMES_DAY_PLAN"),
+            work_start=_parse_time(work_start),
+            work_end=_parse_time(work_end),
+            followup_enabled=on("HERMES_MAIL_FOLLOWUP"),
+            followup_days=min(30, max(1, int(get("HERMES_FOLLOWUP_DAYS", "3")))),
         )

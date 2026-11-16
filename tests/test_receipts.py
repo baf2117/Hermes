@@ -194,6 +194,24 @@ class ReceiptsTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=bad):
                 self.receipts.apply({"action": "budgets", "budgets": bad})
 
+    def test_switches_turn_receipts_and_budget_off(self):
+        from types import SimpleNamespace
+
+        config = SimpleNamespace(receipts_enabled=True, budget_enabled=False)
+        self.receipts.config = config
+        self.store.set_budget("hogar", 100)
+        self.assertNotIn("presupuesto", self.receipts.from_photo(b"a").text)  # Q 228.25 de 100, pero apagado.
+        self.assertIn("El presupuesto está apagado", self.ask("como voy con el presupuesto"))
+        self.assertEqual(self.receipts.snapshot()["budgets"], {})
+        with self.assertRaises(ValueError):
+            self.receipts.apply({"action": "budgets", "budgets": {"comida": 5}})
+        config.receipts_enabled = False
+        self.assertIn("está apagado", self.receipts.from_photo(b"b").text)
+        self.assertIsNone(self.ask("cuanto gaste este mes"))
+        self.assertEqual(self.receipts.warranty_lines(TODAY), [])
+        self.assertFalse(self.receipts.snapshot()["enabled"])
+        self.assertEqual(self.seen, [b"a"])  # Apagado, la foto ni se lee.
+
     def test_photo_path_cannot_escape_the_folder(self):
         receipt_id = self.add("X", "2026-11-01", 1, "otros")
         self.store.update_receipt(receipt_id, photo="../../secreto.txt")

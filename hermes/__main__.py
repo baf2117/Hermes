@@ -346,7 +346,7 @@ def run(config: Config) -> int:
     reader = OllamaClient(config.ollama_url, config.ollama_model, timeout=300,
                           on_usage=lambda usage: store.add_usage(usage, int(time.time())))
     receipts = Receipts(store, reader.look, config.db_path.parent, assistant._now, Reply,
-                        f"https://{config.public_host}/#apuntes/gastos" if config.public_host else None)
+                        f"https://{config.public_host}/#apuntes/gastos" if config.public_host else None, config)
     bot.photo_handler = receipts.from_photo
     assistant.text_hooks.append(receipts.handle)
     assistant.summary_hooks.append(receipts.warranty_lines)
@@ -357,7 +357,7 @@ def run(config: Config) -> int:
     status.set_action("receipts", receipts.apply)
     status.receipt_photo = receipts.photo
     # Pagos que se repiten: avisan antes de vencer y, al pagarse, quedan en Gastos.
-    bills = Bills(store, receipts, assistant._now, Reply, config.summary_time)
+    bills = Bills(store, receipts, assistant._now, Reply, config.summary_time, config)
     assistant.text_hooks.insert(0, bills.handle)  # «Pagué la luz» antes que cualquier otra lectura.
     assistant.command_hooks["/pagos"] = lambda _: bills.report()
     assistant.button_hooks.update(billpay=bills.pay, billsnooze=bills.snooze, billundo=bills.undo)

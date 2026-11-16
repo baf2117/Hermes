@@ -148,6 +148,8 @@ BUDGET_SHOW = re.compile(
     r"^(?:como\s+(?:voy|va|vamos)\s+(?:con\s+)?(?:el\s+|mi\s+)?presupuesto|(?:mi|mis|el|los)\s+presupuestos?|presupuestos?)$"
 )
 BUDGET_WARN = 0.8
+RECEIPTS_OFF = "Recibos y gastos está apagado. Lo enciendes en Ajustes → Funciones."
+BUDGET_OFF = "El presupuesto está apagado. Lo enciendes en Ajustes → Funciones."
 
 
 class Receipts:
@@ -159,14 +161,26 @@ class Receipts:
         now: Callable[[], datetime],
         reply: Callable[..., Any],
         page_url: str | None = None,
+        config: Any = None,
     ):
         self.store, self.look, self.folder, self._now, self.R = store, look, folder, now, reply
         self.page_url = page_url
+        self.config = config  # Sin configuración (pruebas), todo encendido.
         self._reading = threading.Lock()  # Una foto a la vez: el modelo local es uno solo.
+
+    @property
+    def enabled(self) -> bool:
+        return getattr(self.config, "receipts_enabled", True)
+
+    @property
+    def budget_enabled(self) -> bool:
+        return self.enabled and getattr(self.config, "budget_enabled", True)
 
     # --- Foto nueva ---
 
     def from_photo(self, image: bytes) -> Any:
+        if not self.enabled:
+            return self.R("Leer recibos está apagado. Lo enciendes en la página: Ajustes → Funciones.")
         if self.look is None:
             return self.R("Leer recibos necesita el modelo local, que no está disponible ahora.")
         if len(image) > MAX_PHOTO_BYTES:
@@ -239,16 +253,18 @@ class Receipts:
     # --- Preguntas ---
 
     def handle(self, text: str, reference: datetime) -> Any:
+        if not self.enabled:
+            return None
         low = plain(text).strip().strip(" .!?¡¿…")
         if WARRANTIES.match(low):
             return self.warranties()
         if BUDGET_SHOW.match(low):
-            return self.budget_report(reference.date())
+            return self.budget_report(reference.date()) if self.budget_enabled else self.R(BUDGET_OFF)
         for pattern in BUDGET_SET:
             if match := pattern.match(low):
-                return self._budget_from_words(match.group("what"), match.group("amount"))
+                return self._budget_from_words(match.group("what"), match.group("amount")) if self.budget_enabled else self.R(BUDGET_OFF)
         if match := BUDGET_DELETE.match(low):
-            return self._budget_from_words(match.group("what"), None)
+            return self._budget_from_words(match.group("what"), None) if self.budget_enabled else self.R(BUDGET_OFF)
         match = SPENT.match(low)
         if not match:
             return None
@@ -278,7 +294,7 @@ class Receipts:
             return self.R(f"{label[:1].upper() + label[1:]} no tengo recibos guardados.")
         lines = [f"{label[:1].upper() + label[1:]}: {money_sum(receipts)} en {len(receipts)} {'recibo' if len(receipts) == 1 else 'recibos'}."]
         category = _category(what) if what else None
-        limit = self.store.budgets().get(category) if category else None
+        limit = self.store.budgets().get(category) if category and self.budget_enabled else None
         if limit and (first, last) == _month_bounds(today):
             spent_here = sum(r["total"] for r in receipts if r["currency"] == DEFAULT_CURRENCY)
             lines[0] += f" Tu presupuesto es de {money(limit)}: llevas el {round(100 * spent_here / limit)} %."
@@ -302,6 +318,8 @@ class Receipts:
 
     def budget_alert(self, category: str, today: date) -> str | None:
         """Aviso al pasar el 80 % y el 100 % del presupuesto de una categoría; cada uno, una vez al mes."""
+        if not self.budget_enabled:
+            return None
         limit = self.store.budgets().get(category)
         if not limit:
             return None
@@ -346,6 +364,8 @@ class Receipts:
 
     def budget_command(self, argument: str) -> Any:
         """/presupuesto, /presupuesto comida 1000 o /presupuesto comida quitar."""
+        if not self.budget_enabled:
+            return self.R(BUDGET_OFF)
         words = plain(argument).split()
         if not words:
             return self.budget_report(self._now().date())
@@ -365,6 +385,8 @@ class Receipts:
 
     def command(self, argument: str) -> Any:
         """/gastos o /gastos octubre."""
+        if not self.enabled:
+            return self.R(RECEIPTS_OFF)
         word = plain(argument).strip()
         if not word:
             return self.spent(None, "este mes", None, None, self._now().date())
@@ -373,6 +395,8 @@ class Receipts:
 
     def warranty_lines(self, today: date) -> list[str]:
         """Para el resumen de la mañana: garantías que vencen en una semana y las que vencen hoy."""
+        if not self.enabled:
+            return []
         lines = []
         for receipt in self.store.receipts_with_warranty(today.isoformat()):
             left = (date.fromisoformat(receipt["warranty_until"]) - today).days
@@ -399,7 +423,8 @@ class Receipts:
                 "category": r["category"], "warranty_until": r["warranty_until"], "items": items, "photo": bool(r["photo"]),
             })
         return {"receipts": receipts, "categories": list(CATEGORIES), "currencies": CURRENCIES, "today": today.isoformat(),
-                "budgets": self.store.budgets()}
+                "budgets": self.store.budgets() if self.budget_enabled else {}, "enabled": self.enabled,
+                "budget_enabled": self.budget_enabled}
 
     def _save_budgets(self, budgets: Any) -> dict[str, Any]:
         if not isinstance(budgets, dict) or any(category not in CATEGORIES for category in budgets):
@@ -415,7 +440,11 @@ class Receipts:
     def apply(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("Solicitud inválida.")
+        if not self.enabled:
+            raise ValueError(RECEIPTS_OFF)
         if payload.get("action") == "budgets":
+            if not self.budget_enabled:
+                raise ValueError(BUDGET_OFF)
             return self._save_budgets(payload.get("budgets"))
         receipt_id = payload.get("id")
         if isinstance(receipt_id, bool) or not isinstance(receipt_id, int) or self.store.get_receipt(receipt_id) is None:

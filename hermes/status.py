@@ -619,6 +619,7 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .ap-edit-buttons { display:flex; flex-direction:column; align-items:center; gap:4px; flex:none; }
 .ap-drawer-foot { display:flex; justify-content:space-between; gap:12px; margin-top:4px; flex-wrap:wrap; }
 .ap-link[hidden] { display:none; }
+#ap-tabs a[hidden] { display:none; }
 .ap-link:disabled { opacity:.4; cursor:default; text-decoration:none; }
 .ap-link.danger-link { color:var(--warn); }
 .ap-empty.card { padding:28px 16px; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:14px; }
@@ -2486,6 +2487,12 @@ function renderApuntes(d) {
   $("ap-quiet").hidden = !d.quiet_until;
   if (d.quiet_until) $("ap-quiet-text").textContent = "En silencio hasta las " + new Date(d.quiet_until * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }) + ". Los avisos salen después.";
 }
+// Un apartado de Apuntes cuya función está apagada en Ajustes no se muestra; si estabas en él, vuelves a Listas.
+function featureTab(sub, enabled) {
+  const link = document.querySelector('#ap-tabs a[data-sub="' + sub + '"]');
+  if (link) link.hidden = !enabled;
+  if (!enabled && currentView() === "apuntes" && currentSub() === sub) location.hash = "#apuntes/listas";
+}
 /* ---------- Pagos que se repiten ---------- */
 let billsData = null, billsSerialized = "", editingBill = null, editingBillFields = null, payingBill = null;
 function billsMoney(total, currency) {
@@ -2608,6 +2615,7 @@ async function loadBills(force) {
     if (!data.bills) return;
     const serialized = JSON.stringify(data);
     $("ap-tab-pagos").textContent = data.bills.filter(b => b.left <= 3).length || "";
+    featureTab("pagos", data.enabled);
     if (!$("bl-every").options.length) {
       Object.entries(data.frequencies).forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = capital(t); $("bl-every").appendChild(o); });
     }
@@ -2762,9 +2770,11 @@ function renderReceipts() {
   const top = text("div", "rc-total", "");
   top.append(text("b", "", rcSum(month)), text("span", "", (month.length === 1 ? "1 recibo" : month.length + " recibos")
     + (budgetTotal ? " · presupuesto " + rcMoney(budgetTotal, "GTQ") : "")));
-  const edit = text("button", "ap-link", budgetTotal ? "Cambiar presupuestos" : "Poner presupuestos"); edit.type = "button";
-  edit.onclick = () => { editingBudgets = !editingBudgets; renderReceipts(); };
-  top.appendChild(edit);
+  if (receiptsData.budget_enabled) {
+    const edit = text("button", "ap-link", budgetTotal ? "Cambiar presupuestos" : "Poner presupuestos"); edit.type = "button";
+    edit.onclick = () => { editingBudgets = !editingBudgets; renderReceipts(); };
+    top.appendChild(edit);
+  }
   summary.appendChild(top);
   if (editingBudgets) { summary.appendChild(budgetEditor()); }
   const byCategory = {};
@@ -2802,6 +2812,7 @@ async function loadReceipts(force) {
     if (!data.receipts) return;
     const serialized = JSON.stringify(data);
     $("ap-tab-gastos").textContent = data.receipts.filter(r => r.day.slice(0, 7) === data.today.slice(0, 7)).length || "";
+    featureTab("gastos", data.enabled);
     if (!force && (serialized === receiptsSerialized || editingReceipt !== null || editingBudgets)) return;  // No pisa lo que estás corrigiendo.
     receiptsSerialized = serialized; receiptsData = data;
     renderReceipts();

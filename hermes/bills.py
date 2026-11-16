@@ -19,6 +19,7 @@ DAY_NAMES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "d
 DEFAULT_REMIND_DAYS = 3
 OVERDUE_EVERY = 3  # Atrasado: se vuelve a avisar cada 3 días.
 MAX_NAME = 60
+OFF = "Pagos que se repiten está apagado. Lo enciendes en Ajustes → Funciones."
 
 PAID = re.compile(
     r"^(?:ya\s+)?pague\s+(?:el\s+|la\s+|los\s+|las\s+|mi\s+)?(?P<what>[a-z0-9ñ .'-]+?)"
@@ -61,15 +62,22 @@ class Bills:
         now: Callable[[], datetime],
         reply: Callable[..., Any],
         remind_after: time = time(9, 0),
+        config: Any = None,
     ):
         self.store, self.receipts, self._now, self.R = store, receipts, now, reply
+        self.config = config  # Sin configuración (pruebas), encendido.
         self.remind_after = remind_after  # Los avisos salen después del resumen de la mañana.
         self.send: Callable[[str, list], None] | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return getattr(self.config, "bills_enabled", True)
 
     # --- Avisos ---
 
     def tick(self, now: datetime) -> None:
-        if self.send is None or now.time() < self.remind_after:
+        after = getattr(self.config, "summary_time", self.remind_after)
+        if not self.enabled or self.send is None or now.time() < after:
             return
         today = now.date()
         for bill, text in self.reminders(today):
@@ -106,6 +114,8 @@ class Bills:
     # --- Pagar ---
 
     def pay(self, bill_id: int, amount: float | None = None) -> Any:
+        if not self.enabled:
+            return self.R(OFF)
         bill = self.store.get_bill(bill_id)
         if bill is None:
             return self.R("Ese pago ya no existe.")
@@ -151,6 +161,8 @@ class Bills:
     # --- Frases ---
 
     def handle(self, text: str, reference: datetime) -> Any:
+        if not self.enabled:
+            return None
         low = plain(text).strip().strip(" .!?¡¿…")
         if SHOW.match(low):
             return self.report()
@@ -183,6 +195,8 @@ class Bills:
         return total
 
     def report(self) -> Any:
+        if not self.enabled:
+            return self.R(OFF)
         bills = self.store.bills()
         if not bills:
             return self.R("No tienes pagos guardados. Agrégalos en la página: Apuntes → Pagos.")
@@ -211,11 +225,13 @@ class Bills:
                 "last": {"day": last["paid_day"], "total": last["total"]} if last else None,
             })
         return {"bills": bills, "monthly": round(self.monthly(), 2), "frequencies": FREQUENCIES,
-                "categories": list(CATEGORIES), "currencies": CURRENCIES, "today": today.isoformat()}
+                "categories": list(CATEGORIES), "currencies": CURRENCIES, "today": today.isoformat(), "enabled": self.enabled}
 
     def apply(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("Solicitud inválida.")
+        if not self.enabled:
+            raise ValueError(OFF)
         action = payload.get("action")
         if action == "add":
             fields = self._fields(payload, None)

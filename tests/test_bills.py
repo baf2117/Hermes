@@ -133,6 +133,22 @@ class BillsTests(unittest.TestCase):
                          "• Luz: Q 350.00 · vence el 19 de diciembre\n• Netflix: Q 99.00 · vence el 2 de enero\n"
                          "• Seguro del carro: Q 2,400.00 · vence el 1 de marzo\nAl mes: unos Q 649.00.")
 
+    def test_switch_turns_bills_off(self):
+        from types import SimpleNamespace
+
+        luz = self.add(next_due="2026-11-16")
+        self.bills.config = SimpleNamespace(bills_enabled=False, summary_time=time(9, 0))
+        self.bills.tick(self.clock.now)
+        self.assertEqual(self.sent, [])
+        self.assertIsNone(self.ask("pagué la luz"))
+        self.assertIn("está apagado", self.bills.pay(luz["id"]).text)
+        self.assertFalse(self.bills.snapshot()["enabled"])
+        with self.assertRaises(ValueError):
+            self.bills.apply({"action": "delete", "id": luz["id"]})
+        self.bills.config.bills_enabled = True
+        self.bills.tick(self.clock.now)
+        self.assertEqual(len(self.sent), 1)
+
     def test_page_add_edit_pay_delete(self):
         luz = self.add()
         self.assertEqual(self.bills.snapshot()["bills"][0]["when"], "vence el jueves 19")

@@ -36,6 +36,8 @@ _CATEGORY = re.compile(r"[a-záéíóúüñ0-9 ]{2,20}")
 LIVE_FIELDS = (
     "summary_time", "evening_time", "weekly_time", "default_task_time", "repeat_quiet_start", "repeat_quiet_end",
     "categories", "voice", "category_colors",
+    "receipts_enabled", "budget_enabled", "bills_enabled", "briefing_enabled", "day_plan_enabled", "work_start", "work_end",
+    "followup_enabled", "followup_days",
 )
 
 
@@ -87,6 +89,20 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("HERMES_MAIL_POLL_SECONDS", "Revisar el correo cada (segundos)", "int", "Correo y calendario", "", "300", low=60, high=3600),
     Setting("HERMES_CALENDAR_REMIND", "Avisar antes de un evento (minutos)", "int", "Correo y calendario", "0 para no avisar.", "15", low=0, high=120),
     Setting("HERMES_WEATHER", "Clima: latitud, longitud", "coords", "Clima", "Por ejemplo 14.63, -90.51. Vacío para apagarlo.", ""),
+    Setting("HERMES_RECEIPTS", "Recibos y gastos", "switch", "Funciones",
+            "Leer fotos de recibos y la página Gastos.", "on", live=True),
+    Setting("HERMES_BUDGET", "Presupuesto mensual", "switch", "Funciones",
+            "Límites por categoría y avisos al 80 % y al pasarte. Necesita Recibos y gastos.", "on", live=True),
+    Setting("HERMES_BILLS", "Pagos que se repiten", "switch", "Funciones",
+            "Luz, internet y suscripciones: avisos antes de vencer y la página Pagos.", "on", live=True),
+    Setting("HERMES_BRIEFING", "Preparación antes de reuniones", "switch", "Funciones",
+            "En el aviso de cada evento, los correos, tareas y notas relacionados. Usa el aviso del calendario.", "on", live=True),
+    Setting("HERMES_DAY_PLAN", "Planear mi día", "switch", "Funciones",
+            "Después del resumen de la mañana, un orden con horas para tus tareas de hoy.", "on", live=True),
+    Setting("HERMES_WORK_HOURS", "Horario para planear el día", "range", "Funciones", "Entre qué horas acomodar tareas.", "08:00-18:00", live=True),
+    Setting("HERMES_MAIL_FOLLOWUP", "Correos que esperan respuesta", "switch", "Funciones",
+            "Una vez al día: lo que te toca contestar y lo que te deben contestar.", "on", live=True),
+    Setting("HERMES_FOLLOWUP_DAYS", "Días sin respuesta para avisar", "int", "Funciones", "", "3", live=True, low=1, high=30),
     Setting("TELEGRAM_ALLOWED_CHAT_ID", "Chat de Telegram autorizado", "chat", "Acceso", "El único chat al que Hermes obedece.", "", local_only=True),
     Setting("TELEGRAM_BOT_TOKEN", "Token del bot de Telegram", "secret", "Acceso", "", "", local_only=True),
     Setting("HERMES_PUBLIC_HOST", "Dominio de la página", "host", "Acceso", "Por ejemplo baf.hola-hermes.com. Vacío apaga el acceso desde fuera.", "", local_only=True),

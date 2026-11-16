@@ -134,6 +134,16 @@ class EditorTests(HomeCase):
         self.assertIn("HERMES_SUMMARY_TIME=06:45", self.env.read_text(encoding="utf-8"))
         self.assertFalse(self.editor.snapshot(False)["restart_needed"])
 
+    def test_feature_switches_apply_at_once(self):
+        from datetime import time
+
+        self.assertEqual(self.change(HERMES_RECEIPTS="off", HERMES_DAY_PLAN="off", HERMES_WORK_HOURS="07:00-16:30",
+                                     HERMES_FOLLOWUP_DAYS="5")["message"], "Guardado y aplicado.")
+        self.assertFalse(self.config.receipts_enabled)
+        self.assertFalse(self.config.day_plan_enabled)
+        self.assertTrue(self.config.bills_enabled)
+        self.assertEqual((self.config.work_start, self.config.work_end, self.config.followup_days), (time(7, 0), time(16, 30), 5))
+
     def test_colors_apply_at_once_and_reach_the_tasks_page(self):
         from hermes.status import tasks_snapshot
         from hermes.store import Store
