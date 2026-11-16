@@ -27,6 +27,7 @@ from . import __version__
 from .mailwatch import MailWatcher, run_watchers
 from .bills import Bills
 from .briefing import Briefing
+from .dayplan import DayPlan
 from .receipts import Receipts
 from .net import prefer_ipv4
 from .outside import (
@@ -366,6 +367,15 @@ def run(config: Config) -> int:
     if config.allowed_chat_id is not None:
         bills.send = send
         scheduler.extra_ticks.append(bills.tick)
+    # Planear mi día: después del resumen, un orden con horas en los huecos libres del calendario.
+    planner = DayPlan(store, config, assistant._now, Reply)
+    assistant.text_hooks.append(planner.handle)
+    assistant.command_hooks["/plan"] = planner.command
+    assistant.button_hooks.update(planok=planner.accept, planno=planner.decline)
+    if config.allowed_chat_id is not None:
+        planner.send = send
+        planner.events = agenda.today if calendars else None
+        scheduler.extra_ticks.append(planner.tick)
     status.set_source("bills", bills.snapshot)
     status.set_action("bills", bills.apply)
     piper = shared_piper(config)
