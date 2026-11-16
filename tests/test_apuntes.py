@@ -65,6 +65,38 @@ class ApuntesTests(Harness):
                 self.do("list_edit", **bad)
         self.assertEqual([i["text"] for i in self.editor.snapshot()["lists"][0]["items"]], ["Leche entera", "pan"])
 
+    def test_list_items_are_marked_not_removed(self):
+        self.do("list_add", list="super", text="leche")
+        self.do("list_add", list="super", text="pan")
+        first, second = self.editor.snapshot()["lists"][0]["items"]
+        self.assertEqual((first["done"], second["done"]), (False, False))
+        self.assertEqual(self.do("list_check", id=first["id"], done=True), "Marcado.")
+        items = self.editor.snapshot()["lists"][0]["items"]
+        self.assertEqual([(i["text"], i["done"]) for i in items], [("leche", True), ("pan", False)])  # Sigue en la lista.
+        self.assertIn("✓ leche", self.assistant.handle_text("qué hay en la lista del súper").text)
+        self.assertEqual(self.do("list_check", id=first["id"], done=False), "Desmarcado.")
+        self.assertFalse(self.editor.snapshot()["lists"][0]["items"][0]["done"])
+        with self.assertRaises(ApunteError):
+            self.do("list_clear_done", list="super")
+        self.do("list_check", id=second["id"], done=True)
+        self.assertEqual(self.do("list_clear_done", list="super"), "Quité 1 elemento marcado.")
+        self.assertEqual([i["text"] for i in self.editor.snapshot()["lists"][0]["items"]], ["leche"])
+        for bad in (dict(id=first["id"], done="si"), dict(id=999, done=True), dict(done=True)):
+            with self.assertRaises(ApunteError, msg=bad):
+                self.do("list_check", **bad)
+
+    def test_todays_habit_mark_can_be_undone(self):
+        self.do("habit_add", title="leer", time=None)
+        habit = self.editor.snapshot()["habits"][0]
+        self.store.mark_habit(habit["id"], "2026-11-09")  # Ayer.
+        self.do("habit_done", id=habit["id"])
+        self.assertEqual([(h["done"], h["streak"]) for h in self.editor.snapshot()["habits"]], [(True, 2)])
+        self.assertEqual(self.do("habit_undo", id=habit["id"]), "Desmarqué «Leer» de hoy. Racha: 1 día.")
+        self.assertEqual([(h["done"], h["streak"]) for h in self.editor.snapshot()["habits"]], [(False, 1)])  # La de ayer se conserva.
+        for bad in (dict(id=habit["id"]), dict(id=999), dict()):
+            with self.assertRaises(ApunteError, msg=bad):
+                self.do("habit_undo", **bad)
+
     def test_notes_are_the_memory(self):
         self.do("note_add", text="  la clave del wifi   está en el cajón ")
         notes = self.editor.snapshot()["notes"]

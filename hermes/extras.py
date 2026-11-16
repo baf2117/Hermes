@@ -218,10 +218,10 @@ class Extras:
 
     def _list_show(self, raw_list: str) -> Any:
         name = self._list_name(raw_list)
-        items = self.store.list_items(name)
+        items = self.store.list_entries(name)
         if not items:
             return self.R(f"La lista de {name} está vacía.")
-        return self.R(f"Lista de {name}:\n" + "\n".join(f"• {text}" for _, text in items))
+        return self.R(f"Lista de {name}:\n" + "\n".join(f"{'✓' if item['done'] else '•'} {item['text']}" for item in items))
 
     def _lists(self) -> Any:
         names = self.store.list_names()

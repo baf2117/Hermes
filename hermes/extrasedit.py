@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from .assistant import Assistant
-from .extras import MAX_ITEM, MONTH_NAMES, Extras
+from .extras import MAX_ITEM, MONTH_NAMES, Extras, days_word, streak
 
 MAX_NOTE = 500
 MAX_LISTS = 30
@@ -50,7 +50,7 @@ class ExtrasEditor:
         return {
             "now": int(now.timestamp()),
             "lists": [
-                {"name": name, "items": [{"id": item_id, "text": text} for item_id, text in self.store.list_items(name)]}
+                {"name": name, "items": self.store.list_entries(name)}
                 for name, _ in self.store.list_names()
             ],
             "notes": [{"id": fact_id, "text": text} for fact_id, text in self.store.list_facts(200)],
@@ -83,6 +83,9 @@ class ExtrasEditor:
             "list_add": self._list_add,
             "list_edit": self._list_edit,
             "list_remove": self._list_remove,
+            "list_check": self._list_check,
+            "list_clear_done": self._list_clear_done,
+            "habit_undo": self._habit_undo,
             "list_clear": self._list_clear,
             "note_add": self._note_add,
             "note_delete": self._note_delete,
@@ -140,6 +143,32 @@ class ExtrasEditor:
         if not self.store.list_remove(_number(payload.get("id"), "Falta el elemento.")):
             raise ApunteError("Ese elemento ya no estaba. Recarga la página.")
         return "Listo, lo quité."
+
+    def _list_check(self, payload: dict[str, Any]) -> str:
+        done = payload.get("done")
+        if not isinstance(done, bool):
+            raise ApunteError("Solicitud inválida.")
+        if not self.store.list_check(_number(payload.get("id"), "Falta el elemento."), done):
+            raise ApunteError("Ese elemento ya no estaba. Recarga la página.")
+        return "Marcado." if done else "Desmarcado."
+
+    def _list_clear_done(self, payload: dict[str, Any]) -> str:
+        name = self.extras._list_name(_text(payload.get("list"), 40, "Falta la lista."))
+        count = self.store.list_clear_done(name)
+        if not count:
+            raise ApunteError("No hay elementos marcados en esa lista.")
+        return f"Quité {count} {'elemento marcado' if count == 1 else 'elementos marcados'}."
+
+    def _habit_undo(self, payload: dict[str, Any]) -> str:
+        habit_id = _number(payload.get("id"), "Falta el hábito.")
+        habit = next((h for h in self.store.habits() if h["id"] == habit_id), None)
+        if habit is None:
+            raise ApunteError("Ese hábito ya no existe. Recarga la página.")
+        today = self._now().date()
+        if not self.store.unmark_habit(habit_id, today.isoformat()):
+            raise ApunteError("Ese hábito no estaba marcado hoy.")
+        run = streak(self.store.habit_days(habit_id), today)
+        return f"Desmarqué «{habit['title']}» de hoy. Racha: {days_word(run)}."
 
     def _list_clear(self, payload: dict[str, Any]) -> str:
         name = self.extras._list_name(_text(payload.get("list"), 40, "Falta la lista."))

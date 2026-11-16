@@ -230,6 +230,8 @@ class Store:
                     self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
             if "account" not in {row["name"] for row in self._conn.execute("PRAGMA table_info(emails)")}:
                 self._conn.execute("ALTER TABLE emails ADD COLUMN account TEXT NOT NULL DEFAULT 'personal'")
+            if "done" not in {row["name"] for row in self._conn.execute("PRAGMA table_info(list_items)")}:
+                self._conn.execute("ALTER TABLE list_items ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
             # Las listas creadas antes de poder existir vacías: se registran por sus elementos.
             self._conn.execute(
                 "INSERT OR IGNORE INTO lists (name, created_at) SELECT list, MIN(created_at) FROM list_items GROUP BY list"
@@ -641,6 +643,20 @@ class Store:
             rows = self._conn.execute("SELECT id, text FROM list_items WHERE list = ? ORDER BY id", (name,)).fetchall()
         return [(r["id"], r["text"]) for r in rows]
 
+    def list_entries(self, name: str) -> list[dict[str, Any]]:
+        """Los elementos de una lista con su marca: los marcados siguen ahí hasta que se quiten."""
+        with self._lock:
+            rows = self._conn.execute("SELECT id, text, done FROM list_items WHERE list = ? ORDER BY id", (name,)).fetchall()
+        return [{"id": r["id"], "text": r["text"], "done": bool(r["done"])} for r in rows]
+
+    def list_check(self, item_id: int, done: bool) -> bool:
+        with self._lock, self._conn:
+            return self._conn.execute("UPDATE list_items SET done = ? WHERE id = ?", (int(done), item_id)).rowcount > 0
+
+    def list_clear_done(self, name: str) -> int:
+        with self._lock, self._conn:
+            return self._conn.execute("DELETE FROM list_items WHERE list = ? AND done = 1", (name,)).rowcount
+
     def list_create(self, name: str, now: int) -> bool:
         """Crea una lista vacía; False si ya existía."""
         with self._lock, self._conn:
@@ -737,6 +753,13 @@ class Store:
         with self._lock, self._conn:
             return self._conn.execute(
                 "INSERT OR IGNORE INTO habit_log (habit_id, day) VALUES (?, ?)", (habit_id, day)
+            ).rowcount > 0
+
+    def unmark_habit(self, habit_id: int, day: str) -> bool:
+        """Quita la marca de ese día; False si no estaba marcado."""
+        with self._lock, self._conn:
+            return self._conn.execute(
+                "DELETE FROM habit_log WHERE habit_id = ? AND day = ?", (habit_id, day)
             ).rowcount > 0
 
     def habit_days(self, habit_id: int) -> set[str]:

@@ -538,6 +538,12 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
 .ap-drawer-body { padding:0 16px 12px; border-top:1px solid var(--line); }
 .ap-drawer-body .ap-row:first-child { border-top:0; }
 .ap-add { margin:10px 0 4px; }
+dialog#ask { border:1px solid var(--line); border-radius:16px; background:var(--card); color:var(--ink); padding:20px; width:min(400px, calc(100vw - 32px)); box-shadow:0 20px 60px rgba(0,0,0,.5); }
+dialog#ask::backdrop { background:rgba(0,0,0,.55); }
+dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:anywhere; }
+.ask-actions { display:flex; justify-content:flex-end; gap:10px; }
+.ask-actions button { margin-left:0; }
+.ap-row.done .ap-item { text-decoration:line-through; color:var(--faint); }
 .ap-item { font:inherit; color:inherit; background:none; border:0; padding:2px 0; text-align:left; cursor:text; border-radius:6px; }
 .ap-item:hover { color:var(--accent); }
 .ap-item:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
@@ -545,7 +551,8 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
 .ap-editing input { flex:1; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:7px 10px; }
 .ap-editing input:focus { outline:none; }
 .ap-editing .primary { margin-left:0; padding:7px 12px; flex:none; }
-.ap-drawer-foot { display:flex; justify-content:space-between; gap:12px; margin-top:4px; }
+.ap-drawer-foot { display:flex; justify-content:space-between; gap:12px; margin-top:4px; flex-wrap:wrap; }
+.ap-link[hidden] { display:none; }
 .ap-link:disabled { opacity:.4; cursor:default; text-decoration:none; }
 .ap-link.danger-link { color:var(--warn); }
 .ap-empty.card { padding:28px 16px; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:14px; }
@@ -885,6 +892,13 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
   <svg class="i-stop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
   <svg class="i-wait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/></svg>
 </button>
+<dialog id="ask" aria-labelledby="ask-text">
+  <p id="ask-text"></p>
+  <div class="ask-actions">
+    <button type="button" class="ghost" id="ask-no">Cancelar</button>
+    <button type="button" class="danger" id="ask-yes">Borrar</button>
+  </div>
+</dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-text"></span><button type="button" id="toast-undo" hidden>Deshacer</button></div>
 <script>
 const $ = id => document.getElementById(id);
@@ -901,6 +915,22 @@ async function send(path, body) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "No se pudo guardar.");
   return data;
+}
+// Pregunta antes de borrar, en una ventana de la propia página (no el aviso genérico del navegador).
+function ask(message, label, calm) {
+  return new Promise(resolve => {
+    const dialog = $("ask"), yes = $("ask-yes");
+    $("ask-text").textContent = message;
+    yes.textContent = label || "Borrar";
+    yes.className = calm ? "primary" : "danger";
+    const finish = value => { dialog.onclose = null; if (dialog.open) dialog.close(); resolve(value); };
+    yes.onclick = () => finish(true);
+    $("ask-no").onclick = () => finish(false);
+    dialog.onclose = () => resolve(false);  // Escape.
+    dialog.onclick = event => { if (event.target === dialog) finish(false); };  // Toque fuera de la ventana.
+    dialog.showModal();
+    $("ask-no").focus();
+  });
 }
 let toastTimer = 0;
 function toast(message, undoId, undoAction) {
@@ -1112,7 +1142,7 @@ function finishedRow(t, steps) {
   };
   const remove = text("button", "undo danger-link", "Borrar"); remove.type = "button";
   remove.onclick = async () => {
-    if (!confirm("¿Borrar «" + t.title + "»? Dejará de aparecer en la página.")) return;
+    if (!await ask("¿Borrar «" + t.title + "»? Dejará de aparecer en la página.")) return;
     remove.disabled = true;
     try { toast((await taskAction({ action: "delete", id: t.id })).message, t.id, "restore"); } catch (e) { toast(e.message); remove.disabled = false; }
   };
@@ -1293,7 +1323,7 @@ function renderEditorSteps() {
       del.setAttribute("aria-label", "Borrar paso: " + s.title);
       del.title = "Borrar paso";
       del.onclick = () => editorRun(async () => {
-        if (!confirm("¿Borrar el paso «" + s.title + "»?")) return;
+        if (!await ask("¿Borrar el paso «" + s.title + "»?")) return;
         toast((await taskAction({ action: "cancel", id: s.id })).message, s.id);
       });
       li.append(del);
@@ -1354,7 +1384,7 @@ $("ed-delete").onclick = () => editorRun(async () => {
   if (!t) return;
   const steps = stepsFor(t.id).filter(s => s.status !== "done").length;
   const extra = steps ? " También se borrarán sus " + steps + " pasos pendientes." : "";
-  if (!confirm("¿Borrar «" + t.title + "»? Dejará de aparecer en la página." + extra)) return;
+  if (!await ask("¿Borrar «" + t.title + "»? Dejará de aparecer en la página." + extra)) return;
   toast((await taskAction({ action: "delete", id: t.id })).message, t.id, "restore");
 });
 function addStep() {
@@ -1702,13 +1732,16 @@ let focusList = null;
 let editingItem = null;  // El elemento que se está corrigiendo, y lo escrito hasta ahora.
 let editingText = "";
 function listItemRow(item, lists) {
-  const check = apCheck(false, "Quitar " + item.text, () => apunte({ action: "list_remove", id: item.id }, true));
   if (editingItem !== item.id) {
-    const row = text("div", "ap-row", "");
+    // El círculo marca y desmarca; el elemento marcado se queda en la lista, tachado, hasta que lo quites.
+    const check = apCheck(item.done, (item.done ? "Desmarcar " : "Marcar ") + item.text, () => apunte({ action: "list_check", id: item.id, done: !item.done }, true));
+    const row = text("div", "ap-row" + (item.done ? " done" : ""), "");
     const name = text("button", "grow ap-item", item.text); name.type = "button";
     name.setAttribute("aria-label", "Editar " + item.text); name.title = "Tocar para editar";
     name.onclick = () => { editingItem = item.id; editingText = item.text; renderLists(lists); };
-    row.append(check, name);
+    const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Quitar " + item.text);
+    remove.onclick = () => apunte({ action: "list_remove", id: item.id }, true);
+    row.append(check, name, remove);
     return row;
   }
   const row = text("form", "ap-row ap-editing", ""); row.autocomplete = "off";
@@ -1747,7 +1780,7 @@ function renderLists(lists) {
     const drawer = text("div", "ap-drawer" + (closed ? " closed" : ""), "");
     const head = text("button", "ap-drawer-head", ""); head.type = "button";
     head.setAttribute("aria-expanded", String(!closed));
-    head.append(text("span", "name", list.name), text("em", "", list.items.length === 1 ? "1 elemento" : list.items.length + " elementos"), text("span", "chev", ""));
+    head.append(text("span", "name", list.name), text("em", "", (list.items.length === 1 ? "1 elemento" : list.items.length + " elementos") + (list.items.some(i => i.done) ? " · " + list.items.filter(i => i.done).length + " ✓" : "")), text("span", "chev", ""));
     head.onclick = () => {
       if (closedLists.has(list.name)) closedLists.delete(list.name); else closedLists.add(list.name);
       try { localStorage.setItem("hermes-lists-closed", JSON.stringify([...closedLists])); } catch {}
@@ -1774,10 +1807,13 @@ function renderLists(lists) {
       };
       const foot = text("div", "ap-drawer-foot", "");
       const clear = text("button", "ap-link", "Vaciar"); clear.type = "button"; clear.disabled = !list.items.length;
-      clear.onclick = () => { if (confirm("¿Quitar todos los elementos de la lista de " + list.name + "?")) apunte({ action: "list_clear", list: list.name }); };
+      clear.onclick = async () => { if (await ask("¿Quitar todos los elementos de la lista de " + list.name + "?", "Vaciar")) apunte({ action: "list_clear", list: list.name }); };
+      const marked = list.items.filter(item => item.done).length;
+      const sweep = text("button", "ap-link", "Quitar marcados"); sweep.type = "button"; sweep.hidden = !marked;
+      sweep.onclick = async () => { if (await ask("¿Quitar " + (marked === 1 ? "el elemento marcado" : "los " + marked + " elementos marcados") + " de la lista de " + list.name + "?", "Quitar")) apunte({ action: "list_clear_done", list: list.name }); };
       const remove = text("button", "ap-link danger-link", "Eliminar lista"); remove.type = "button";
-      remove.onclick = () => { if (confirm("¿Eliminar la lista de " + list.name + (list.items.length ? " con todo lo que tiene?" : "?"))) apunte({ action: "list_delete", list: list.name }); };
-      foot.append(clear, remove);
+      remove.onclick = async () => { if (await ask("¿Eliminar la lista de " + list.name + (list.items.length ? " con todo lo que tiene?" : "?"), "Eliminar")) apunte({ action: "list_delete", list: list.name }); };
+      foot.append(clear, sweep, remove);
       body.append(form, foot);
       drawer.appendChild(body);
     }
@@ -1793,15 +1829,15 @@ function renderApuntes(d) {
   renderLists(d.lists);
   apFill("ap-habits", d.habits.map(h => apRow(h.title,
     (h.remind_at ? "Recordatorio " + h.remind_at + " · " : "") + "racha de " + (h.streak === 1 ? "1 día" : h.streak + " días"),
-    apCheck(h.done, (h.done ? "Ya marcado hoy: " : "Marcar hecho hoy: ") + h.title, () => { if (!h.done) apunte({ action: "habit_done", id: h.id }); }),
-    () => { if (confirm("¿Quitar el hábito «" + h.title + "» y su racha?")) apunte({ action: "habit_delete", id: h.id }); }, "Quitar el hábito " + h.title)),
+    apCheck(h.done, (h.done ? "Desmarcar hoy: " : "Marcar hecho hoy: ") + h.title, () => apunte({ action: h.done ? "habit_undo" : "habit_done", id: h.id })),
+    async () => { if (await ask("¿Quitar el hábito «" + h.title + "» y su racha?", "Quitar")) apunte({ action: "habit_delete", id: h.id }); }, "Quitar el hábito " + h.title)),
     "Todavía no tienes hábitos.");
   $("ap-habits-count").textContent = d.habits.length ? d.habits.filter(h => h.done).length + " de " + d.habits.length + " hoy" : "";
   apFill("ap-notes", d.notes.map(n => apRow(n.text, "", null,
-    () => { if (confirm("¿Borrar esta nota?")) apunte({ action: "note_delete", id: n.id }); }, "Borrar la nota")), "Todavía no hay notas.");
+    async () => { if (await ask("¿Borrar esta nota? «" + n.text + "»")) apunte({ action: "note_delete", id: n.id }); }, "Borrar la nota")), "Todavía no hay notas.");
   $("ap-notes-count").textContent = d.notes.length || "";
   apFill("ap-dates", d.dates.map(x => apRow(x.day + " de " + AP_MONTHS[x.month - 1] + (x.year ? " de " + x.year : ""), x.label, null,
-    () => { if (confirm("¿Borrar esta fecha?")) apunte({ action: "date_delete", id: x.id }); }, "Borrar la fecha")), "Todavía no hay fechas.");
+    async () => { if (await ask("¿Borrar el " + x.label + "?")) apunte({ action: "date_delete", id: x.id }); }, "Borrar la fecha")), "Todavía no hay fechas.");
   $("ap-dates-count").textContent = d.dates.length || "";
   apFill("ap-waiting", d.waiting.map(w => apRow(w.title, w.due_at ? "Te pregunto " + new Date(w.due_at * 1000).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" }) : "",
     apCheck(false, "Ya llegó: " + w.title, async () => { try { toast((await send("/tasks", { action: "done", id: w.id })).message); loadApuntes(true); } catch (e) { toast(e.message); } }))),
@@ -1923,7 +1959,7 @@ $("set-form").addEventListener("submit", async event => {
   } catch (e) { $("set-status").textContent = e.message; $("set-save").disabled = false; }
 });
 $("set-restart-btn").addEventListener("click", async () => {
-  if (!confirm("Hermes se detiene unos segundos y vuelve a arrancar. ¿Reiniciar ahora?")) return;
+  if (!await ask("Hermes se detiene unos segundos y vuelve a arrancar. ¿Reiniciar ahora?", "Reiniciar", true)) return;
   $("set-restart-btn").disabled = true;
   try {
     await send("/settings", { action: "restart" });
