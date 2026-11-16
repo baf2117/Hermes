@@ -2224,9 +2224,10 @@ function settingControl(s) {
     el.dataset.initial = el.checked ? "on" : "off";
   } else if (s.kind === "choice") {
     el = document.createElement("select");
-    for (const c of s.choices) { const o = document.createElement("option"); o.value = c; o.textContent = c; el.appendChild(o); }
+    s.choices.forEach((c, i) => { const o = document.createElement("option"); o.value = c; o.textContent = (s.choice_labels || [])[i] || c; el.appendChild(o); });
     el.value = s.value; el.dataset.initial = s.value;
-    if (el.value !== s.value) el.value = s.choices[0];  // Valor del archivo que no existe: queda como cambio por guardar.
+    // Valor del archivo que no está en la lista: se propone el de siempre y queda como cambio por guardar.
+    if (el.value !== s.value) el.value = s.choices.includes(s.default) ? s.default : s.choices[0];
   } else {
     el = document.createElement("input");
     const secret = s.kind === "secret" || s.kind === "url";

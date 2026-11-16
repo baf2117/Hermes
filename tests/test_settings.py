@@ -79,6 +79,17 @@ class ValidateTests(unittest.TestCase):
             with self.assertRaises(SettingError, msg=f"{key}={raw!r}"):
                 validate(BY_KEY[key], raw)
 
+    def test_claude_model_is_picked_from_a_list(self):
+        model = BY_KEY["HERMES_CLAUDE_MODEL"]
+        self.assertEqual(len(model.choices), len(model.choice_labels))
+        for value in model.choices:
+            self.assertEqual(validate(model, value), value)
+        self.assertEqual(validate(model, "Claude-Haiku-5-5"), "claude-haiku-5-5")
+        self.assertIn(model.default, model.choices)
+        for bad in ("claude-haiku-5-5; rm -rf", "gpt-5", "", "claude-haiku"):
+            with self.assertRaises(SettingError, msg=bad):
+                validate(model, bad)
+
     def test_dangerous_variables_are_not_offered(self):
         keys = {setting.key for setting in SETTINGS}
         for forbidden in ("HERMES_CLAUDE_PATH", "OLLAMA_URL", "HERMES_HOME", "HERMES_DB", "HERMES_STATUS_PORT", "HERMES_LOCK_PORT"):

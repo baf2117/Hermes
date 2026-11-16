@@ -26,6 +26,7 @@ from .speakers import DEFAULT_VOICES
 log = logging.getLogger(__name__)
 
 MAX_VALUE = 600
+CLAUDE_MODELS = ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2")
 PENDING_SECONDS = 300  # Tiempo para aprobar en Telegram un cambio delicado pedido desde fuera.
 _TIME = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 _NAME = re.compile(r"[A-Za-z0-9._:-]{1,80}")
@@ -53,6 +54,7 @@ class Setting:
     live: bool = False  # Se aplica sin reiniciar.
     local_only: bool = False  # Solo desde esta computadora.
     choices: tuple[str, ...] = ()
+    choice_labels: tuple[str, ...] = ()  # Cómo se muestra cada opción en la página; el archivo guarda el valor.
     low: int = 0
     high: int = 0
 
@@ -72,8 +74,13 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("HERMES_HOME_VOICE", "Escuchar «Hermes» en casa", "switch", "Voz", "Usa el micrófono de esta computadora.", "on"),
     Setting("HERMES_WAKE_WORD", "Palabra de activación", "word", "Voz", "", "hermes"),
     Setting("HERMES_WAKE_VERIFY", "Confirmar la palabra antes de responder", "switch", "Voz", "Evita activaciones por conversaciones ajenas.", "on"),
-    Setting("HERMES_LLM_MODE", "Quién redacta las conversaciones", "choice", "Modelo", "local: todo en esta computadora. claude: Claude redacta charlas y búsquedas.", "local", choices=("local", "claude")),
-    Setting("HERMES_CLAUDE_MODEL", "Modelo de Claude", "name", "Modelo", "Solo cuenta si arriba dice claude.", "claude-opus-5-5"),
+    Setting("HERMES_LLM_MODE", "Quién redacta las conversaciones", "choice", "Modelo",
+            "Entender tus órdenes y leer tu correo siempre es local.", "local", choices=("local", "claude"),
+            choice_labels=("Modelo local: todo en esta computadora", "Claude: redacta las charlas y las búsquedas")),
+    Setting("HERMES_CLAUDE_MODEL", "Modelo de Claude", "choice", "Modelo",
+            "Solo cuenta si arriba elegiste Claude. Con tu suscripción no se cobra aparte, pero cuenta contra los límites de tu plan.",
+            "claude-opus-5-5", choices=CLAUDE_MODELS,
+            choice_labels=("Haiku 5.5: rápido, gasta menos", "Sonnet 5.5: equilibrado", "Opus 5.5: más capaz", "Fable 5.2: el más avanzado, gasta más")),
     Setting("OLLAMA_MODEL", "Modelo local", "name", "Modelo", "El que interpreta las órdenes.", "hermes"),
     Setting("HERMES_MAIL", "Vigilar el correo", "switch", "Correo y calendario", "", "on"),
     Setting("HERMES_MAIL_POLL_SECONDS", "Revisar el correo cada (segundos)", "int", "Correo y calendario", "", "300", low=60, high=3600),
@@ -229,6 +236,8 @@ class SettingsEditor:
             }
             if setting.choices:
                 entry["choices"] = list(setting.choices)
+                entry["choice_labels"] = list(setting.choice_labels or setting.choices)
+                entry["default"] = setting.default
             if setting.kind == "int":
                 entry.update(low=setting.low, high=setting.high)
             if not setting.secret and not (setting.local_only and not local):
