@@ -29,6 +29,7 @@ from .outside import (
     CALENDAR_SCOPE, Agenda, CalendarClient, Weather, calendar_token_path, find_calendars, run_heartbeat, valid_heartbeat,
 )
 from .pagevoice import PageVoice, VoiceRenderer
+from .settings import SettingsEditor
 from .remote import RemoteAccess
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
 from .store import LLMUsage, Store
@@ -40,6 +41,7 @@ from .websearch import SearchError, TavilySearch
 
 
 PAUSED_KEY = "voice_paused"
+RESTART = 75  # Código con el que `run` pide volver a arrancar con la configuración recién guardada.
 
 
 def configure_logging(config: Config) -> None:
@@ -338,7 +340,14 @@ def run(config: Config) -> int:
         # Hablarle desde la página: sirve también fuera de casa, con el micrófono del teléfono.
         renderer = VoiceRenderer(lambda: store.kv_get(VOICE_KEY) or config.voice, piper)
         status.set_action("speak", PageVoice(transcriber, assistant, config.tmp_dir, renderer, status).handle)
-    start_status_server(status, config.status_port, RemoteAccess(config.public_host, config.page_password))
+    restart = threading.Event()
+
+    def request_restart() -> None:
+        restart.set()
+        stop.set()  # El lector de Telegram termina su espera en curso (hasta medio minuto) y se vuelve a arrancar.
+
+    status.settings = SettingsEditor(hermes_home() / ".env", config, request_restart)
+    server = start_status_server(status, config.status_port, RemoteAccess(config.public_host, config.page_password))
     if problem := home_voice_problem(config):
         logging.warning("Voz en casa no disponible: %s", problem)
     else:
@@ -352,7 +361,10 @@ def run(config: Config) -> int:
     finally:
         stop.set()
         lock.close()
-    return 0
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+    return RESTART if restart.is_set() else 0
 
 
 def gmail_auth(config: Config, account: str = DEFAULT_ACCOUNT) -> int:
@@ -441,7 +453,12 @@ def main() -> int:
         return backup_now(config)
     if command == "restore":
         return restore(config, arguments[1:])
-    return run(config)
+    code = run(config)
+    while code == RESTART:
+        logging.info("Reiniciando Hermes con la configuración guardada")
+        time.sleep(1.5)  # Deja que los hilos anteriores suelten el micrófono y los puertos.
+        code = run(Config.load())
+    return code
 
 
 if __name__ == "__main__":

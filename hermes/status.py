@@ -57,6 +57,8 @@ class VoiceStatus:
         self._paused = False
         self._actions: dict[str, Callable[[Any], dict[str, Any]]] = {}
         self.on_pause: Callable[[bool], None] | None = None  # Para recordar la pausa entre reinicios.
+        self.settings: Any = None  # Editor de ajustes; None si esta página no los ofrece.
+        self.boot = secrets.token_hex(4)  # Cambia en cada arranque: la página lo usa para recargarse.
 
     @property
     def paused(self) -> bool:
@@ -155,6 +157,7 @@ class VoiceStatus:
                 "state": self._state,
                 "paused": self._paused,
                 "speak": "speak" in self._actions,
+                "boot": self.boot,
                 "level": round(self._level),
                 "threshold": round(self._threshold),
                 "version": self._version,
@@ -491,6 +494,25 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
   dialog#editor { max-height:calc(100dvh - 24px); }
   .stage-wrap { min-height:calc(100dvh - 150px); }
 }
+/* Ajustes */
+.set-group { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 16px; margin:0 0 16px; }
+.set-group h3 { font-size:15px; margin:12px 0 4px; }
+.set-row { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 260px); gap:6px 16px; align-items:center; padding:12px 0; border-top:1px solid var(--line); }
+.set-row:first-of-type { border-top:0; }
+.set-row label { font-weight:600; font-size:14px; }
+.set-row small { display:block; font-weight:400; color:var(--muted); font-size:13px; margin-top:2px; }
+.set-row input[type="text"], .set-row input[type="password"], .set-row input[type="number"], .set-row input[type="time"], .set-row select {
+  width:100%; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:9px 11px; }
+.set-row input:focus, .set-row select:focus { outline:none; border-color:var(--accent); }
+.set-row input:disabled, .set-row select:disabled { opacity:.5; }
+.set-row input[type="checkbox"] { width:22px; height:22px; accent-color:var(--accent); justify-self:start; }
+.set-tag { display:inline-block; font-size:11px; font-weight:600; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:1px 8px; margin-left:6px; vertical-align:1px; }
+.set-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 18px; }
+.set-bar .primary { margin-left:0; }
+.set-note { background:var(--accent-soft); border:1px solid var(--accent); border-radius:12px; padding:12px 14px; margin:0 0 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:14px; }
+.set-note[hidden] { display:none; }
+@media (max-width:640px) { .set-row { grid-template-columns:1fr; } }
+
 /* Escribirle desde la página */
 .say { display:flex; gap:8px; margin:0 0 16px; }
 .say input { flex:1; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
@@ -578,6 +600,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
       <a href="#consumo" data-view="consumo">Consumo</a>
       <a href="#historial" data-view="historial">Historial</a>
       <a href="#vivo" data-view="vivo">En vivo</a>
+      <a href="#ajustes" data-view="ajustes">Ajustes</a>
     </nav>
     <div class="pill" id="pill"><i></i><span>Conectando…</span></div>
   </div>
@@ -645,6 +668,19 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <section><div class="label">Este mes por uso</div><div class="wide" id="by-purpose"></div></section>
     <section><div class="label">Últimas llamadas</div><div class="wide" id="recent-calls"></div></section>
   </div>
+</div>
+
+<div class="view" id="view-ajustes" hidden>
+  <h1>Ajustes</h1>
+  <div class="subtitle" id="set-subtitle">Lo que cambies se guarda en el archivo de configuración de Hermes.</div>
+  <div class="set-note" id="set-restart" hidden>
+    <span>Hay cambios que se aplican al reiniciar Hermes.</span>
+    <button type="button" class="primary" id="set-restart-btn" style="margin-left:0">Reiniciar Hermes</button>
+  </div>
+  <form id="set-form" autocomplete="off">
+    <div id="set-groups"><div class="empty">Cargando…</div></div>
+    <div class="set-bar"><button type="submit" class="primary" id="set-save" disabled>Guardar cambios</button><span class="subtitle" id="set-status" style="margin:0"></span></div>
+  </form>
 </div>
 
 <div class="view" id="view-historial" hidden>
@@ -748,7 +784,7 @@ function toast(message, undoId) {
 function hideToast() { $("toast").classList.remove("show"); }
 
 /* ---------- Navegación ---------- */
-const VIEWS = ["tareas", "consumo", "historial", "vivo"];
+const VIEWS = ["tareas", "consumo", "historial", "vivo", "ajustes"];
 function currentView() { const v = location.hash.slice(1); return VIEWS.includes(v) ? v : "tareas"; }
 function showView() {
   const view = currentView();
@@ -757,6 +793,7 @@ function showView() {
   if (view === "tareas") loadTasks();
   if (view === "consumo") loadUsage();
   if (view === "historial") loadHistory();
+  if (view === "ajustes") loadSettings();
 }
 window.addEventListener("hashchange", showView);
 
@@ -1403,7 +1440,86 @@ $("say-form").addEventListener("submit", async event => {
   } catch (e) { talkShow("", e.message, true); }
   $("say-send").disabled = false;
 });
+/* ---------- Ajustes ---------- */
+let settingsData = null;
+let restarting = false;
+function settingControl(s) {
+  let el;
+  if (s.kind === "switch") {
+    el = document.createElement("input"); el.type = "checkbox"; el.checked = s.value === "on";
+    el.dataset.initial = el.checked ? "on" : "off";
+  } else if (s.kind === "choice") {
+    el = document.createElement("select");
+    for (const c of s.choices) { const o = document.createElement("option"); o.value = c; o.textContent = c; el.appendChild(o); }
+    el.value = s.value; el.dataset.initial = s.value;
+  } else {
+    el = document.createElement("input");
+    const secret = s.kind === "secret" || s.kind === "url";
+    el.type = secret ? "password" : s.kind === "int" ? "number" : (s.kind === "time" || s.kind === "time_off") ? "time" : "text";
+    if (s.kind === "int") { el.min = s.low; el.max = s.high; }
+    if (secret) { el.placeholder = s.set ? "Configurada · escribe para cambiarla" : "Sin configurar"; el.autocomplete = "new-password"; }
+    el.value = s.value || ""; el.dataset.initial = el.value; el.maxLength = 600;
+  }
+  el.id = "set-" + s.key; el.dataset.key = s.key; el.disabled = !!s.locked;
+  return el;
+}
+function settingValue(el) { return el.type === "checkbox" ? (el.checked ? "on" : "off") : el.value.trim(); }
+function settingChanges() {
+  const changes = {};
+  document.querySelectorAll("#set-groups [data-key]").forEach(el => { if (!el.disabled && settingValue(el) !== el.dataset.initial) changes[el.dataset.key] = settingValue(el); });
+  return changes;
+}
+function renderSettings(data) {
+  settingsData = data;
+  const box = $("set-groups"); box.textContent = "";
+  for (const group of data.groups) {
+    const card = text("section", "set-group", ""); card.appendChild(text("h3", "", group.name));
+    for (const s of group.settings) {
+      const row = text("div", "set-row", "");
+      const label = text("label", "", s.label); label.htmlFor = "set-" + s.key;
+      if (!s.live) label.appendChild(text("span", "set-tag", "Al reiniciar"));
+      const help = s.locked ? "Solo se cambia desde la computadora de Hermes." : s.help;
+      if (help) label.appendChild(text("small", "", help));
+      row.appendChild(label); row.appendChild(settingControl(s)); card.appendChild(row);
+    }
+    box.appendChild(card);
+  }
+  $("set-restart").hidden = !data.restart_needed || !data.can_restart;
+  $("set-save").disabled = true;
+}
+async function loadSettings() {
+  if (Object.keys(settingChanges()).length) return;  // No pisa lo que estás escribiendo.
+  try {
+    const res = await fetch("/settings", { cache: "no-store" });
+    if (res.status === 401) { location.href = "/login"; return; }
+    if (res.status === 404) { $("set-groups").textContent = ""; $("set-groups").appendChild(text("div", "empty", "Los ajustes no están disponibles.")); return; }
+    renderSettings(await res.json());
+  } catch { $("offline").style.display = "block"; }
+}
+$("set-form").addEventListener("input", () => { $("set-save").disabled = !Object.keys(settingChanges()).length; $("set-status").textContent = ""; });
+$("set-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const changes = settingChanges();
+  if (!Object.keys(changes).length) return;
+  $("set-save").disabled = true;
+  try {
+    const data = await send("/settings", { changes });
+    document.querySelectorAll("#set-groups [data-key]").forEach(el => { el.dataset.initial = settingValue(el); });
+    $("set-status").textContent = data.message;
+    await loadSettings();
+  } catch (e) { $("set-status").textContent = e.message; $("set-save").disabled = false; }
+});
+$("set-restart-btn").addEventListener("click", async () => {
+  if (!confirm("Hermes se detiene unos segundos y vuelve a arrancar. ¿Reiniciar ahora?")) return;
+  $("set-restart-btn").disabled = true;
+  try {
+    await send("/settings", { action: "restart" });
+    restarting = true;
+    $("set-restart").firstElementChild.textContent = "Reiniciando Hermes… puede tardar hasta un minuto. La página se recarga sola.";
+  } catch (e) { toast(e.message); $("set-restart-btn").disabled = false; }
+});
 let orbLevel = 0;
+let bootId = null;
 function updateOrb(s) {
   const orb = $("orb");
   orb.dataset.state = s.state;
@@ -1432,6 +1548,8 @@ async function tick() {
     const res = await fetch("/status", { cache: "no-store" });
     if (res.status === 401) { location.href = "/login"; return; }
     const s = await res.json();
+    if (bootId === null) bootId = s.boot;
+    else if (s.boot !== bootId) { location.reload(); return; }  // Hermes se reinició: la página trae una clave nueva.
     $("offline").style.display = "none";
     const [title, hint] = STATES[s.state] || [s.state, ""];
     $("pill").classList.toggle("on", s.state !== "inactiva" && s.state !== "pausada");
@@ -1450,7 +1568,7 @@ async function tick() {
     }
     if (s.version !== shown && currentView() === "historial") { shown = s.version; loadHistory(); }
   } catch {
-    $("offline").style.display = "block";
+    $("offline").style.display = restarting ? "none" : "block";
     $("pill").classList.remove("on");
     $("pill").lastElementChild.textContent = "Sin conexión";
   }
@@ -1545,6 +1663,8 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 self._send(200, "image/webp", LOGO_PATH.read_bytes())
             elif path == "/status":
                 self._send(200, "application/json", json.dumps(status.snapshot()).encode("utf-8"))
+            elif path == "/settings" and status.settings is not None:
+                self._json(200, status.settings.snapshot(not self._is_remote()))
             elif path in ("/tasks", "/usage", "/history"):
                 self._send(200, "application/json", json.dumps(status.read(path[1:])).encode("utf-8"))
             else:
@@ -1552,6 +1672,23 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
 
         def _json(self, code: int, data: dict[str, Any]) -> None:
             self._send(code, "application/json", json.dumps(data).encode("utf-8"))
+
+        def _settings(self) -> None:
+            """Cambios a los ajustes. El editor recibe si la visita es local: lo delicado no se toca desde fuera."""
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_POST_BYTES or self.headers.get("Content-Type") != "application/json":
+                    raise ValueError
+                payload = json.loads(self.rfile.read(length))
+            except ValueError:
+                return self._json(400, {"error": "Solicitud inválida."})
+            try:
+                self._json(200, status.settings.apply(payload, not self._is_remote()))
+            except ValueError as exc:
+                self._json(400, {"error": str(exc) or "Solicitud inválida."})
+            except Exception:
+                log.exception("Falló el cambio de ajustes pedido desde la página")
+                self._json(500, {"error": "Ocurrió un error. Revisa el registro de Hermes."})
 
         def _speak(self) -> None:
             """Una orden grabada en la página: el cuerpo es el audio tal como lo entrega el navegador."""
@@ -1582,6 +1719,8 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 origin_ok = self.headers.get("Origin") in allowed_origins
             if not origin_ok or not secrets.compare_digest(sent_token, token.encode("ascii")):
                 return self._send(403, "text/plain; charset=utf-8", b"No permitido.")
+            if path == "/settings" and status.settings is not None:
+                return self._settings()
             if path not in ("/voice", "/tasks", "/speak") or (path != "/voice" and not status.has_action(path[1:])):
                 return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
             if path == "/speak":
