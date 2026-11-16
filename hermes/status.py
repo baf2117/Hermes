@@ -130,6 +130,7 @@ class VoiceStatus:
             return {
                 "state": self._state,
                 "paused": self._paused,
+                "speak": "speak" in self._actions,
                 "level": round(self._level),
                 "threshold": round(self._threshold),
                 "version": self._version,
@@ -460,6 +461,35 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
   dialog#editor { max-height:calc(100dvh - 24px); }
   .stage-wrap { min-height:calc(100dvh - 150px); }
 }
+/* Hablarle desde la página */
+.talk-btn { position:fixed; right:max(18px, env(safe-area-inset-right)); bottom:calc(18px + env(safe-area-inset-bottom)); z-index:15;
+  width:60px; height:60px; border-radius:50%; border:0; cursor:pointer; display:grid; place-items:center;
+  background:var(--accent); color:#14110a; box-shadow:0 8px 24px rgba(0,0,0,.45); transition:transform .15s, background .15s; }
+.talk-btn[hidden] { display:none; }
+.talk-btn:active { transform:scale(.94); }
+.talk-btn:focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
+.talk-btn svg { width:26px; height:26px; }
+.talk-btn .i-stop, .talk-btn .i-wait { display:none; }
+.talk-btn[data-state="grabando"] { background:var(--u-alta); color:#fff; animation:talk-pulse 1.2s ease-in-out infinite; }
+.talk-btn[data-state="grabando"] .i-mic, .talk-btn[data-state="hablando"] .i-mic, .talk-btn[data-state="pensando"] .i-mic { display:none; }
+.talk-btn[data-state="grabando"] .i-stop, .talk-btn[data-state="hablando"] .i-stop { display:block; }
+.talk-btn[data-state="pensando"] { cursor:default; opacity:.85; }
+.talk-btn[data-state="pensando"] .i-wait { display:block; animation:talk-spin 1s linear infinite; }
+@keyframes talk-pulse { 50% { box-shadow:0 0 0 12px color-mix(in srgb, var(--u-alta) 25%, transparent); } }
+@keyframes talk-spin { to { transform:rotate(360deg); } }
+.talk-panel { position:fixed; right:max(18px, env(safe-area-inset-right)); bottom:calc(90px + env(safe-area-inset-bottom)); z-index:15;
+  width:min(380px, calc(100vw - 36px)); max-height:min(60vh, 420px); overflow:auto; background:var(--card); color:var(--ink);
+  border:1px solid var(--line); border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.45); padding:12px 40px 12px 14px; font-size:15px; }
+.talk-panel[hidden] { display:none; }
+.talk-panel .heard { color:var(--muted); font-size:13px; margin-bottom:6px; }
+.talk-panel .heard:empty { display:none; }
+.talk-panel .said { white-space:pre-line; overflow-wrap:anywhere; }
+.talk-panel.error .said { color:var(--warn); }
+.talk-panel .icon-btn { position:absolute; top:4px; right:4px; }
+body.can-speak .toast { bottom:calc(92px + env(safe-area-inset-bottom)); }
+body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
+@media (prefers-reduced-motion: reduce) { .talk-btn[data-state="grabando"] { animation:none; } }
+
 @media (pointer:coarse) {
   /* Zonas de toque de al menos 40 px aunque el dibujo sea pequeño. */
   .tick { position:relative; }
@@ -634,6 +664,16 @@ main { padding-bottom:calc(56px + env(safe-area-inset-bottom)); }
     </div>
   </form>
 </dialog>
+<div class="talk-panel" id="talk-panel" role="status" aria-live="polite" hidden>
+  <button type="button" class="icon-btn" id="talk-close" aria-label="Cerrar la respuesta">✕</button>
+  <div class="heard" id="talk-heard"></div>
+  <div class="said" id="talk-said"></div>
+</div>
+<button class="talk-btn" id="talk-btn" type="button" data-state="lista" aria-label="Hablar con Hermes" hidden>
+  <svg class="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+  <svg class="i-stop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+  <svg class="i-wait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/></svg>
+</button>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-text"></span><button type="button" id="toast-undo" hidden>Deshacer</button></div>
 <script>
 const $ = id => document.getElementById(id);
@@ -1220,6 +1260,95 @@ async function loadHistory() {
 $("search").addEventListener("input", renderHistory);
 window.addEventListener("resize", () => document.querySelectorAll(".tooltip").forEach(t => t.style.display = "none"));
 setInterval(() => { if (currentView() === "consumo") loadUsage(); if (currentView() === "historial") loadHistory(); }, 5000);
+/* ---------- Hablarle desde la página ---------- */
+// Tocar para empezar, tocar otra vez para enviar. El audio viaja a Hermes, que lo transcribe y responde.
+const MAX_TALK_MS = 60000;
+const TALK_LABELS = { lista: "Hablar con Hermes", grabando: "Terminar y enviar", pensando: "Hermes está pensando", hablando: "Callar a Hermes" };
+const talk = { recorder: null, stream: null, chunks: [], timer: 0, startedAt: 0, ctx: null, playing: null, done: null };
+function talkState(state) { const b = $("talk-btn"); b.dataset.state = state; b.setAttribute("aria-label", TALK_LABELS[state]); }
+function talkShow(heard, said, isError) {
+  $("talk-heard").textContent = heard ? "Entendí: «" + heard + "»" : "";
+  $("talk-said").textContent = said;
+  $("talk-panel").classList.toggle("error", !!isError);
+  $("talk-panel").hidden = false;
+}
+function talkMime() {
+  for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"]) if (MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+function talkSilence() {
+  const done = talk.done;
+  if (talk.playing) { try { talk.playing.onended = null; talk.playing.stop(); } catch {} }
+  talk.playing = null; talk.done = null;
+  if (done) done();
+}
+async function talkStart() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) return talkShow("", "Este navegador no permite grabar desde la página.", true);
+  // El audio se desbloquea dentro del toque: si no, el teléfono no deja sonar la respuesta después.
+  try { talk.ctx = talk.ctx || new (window.AudioContext || window.webkitAudioContext)(); talk.ctx.resume(); } catch {}
+  try {
+    talk.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+  } catch {
+    return talkShow("", "No tengo permiso para usar el micrófono. Actívalo para esta página en los ajustes del navegador.", true);
+  }
+  const mime = talkMime();
+  talk.chunks = [];
+  talk.recorder = new MediaRecorder(talk.stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : {});
+  talk.recorder.ondataavailable = e => { if (e.data.size) talk.chunks.push(e.data); };
+  talk.recorder.onstop = talkSend;
+  talk.recorder.start();
+  talk.startedAt = Date.now();
+  $("talk-panel").hidden = true;
+  talkState("grabando");
+  talk.timer = setTimeout(talkStop, MAX_TALK_MS);
+}
+function talkStop() {
+  clearTimeout(talk.timer);
+  if (talk.recorder && talk.recorder.state !== "inactive") talk.recorder.stop();
+  if (talk.stream) { talk.stream.getTracks().forEach(t => t.stop()); talk.stream = null; }  // Cierra el micrófono.
+}
+async function talkPlay(base64) {
+  if (!talk.ctx) return;
+  const raw = atob(base64), bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  const buffer = await talk.ctx.decodeAudioData(bytes.buffer);
+  await new Promise(done => {
+    const source = talk.ctx.createBufferSource();
+    source.buffer = buffer; source.connect(talk.ctx.destination);
+    source.onended = () => { talk.playing = null; talk.done = null; done(); };
+    talk.playing = source; talk.done = done;
+    talkState("hablando");
+    source.start();
+  });
+}
+async function talkSend() {
+  const type = ((talk.recorder && talk.recorder.mimeType) || "audio/webm").split(";")[0];
+  const blob = new Blob(talk.chunks, { type });
+  const length = Date.now() - talk.startedAt;
+  talk.recorder = null; talk.chunks = [];
+  if (!blob.size || length < 500) { talkState("lista"); return talkShow("", "Toca el botón, di la orden y vuelve a tocarlo para enviarla.", true); }
+  talkState("pensando");
+  try {
+    const res = await fetch("/speak", { method: "POST", cache: "no-store", headers: { "Content-Type": type, "X-Hermes-Token": TOKEN }, body: blob });
+    if (res.status === 401) { location.href = "/login"; return; }
+    if (res.status === 403) { location.reload(); return; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "No se pudo atender la orden.");
+    talkShow(data.heard, data.reply);
+    if (currentView() === "tareas") loadTasks(true);
+    if (data.audio) await talkPlay(data.audio).catch(() => {});
+  } catch (e) {
+    talkShow("", e instanceof TypeError ? "No pude comunicarme con Hermes. Revisa tu conexión." : e.message, true);
+  }
+  talkState("lista");
+}
+$("talk-btn").addEventListener("click", () => {
+  const state = $("talk-btn").dataset.state;
+  if (state === "lista") talkStart();
+  else if (state === "grabando") talkStop();
+  else if (state === "hablando") talkSilence();
+});
+$("talk-close").addEventListener("click", () => { $("talk-panel").hidden = true; });
 let orbLevel = 0;
 function updateOrb(s) {
   const orb = $("orb");
@@ -1253,6 +1382,8 @@ async function tick() {
     const [title, hint] = STATES[s.state] || [s.state, ""];
     $("pill").classList.toggle("on", s.state !== "inactiva" && s.state !== "pausada");
     updateMicButton(s);
+    $("talk-btn").hidden = !s.speak;
+    document.body.classList.toggle("can-speak", !!s.speak);
     $("pill").lastElementChild.textContent = "Voz: " + title.toLowerCase();
     if (currentView() === "vivo") {
       $("state").textContent = title; $("hint").textContent = hint;
@@ -1281,6 +1412,7 @@ tick();
 
 MAX_POST_BYTES = 4096
 MAX_LOGIN_BYTES = 1024
+MAX_AUDIO_BYTES = 3_000_000  # Una orden hablada de hasta un minuto pesa mucho menos.
 
 
 def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = None) -> type[BaseHTTPRequestHandler]:
@@ -1363,6 +1495,17 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
         def _json(self, code: int, data: dict[str, Any]) -> None:
             self._send(code, "application/json", json.dumps(data).encode("utf-8"))
 
+        def _speak(self) -> None:
+            """Una orden grabada en la página: el cuerpo es el audio tal como lo entrega el navegador."""
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_AUDIO_BYTES or not self.headers.get("Content-Type", "").startswith("audio/"):
+                    raise ValueError
+            except ValueError:
+                return self._json(400, {"error": "Solicitud inválida."})
+            code, result = status.act("speak", self.rfile.read(length))
+            self._json(code, result)
+
         def do_POST(self) -> None:
             # Otra web abierta en el navegador podría enviar formularios aquí: se exige el origen
             # de esta página y la clave que solo ella conoce.
@@ -1381,8 +1524,10 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 origin_ok = self.headers.get("Origin") in allowed_origins
             if not origin_ok or not secrets.compare_digest(sent_token, token.encode("ascii")):
                 return self._send(403, "text/plain; charset=utf-8", b"No permitido.")
-            if path not in ("/voice", "/tasks") or (path == "/tasks" and not status.has_action("tasks")):
+            if path not in ("/voice", "/tasks", "/speak") or (path != "/voice" and not status.has_action(path[1:])):
                 return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
+            if path == "/speak":
+                return self._speak()
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= MAX_POST_BYTES or self.headers.get("Content-Type") != "application/json":

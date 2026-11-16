@@ -195,15 +195,23 @@ class PiperSpeaker:
         from piper import PiperVoice
 
         self._voice = PiperVoice.load(str(voice_path))
+        self._lock = threading.Lock()  # La voz de casa y la página pueden pedir audio a la vez.
+
+    def synthesize(self, text: str) -> tuple[bytes, int]:
+        """Audio de 16 bits mono y su frecuencia, sin reproducirlo."""
+        with self._lock:
+            chunks = list(self._voice.synthesize(text))
+        if not chunks:
+            return b"", 22050
+        return b"".join(c.audio_int16_bytes for c in chunks), chunks[0].sample_rate
 
     def speak(self, text: str) -> None:
         import numpy as np
         import sounddevice as sd
 
-        chunks = list(self._voice.synthesize(text))
-        if chunks:
-            audio = np.frombuffer(b"".join(c.audio_int16_bytes for c in chunks), dtype=np.int16)
-            sd.play(audio, samplerate=chunks[0].sample_rate, blocking=True)
+        pcm, rate = self.synthesize(text)
+        if pcm:
+            sd.play(np.frombuffer(pcm, dtype=np.int16), samplerate=rate, blocking=True)
 
     def chime(self) -> None:
         import numpy as np

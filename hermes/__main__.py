@@ -24,6 +24,7 @@ from .scheduler import Scheduler
 from .speakers import VOICE_KEY, SwitchableSpeaker
 from .gmail import DEFAULT_ACCOUNT, GmailAuthError, GmailClient, authorize, find_accounts, token_path, valid_account
 from .mailwatch import MailWatcher, run_watchers
+from .pagevoice import PageVoice, VoiceRenderer
 from .remote import RemoteAccess
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
 from .store import LLMUsage, Store
@@ -141,12 +142,33 @@ def home_voice_problem(config: Config) -> str | None:
     return None
 
 
+def shared_piper(config: Config) -> Callable[[], PiperSpeaker | None]:
+    """La voz local se carga una sola vez, la primera que hace falta, y sirve a la casa y a la página."""
+    lock = threading.Lock()
+    loaded: list[PiperSpeaker | None] = []
+
+    def get() -> PiperSpeaker | None:
+        with lock:
+            if not loaded:
+                path = config.piper_voice_path
+                available = path is not None and path.exists() and importlib.util.find_spec("piper") is not None
+                try:
+                    loaded.append(PiperSpeaker(path) if available else None)
+                except Exception:
+                    logging.exception("No se pudo cargar la voz local")
+                    loaded.append(None)
+            return loaded[0]
+
+    return get
+
+
 def start_home_voice(
     config: Config,
     assistant: Assistant,
     transcriber: WhisperTranscriber,
     status: VoiceStatus,
     stop: threading.Event,
+    piper: Callable[[], PiperSpeaker | None],
 ) -> None:
     def build(read: Callable[[], bytes], flush: Callable[[], None]) -> HomeVoice:
         transcriber.preload()
@@ -156,7 +178,7 @@ def start_home_voice(
             assistant,
             SwitchableSpeaker(
                 lambda: assistant.store.kv_get(VOICE_KEY) or config.voice,
-                PiperSpeaker(config.piper_voice_path),
+                piper(),
                 config.kokoro_dir,
             ),
             read,
@@ -281,11 +303,16 @@ def run(config: Config) -> int:
     status.set_source("usage", lambda: usage_report(store, datetime.now().astimezone()))
     status.set_source("history", lambda: history_report(store, status))
     status.set_action("tasks", TaskEditor(assistant).apply)
+    piper = shared_piper(config)
+    if transcriber is not None:
+        # Hablarle desde la página: sirve también fuera de casa, con el micrófono del teléfono.
+        renderer = VoiceRenderer(lambda: store.kv_get(VOICE_KEY) or config.voice, piper)
+        status.set_action("speak", PageVoice(transcriber, assistant, config.tmp_dir, renderer, status).handle)
     start_status_server(status, config.status_port, RemoteAccess(config.public_host, config.page_password))
     if problem := home_voice_problem(config):
         logging.warning("Voz en casa no disponible: %s", problem)
     else:
-        start_home_voice(config, assistant, transcriber, status, stop)
+        start_home_voice(config, assistant, transcriber, status, stop, piper)
 
     logging.info("Hermes en marcha desde %s", datetime.now().astimezone().isoformat(timespec="seconds"))
     try:

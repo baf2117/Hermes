@@ -30,6 +30,10 @@ class TranscriptionError(Exception):
     pass
 
 
+class AudioTooLong(TranscriptionError):
+    pass
+
+
 def is_hallucination(text: str) -> bool:
     """Whisper aprendió de videos y ante ruido a veces inventa sus despedidas típicas."""
     plain = "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
@@ -94,9 +98,14 @@ class WhisperTranscriber:
             return ""
         return text
 
-    def transcribe(self, audio_path: Path) -> str:
+    def transcribe(self, audio_path: Path, max_seconds: int | None = None) -> str:
         try:
-            return self._run(decode_audio(audio_path))
+            audio = decode_audio(audio_path)
+            if max_seconds is not None and audio.size > max_seconds * SAMPLE_RATE:
+                raise AudioTooLong(f"dura más de {max_seconds} s")
+            return self._run(audio)
+        except AudioTooLong:
+            raise
         except Exception as exc:
             raise TranscriptionError(str(exc)) from exc
 
