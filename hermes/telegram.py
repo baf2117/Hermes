@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -70,7 +71,9 @@ class TelegramClient:
             if buttons and index == len(chunks) - 1:
                 payload["reply_markup"] = {
                     "inline_keyboard": [
-                        [{"text": label, "callback_data": data} for label, data in row] for row in buttons
+                        # Un botón con dirección https:// abre la página; los demás le avisan a Hermes.
+                        [{"text": label, "url": data} if data.startswith("https://") else {"text": label, "callback_data": data}
+                         for label, data in row] for row in buttons
                     ]
                 }
             self.call("sendMessage", payload)
@@ -119,6 +122,7 @@ class TelegramBot:
         self.allowed_chat_id = allowed_chat_id
         self.transcriber = transcriber
         self.tmp_dir = tmp_dir
+        self.photo_handler: Callable[[bytes], Any] | None = None  # Lee recibos; None si no está disponible.
 
     def _is_allowed(self, user_id: Any, chat: dict[str, Any]) -> bool:
         return (
@@ -146,13 +150,50 @@ class TelegramBot:
             return
         sent_at = datetime.fromtimestamp(message["date"]).astimezone() if "date" in message else None
         audio = message.get("voice") or message.get("audio")
+        photo = self._photo_of(message)
         if audio:
             self._handle_audio(chat["id"], audio, sent_at)
+        elif photo is not None:
+            self._handle_photo(chat["id"], photo)
         elif "text" in message:
             reply = self.assistant.handle_text(message["text"], sent_at)
             self.client.send_message(chat["id"], reply.text, reply.buttons)
         else:
-            self.client.send_message(chat["id"], "Solo entiendo texto y notas de voz.")
+            self.client.send_message(chat["id"], "Entiendo texto, notas de voz y fotos de recibos.")
+
+    @staticmethod
+    def _photo_of(message: dict[str, Any]) -> str | None:
+        """El archivo de una foto (la versión más grande) o de una imagen mandada como archivo."""
+        if message.get("photo"):
+            return message["photo"][-1].get("file_id")
+        document = message.get("document") or {}
+        if str(document.get("mime_type", "")).startswith("image/"):
+            return document.get("file_id")
+        return None
+
+    def _handle_photo(self, chat_id: int, file_id: str) -> None:
+        if self.photo_handler is None or self.tmp_dir is None:
+            self.client.send_message(chat_id, "Leer fotos no está disponible en este momento.")
+            return
+        self.client.send_message(chat_id, "🧾 Leyendo el recibo…")
+        # Leer la foto tarda unos segundos: se hace aparte para no detener los demás mensajes.
+        threading.Thread(target=self._read_photo, args=(chat_id, file_id), daemon=True, name="recibo").start()
+
+    def _read_photo(self, chat_id: int, file_id: str) -> None:
+        self.tmp_dir.mkdir(parents=True, exist_ok=True)
+        path = self.tmp_dir / f"{uuid.uuid4().hex}.photo"
+        try:
+            self.client.download_file(file_id, path)
+            reply = self.photo_handler(path.read_bytes())
+            self.client.send_message(chat_id, reply.text, reply.buttons)
+        except Exception as exc:
+            log.warning("No se pudo procesar la foto: %s", exc)
+            try:
+                self.client.send_message(chat_id, "No pude procesar esa foto. Intenta de nuevo en un momento.")
+            except Exception:
+                pass
+        finally:
+            path.unlink(missing_ok=True)  # La copia que se guarda es la del recibo, no esta temporal.
 
     def _transcribe(self, audio: dict[str, Any]) -> str:
         self.tmp_dir.mkdir(parents=True, exist_ok=True)

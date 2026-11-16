@@ -7,7 +7,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
@@ -42,6 +42,8 @@ HELP_TEXT = (
     "/habito tomar agua 08:00: crea un hábito diario; /habitos muestra tus rachas\n"
     "/espero que Juan mande el contrato: te pregunto en unos días si ya llegó\n"
     "/fechas: cumpleaños y aniversarios que recuerdo\n"
+    "/gastos: lo que llevas gastado este mes (/gastos octubre, /gastos gasolina); /garantias las vigentes\n"
+    "Mándame la foto de un recibo y lo guardo como gasto\n"
     "/silencio 2h: no te aviso durante ese tiempo (/silencio off lo quita)\n"
     "/sesiones: quién tiene abierta tu página, y cerrarlas\n"
     "/noche y /semana: el cierre del día y la revisión de la semana\n"
@@ -234,6 +236,9 @@ class Assistant:
         # Botones y comandos que atienden otras partes de Hermes, como la seguridad de la página.
         self.button_hooks: dict[str, Callable[[int], Reply]] = {}
         self.command_hooks: dict[str, Callable[[str], Reply]] = {}
+        # Frases que atienden otras partes (p. ej. «¿cuánto gasté este mes?») y líneas extra del resumen de la mañana.
+        self.text_hooks: list[Callable[[str, datetime], Reply | None]] = []
+        self.summary_hooks: list[Callable[[date], list[str]]] = []
 
     # --- Presentación ---
 
@@ -372,7 +377,8 @@ class Assistant:
                 parts.append(f"\n{label}:\n" + "\n".join(self.format_task(t) for t in tasks))
         if len(parts) == 1:
             parts.append("No tienes tareas para hoy.")
-        if extra := self._extra_lines(now) + self.extras.date_lines(now.date()):
+        hooked = [line for hook in self.summary_hooks for line in hook(now.date())]
+        if extra := self._extra_lines(now) + self.extras.date_lines(now.date()) + hooked:
             parts.append("\n" + "\n".join(extra))
         habits = [habit["title"] for habit, marked, _ in self.extras.habit_status(now.date()) if not marked]
         if habits:
@@ -872,6 +878,8 @@ class Assistant:
             reply = self._command(text)
         elif (extra := self.extras.handle(text, reference)) is not None:
             reply = extra
+        elif (hooked := next((r for hook in self.text_hooks if (r := hook(text, reference)) is not None), None)) is not None:
+            reply = hooked
         elif (bulk := self._bulk_cancel_flow(text, now)) is not None:
             reply = bulk
         else:

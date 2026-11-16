@@ -1,6 +1,7 @@
 """Cliente de Ollama. El modelo solo interpreta: devuelve datos que el código valida."""
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import urllib.error
@@ -245,7 +246,8 @@ class OllamaClient:
         return False
 
     def _chat(
-        self, messages: list[dict[str, str]], format_schema: dict | None, temperature: float, purpose: str
+        self, messages: list[dict[str, Any]], format_schema: dict | None, temperature: float, purpose: str,
+        max_tokens: int = MAX_OUTPUT_TOKENS,
     ) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -253,7 +255,7 @@ class OllamaClient:
             "stream": False,
             "think": False,
             "keep_alive": KEEP_LOADED,
-            "options": {"temperature": temperature, "num_predict": MAX_OUTPUT_TOKENS},
+            "options": {"temperature": temperature, "num_predict": max_tokens},
         }
         if format_schema is not None:
             payload["format"] = format_schema
@@ -280,6 +282,11 @@ class OllamaClient:
                 )
             )
         return content
+
+    def look(self, prompt: str, image: bytes, schema: dict, purpose: str = "leer foto") -> str:
+        """Pregunta sobre una imagen al modelo local; la imagen no sale de la computadora."""
+        message = {"role": "user", "content": prompt, "images": [base64.b64encode(image).decode("ascii")]}
+        return self._chat([message], schema, 0.0, purpose, max_tokens=1200)
 
     def interpret(
         self,

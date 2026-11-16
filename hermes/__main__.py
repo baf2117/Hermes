@@ -25,6 +25,7 @@ from .speakers import VOICE_KEY, SwitchableSpeaker
 from .gmail import DEFAULT_ACCOUNT, GmailAuthError, GmailClient, authorize, find_accounts, token_path, valid_account
 from . import __version__
 from .mailwatch import MailWatcher, run_watchers
+from .receipts import Receipts
 from .net import prefer_ipv4
 from .outside import (
     CALENDAR_SCOPE, Agenda, CalendarClient, Weather, calendar_token_path, find_calendars, run_heartbeat, valid_heartbeat,
@@ -340,6 +341,19 @@ def run(config: Config) -> int:
     apuntes = ExtrasEditor(assistant)
     status.set_source("extras", apuntes.snapshot)
     status.set_action("extras", apuntes.apply)
+    # Recibos: los lee siempre el modelo local, aunque para conversar se use Claude. La foto no sale de aquí.
+    reader = OllamaClient(config.ollama_url, config.ollama_model, timeout=300,
+                          on_usage=lambda usage: store.add_usage(usage, int(time.time())))
+    receipts = Receipts(store, reader.look, config.db_path.parent, assistant._now, Reply,
+                        f"https://{config.public_host}/#apuntes/gastos" if config.public_host else None)
+    bot.photo_handler = receipts.from_photo
+    assistant.text_hooks.append(receipts.handle)
+    assistant.summary_hooks.append(receipts.warranty_lines)
+    assistant.command_hooks.update({"/gastos": receipts.command, "/garantias": lambda _: receipts.warranties()})
+    assistant.button_hooks.update(rcpdel=receipts.button_delete)
+    status.set_source("receipts", receipts.snapshot)
+    status.set_action("receipts", receipts.apply)
+    status.receipt_photo = receipts.photo
     piper = shared_piper(config)
     if transcriber is not None:
         # Hablarle desde la página: sirve también fuera de casa, con el micrófono del teléfono.

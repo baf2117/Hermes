@@ -82,6 +82,19 @@ CREATE TABLE IF NOT EXISTS sessions (
     approved INTEGER NOT NULL,
     revoked_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    merchant TEXT NOT NULL,
+    day TEXT NOT NULL,
+    total REAL NOT NULL,
+    currency TEXT NOT NULL,
+    category TEXT NOT NULL,
+    warranty_until TEXT,
+    items TEXT NOT NULL DEFAULT '[]',
+    photo TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS receipts_day ON receipts (day);
 CREATE TABLE IF NOT EXISTS lists (
     name TEXT PRIMARY KEY,
     created_at INTEGER NOT NULL
@@ -861,6 +874,61 @@ class Store:
                 (now,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    # --- Recibos: gastos leídos de fotos ---
+
+    RECEIPT_FIELDS = ("merchant", "day", "total", "currency", "category", "warranty_until", "items", "photo")
+
+    def add_receipt(self, now: int, **fields: Any) -> int:
+        columns = [name for name in self.RECEIPT_FIELDS if name in fields]
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                f"INSERT INTO receipts ({', '.join(columns)}, created_at) VALUES ({', '.join('?' for _ in columns)}, ?)",
+                (*(fields[name] for name in columns), now),
+            )
+            return int(cursor.lastrowid)
+
+    def get_receipt(self, receipt_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM receipts WHERE id = ?", (receipt_id,)).fetchone()
+        return dict(row) if row else None
+
+    def receipts_between(self, first_day: str, last_day: str) -> list[dict[str, Any]]:
+        """Recibos con fecha entre los dos días (AAAA-MM-DD, incluidos), del más reciente al más viejo."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM receipts WHERE day BETWEEN ? AND ? ORDER BY day DESC, id DESC", (first_day, last_day)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def receipts_with_warranty(self, from_day: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM receipts WHERE warranty_until >= ? ORDER BY warranty_until, id", (from_day,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def find_receipt(self, merchant: str, day: str, total: float) -> int | None:
+        """Un recibo igual ya guardado (mismo comercio, día y total), para no contarlo dos veces."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, merchant FROM receipts WHERE day = ? AND abs(total - ?) < 0.005", (day, total)
+            ).fetchall()
+        return next((int(row["id"]) for row in rows if row["merchant"].casefold() == merchant.casefold()), None)
+
+    def update_receipt(self, receipt_id: int, **fields: Any) -> bool:
+        columns = [name for name in self.RECEIPT_FIELDS if name in fields]
+        if not columns:
+            return self.get_receipt(receipt_id) is not None
+        with self._lock, self._conn:
+            return self._conn.execute(
+                f"UPDATE receipts SET {', '.join(f'{name} = ?' for name in columns)} WHERE id = ?",
+                (*(fields[name] for name in columns), receipt_id),
+            ).rowcount > 0
+
+    def delete_receipt(self, receipt_id: int) -> bool:
+        with self._lock, self._conn:
+            return self._conn.execute("DELETE FROM receipts WHERE id = ?", (receipt_id,)).rowcount > 0
 
     def kv_get(self, key: str) -> str | None:
         with self._lock:

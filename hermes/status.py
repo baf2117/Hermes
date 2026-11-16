@@ -111,6 +111,8 @@ class VoiceStatus:
             log.exception("No se pudieron leer los datos de %s para la página", name)
             return {}
 
+    receipt_photo: Callable[[int], bytes | None] | None = None  # Foto de un recibo, solo para quien ya entró.
+
     def set_action(self, name: str, action: Callable[[Any], dict[str, Any]]) -> None:
         """Cambios que la página puede pedir, por ejemplo editar tareas."""
         self._actions[name] = action
@@ -655,6 +657,38 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
 .ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
 .ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
+.rc-head { display:flex; align-items:center; gap:12px; margin:0 0 12px; }
+.rc-head h3 { margin:0; font-size:18px; min-width:120px; text-align:center; }
+.rc-nav { font:inherit; font-size:20px; line-height:1; width:36px; height:36px; border-radius:50%; border:1px solid var(--line); background:var(--card); color:inherit; cursor:pointer; }
+.rc-nav:disabled { opacity:.35; cursor:default; }
+.rc-summary { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:8px; max-width:760px; }
+.rc-total { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+.rc-total b { font-size:26px; }
+.rc-total span { color:var(--muted); font-size:14px; }
+.rc-cat { display:grid; grid-template-columns:minmax(80px, 130px) 1fr auto; align-items:center; gap:10px; font-size:14px; }
+.rc-cat-amount { color:var(--muted); font-variant-numeric:tabular-nums; }
+.rc-bar { height:8px; border-radius:4px; background:var(--soft); overflow:hidden; }
+.rc-bar i { display:block; height:100%; border-radius:4px; }
+.rc-hint { color:var(--muted); font-size:13px; margin:12px 0; max-width:760px; }
+#rc-list { max-width:760px; }
+.rc-row { display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
+.rc-thumb { flex:none; width:48px; height:48px; border-radius:8px; border:1px solid var(--line); background:var(--soft); padding:0; overflow:hidden; cursor:zoom-in; font-size:22px; color:inherit; }
+.rc-thumb:disabled { cursor:default; }
+.rc-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.rc-body { flex:1; min-width:0; }
+.rc-body .ap-item { font-weight:600; font-size:15px; overflow-wrap:anywhere; }
+.rc-body small { display:block; color:var(--muted); font-size:13px; }
+.rc-amount { font-weight:650; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.rc-edit { background:var(--card); border:1px solid var(--accent); border-radius:12px; padding:10px; margin-bottom:8px; align-items:center; }
+.rc-edit input:not([type]) { flex:1 1 100%; }
+.rc-edit input[type="number"] { flex:1 1 110px; }
+.rc-edit input[type="date"] { flex:1 1 140px; }
+.rc-warranty { display:flex; align-items:center; gap:8px; flex:1 1 100%; color:var(--muted); font-size:14px; }
+dialog#rc-photo { border:1px solid var(--line); border-radius:16px; background:var(--card); color:var(--ink); padding:14px; width:min(560px, calc(100vw - 24px)); }
+dialog#rc-photo::backdrop { background:rgba(0,0,0,.7); }
+#rc-photo-img { display:block; width:100%; max-height:70vh; object-fit:contain; border-radius:10px; background:#000; }
+#rc-photo-items ul { margin:10px 0 0; padding-left:20px; font-size:14px; color:var(--muted); }
+@media (max-width:640px) { .rc-cat { grid-template-columns:90px 1fr auto; } .rc-total b { font-size:22px; } }
 .dt-group h4 { font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 8px; }
 .dt-group:first-child h4 { margin-top:6px; }
 .dt-row { display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
@@ -908,6 +942,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <a href="#apuntes/notas" data-sub="notas">Notas<span id="ap-tab-notas"></span></a>
     <a href="#apuntes/fechas" data-sub="fechas">Fechas<span id="ap-tab-fechas"></span></a>
     <a href="#apuntes/seguimientos" data-sub="seguimientos">Seguimientos<span id="ap-tab-seguimientos"></span></a>
+    <a href="#apuntes/gastos" data-sub="gastos">Gastos<span id="ap-tab-gastos"></span></a>
   </nav>
   <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="primary" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
   <div class="ap-grid">
@@ -949,6 +984,16 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
         <button type="submit" class="primary">+ Agregar</button>
       </form>
       <div id="ap-dates"></div>
+    </section>
+    <section class="ap-page" data-sub="gastos" hidden>
+      <div class="rc-head">
+        <button type="button" class="rc-nav" id="rc-prev" aria-label="Mes anterior">‹</button>
+        <h3 id="rc-month"></h3>
+        <button type="button" class="rc-nav" id="rc-next" aria-label="Mes siguiente">›</button>
+      </div>
+      <div class="rc-summary" id="rc-summary"></div>
+      <p class="rc-hint">Para agregar un gasto, mándale a Hermes por Telegram la foto del recibo. La lee el modelo de tu computadora: la foto no sale de ahí. Toca un comercio para corregirlo y la foto para verla.</p>
+      <div id="rc-list"></div>
     </section>
     <section class="ap-card" data-sub="seguimientos" hidden>
       <h3>Seguimientos <span id="ap-waiting-count"></span></h3>
@@ -1052,6 +1097,11 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
   <svg class="i-stop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
   <svg class="i-wait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/></svg>
 </button>
+<dialog id="rc-photo" aria-label="Foto del recibo">
+  <img id="rc-photo-img" alt="Foto del recibo">
+  <div id="rc-photo-items"></div>
+  <div class="ask-actions"><button type="button" class="ghost" id="rc-photo-close">Cerrar</button></div>
+</dialog>
 <dialog id="ask" aria-labelledby="ask-text">
   <p id="ask-text"></p>
   <div class="ask-actions">
@@ -1111,7 +1161,7 @@ function hideToast() { $("toast").classList.remove("show"); }
 const VIEWS = ["tareas", "apuntes", "consumo", "historial", "vivo", "ajustes"];
 function currentView() { const v = location.hash.slice(1).split("/")[0]; return VIEWS.includes(v) ? v : "tareas"; }
 // Apuntes tiene un submenú: cada apartado es su propia página (#apuntes/listas, #apuntes/habitos…).
-const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", seguimientos: "Seguimientos" };
+const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", seguimientos: "Seguimientos", gastos: "Gastos" };
 let lastSub = "listas";
 function currentSub() {
   const sub = location.hash.slice(1).split("/")[1];
@@ -2388,7 +2438,143 @@ function renderApuntes(d) {
   $("ap-quiet").hidden = !d.quiet_until;
   if (d.quiet_until) $("ap-quiet-text").textContent = "En silencio hasta las " + new Date(d.quiet_until * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }) + ". Los avisos salen después.";
 }
+/* ---------- Gastos: recibos leídos de fotos ---------- */
+let receiptsData = null, receiptsSerialized = "", editingReceipt = null, editingReceiptFields = null;
+const rcMonth = { year: new Date().getFullYear(), month: new Date().getMonth() };
+const rcKey = (y, m) => y + "-" + String(m + 1).padStart(2, "0");
+function rcMoney(total, currency) {
+  const sign = (receiptsData && receiptsData.currencies[currency]) || currency;
+  return sign + " " + Number(total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function rcSum(list) {
+  const sums = {};
+  list.forEach(r => { sums[r.currency] = (sums[r.currency] || 0) + r.total; });
+  const parts = Object.entries(sums).sort((a, b) => b[1] - a[1]).map(([c, t]) => rcMoney(t, c));
+  return parts.length ? parts.join(" + ") : rcMoney(0, "GTQ");
+}
+function rcDay(iso) { const [y, m, d] = iso.split("-").map(Number); return d + " " + AP_MONTHS[m - 1].slice(0, 3); }
+function rcPhoto(r) {
+  $("rc-photo-img").src = "/recibo/" + r.id + ".jpg";
+  const items = $("rc-photo-items"); items.textContent = "";
+  if (r.items.length) { const ul = document.createElement("ul"); r.items.forEach(i => ul.appendChild(text("li", "", i))); items.appendChild(ul); }
+  $("rc-photo").showModal();
+}
+$("rc-photo-close").addEventListener("click", () => $("rc-photo").close());
+$("rc-photo").addEventListener("click", event => { if (event.target === $("rc-photo")) $("rc-photo").close(); });
+function receiptRow(r) {
+  const redraw = () => renderReceipts();
+  if (editingReceipt === r.id) {
+    const v = editingReceiptFields;
+    const form = text("form", "ap-form rc-edit", ""); form.autocomplete = "off";
+    const merchant = document.createElement("input"); merchant.maxLength = 80; merchant.value = v.merchant; merchant.setAttribute("aria-label", "Comercio");
+    const total = document.createElement("input"); total.type = "number"; total.step = "0.01"; total.min = "0.01"; total.value = v.total; total.setAttribute("aria-label", "Total");
+    const currency = document.createElement("select"); currency.setAttribute("aria-label", "Moneda");
+    Object.entries(receiptsData.currencies).forEach(([code, sign]) => { const o = document.createElement("option"); o.value = code; o.textContent = sign; currency.appendChild(o); });
+    currency.value = v.currency;
+    const day = document.createElement("input"); day.type = "date"; day.value = v.day; day.setAttribute("aria-label", "Fecha de la compra");
+    const category = document.createElement("select"); category.setAttribute("aria-label", "Categoría");
+    receiptsData.categories.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = capital(c); category.appendChild(o); });
+    category.value = v.category;
+    const warrantyLabel = text("label", "rc-warranty", "Garantía hasta ");
+    const warranty = document.createElement("input"); warranty.type = "date"; warranty.value = v.warranty_until || ""; warranty.setAttribute("aria-label", "Garantía hasta (vacío si no tiene)");
+    warrantyLabel.appendChild(warranty);
+    const read = () => ({ merchant: merchant.value, total: total.value, currency: currency.value, day: day.value, category: category.value, warranty_until: warranty.value });
+    [merchant, total, currency, day, category, warranty].forEach(el => { el.oninput = () => { editingReceiptFields = read(); }; });
+    const stop = () => { editingReceipt = null; editingReceiptFields = null; };
+    const save = text("button", "primary", "Guardar"); save.type = "submit";
+    const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+    cancel.onclick = () => { stop(); redraw(); };
+    form.onkeydown = event => { if (event.key === "Escape") { stop(); redraw(); } };
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const f = read();
+      const amount = parseFloat(f.total);
+      if (!f.merchant.trim()) { merchant.focus(); return; }
+      if (!(amount > 0)) { total.focus(); return; }
+      save.disabled = true;
+      try {
+        toast((await send("/receipts", { action: "edit", id: r.id, merchant: f.merchant.trim(), total: amount, currency: f.currency,
+          day: f.day, category: f.category, warranty_until: f.warranty_until || null })).message);
+        stop();
+        await loadReceipts(true);
+      } catch (e) { toast(e.message); save.disabled = false; }
+    };
+    form.append(merchant, total, currency, day, category, warrantyLabel, save, cancel);
+    setTimeout(() => { if (editingReceipt === r.id && !form.contains(document.activeElement)) merchant.focus(); }, 0);
+    return form;
+  }
+  const row = text("div", "rc-row", "");
+  const thumb = text("button", "rc-thumb", r.photo ? "" : "🧾"); thumb.type = "button";
+  if (r.photo) { const img = document.createElement("img"); img.src = "/recibo/" + r.id + ".jpg"; img.alt = ""; img.loading = "lazy"; thumb.appendChild(img); }
+  thumb.setAttribute("aria-label", "Ver la foto del recibo de " + r.merchant);
+  thumb.disabled = !r.photo;
+  thumb.onclick = () => rcPhoto(r);
+  const body = text("div", "rc-body", "");
+  const name = text("button", "ap-item", r.merchant); name.type = "button"; name.title = "Tocar para corregir";
+  name.setAttribute("aria-label", "Corregir el recibo de " + r.merchant);
+  name.onclick = () => { editingReceipt = r.id; editingReceiptFields = { merchant: r.merchant, total: r.total, currency: r.currency, day: r.day, category: r.category, warranty_until: r.warranty_until }; redraw(); };
+  const detail = rcDay(r.day) + " · " + r.category + (r.warranty_until && r.warranty_until >= receiptsData.today ? " · 🛡 hasta " + rcDay(r.warranty_until) : "");
+  body.append(name, text("small", "", detail));
+  const amount = text("div", "rc-amount", rcMoney(r.total, r.currency));
+  const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Borrar el recibo de " + r.merchant);
+  remove.onclick = async () => {
+    if (!(await ask("¿Borrar el recibo de " + r.merchant + " por " + rcMoney(r.total, r.currency) + "? También se borra su foto.", "Borrar"))) return;
+    try { toast((await send("/receipts", { action: "delete", id: r.id })).message); await loadReceipts(true); } catch (e) { toast(e.message); }
+  };
+  row.append(thumb, body, amount, remove);
+  return row;
+}
+function renderReceipts() {
+  if (!receiptsData) return;
+  const key = rcKey(rcMonth.year, rcMonth.month);
+  const today = receiptsData.today;
+  const [ty, tm] = today.split("-").map(Number);
+  $("rc-month").textContent = capital(AP_MONTHS[rcMonth.month]) + (rcMonth.year !== ty ? " " + rcMonth.year : "");
+  $("rc-next").disabled = key >= today.slice(0, 7);
+  $("rc-prev").disabled = key <= rcKey(ty - 1, tm - 1);  // Se guardan 13 meses a la vista.
+  const month = receiptsData.receipts.filter(r => r.day.slice(0, 7) === key);
+  const summary = $("rc-summary"); summary.textContent = "";
+  const top = text("div", "rc-total", "");
+  top.append(text("b", "", rcSum(month)), text("span", "", month.length === 1 ? "1 recibo" : month.length + " recibos"));
+  summary.appendChild(top);
+  const byCategory = {};
+  month.forEach(r => { (byCategory[r.category] = byCategory[r.category] || []).push(r); });
+  const main = month.length ? Object.entries(month.reduce((acc, r) => { acc[r.currency] = (acc[r.currency] || 0) + r.total; return acc; }, {})).sort((a, b) => b[1] - a[1])[0][0] : "GTQ";
+  const ranked = Object.entries(byCategory).map(([c, list]) => [c, list, list.filter(r => r.currency === main).reduce((s, r) => s + r.total, 0)]).sort((a, b) => b[2] - a[2]);
+  const biggest = ranked.length ? Math.max(...ranked.map(x => x[2])) || 1 : 1;
+  ranked.forEach(([c, list, amount]) => {
+    const line = text("div", "rc-cat", "");
+    const bar = text("div", "rc-bar", ""); const fill = document.createElement("i");
+    fill.style.width = Math.max(2, Math.round(100 * amount / biggest)) + "%"; fill.style.background = "var(--accent)"; bar.appendChild(fill);
+    line.append(text("span", "rc-cat-name", capital(c)), bar, text("span", "rc-cat-amount", rcSum(list)));
+    summary.appendChild(line);
+  });
+  const box = $("rc-list"); box.textContent = "";
+  if (!month.length) {
+    box.appendChild(text("div", "ap-empty card", key === today.slice(0, 7)
+      ? "Todavía no hay recibos este mes. Mándale a Hermes por Telegram la foto de uno y aparece aquí."
+      : "No hay recibos guardados en este mes."));
+    return;
+  }
+  month.forEach(r => box.appendChild(receiptRow(r)));
+}
+async function loadReceipts(force) {
+  try {
+    const res = await fetch("/receipts", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.receipts) return;
+    const serialized = JSON.stringify(data);
+    $("ap-tab-gastos").textContent = data.receipts.filter(r => r.day.slice(0, 7) === data.today.slice(0, 7)).length || "";
+    if (!force && (serialized === receiptsSerialized || editingReceipt !== null)) return;  // No pisa lo que estás corrigiendo.
+    receiptsSerialized = serialized; receiptsData = data;
+    renderReceipts();
+  } catch {}
+}
+$("rc-prev").addEventListener("click", () => { rcMonth.month--; if (rcMonth.month < 0) { rcMonth.month = 11; rcMonth.year--; } editingReceipt = null; renderReceipts(); });
+$("rc-next").addEventListener("click", () => { rcMonth.month++; if (rcMonth.month > 11) { rcMonth.month = 0; rcMonth.year++; } editingReceipt = null; renderReceipts(); });
 async function loadApuntes(force) {
+  loadReceipts(force);
   try {
     const res = await fetch("/extras", { cache: "no-store" });
     if (res.status === 401) { location.href = "/login"; return; }
@@ -2772,6 +2958,7 @@ tick();
 
 
 MAX_POST_BYTES = 4096
+
 MAX_LOGIN_BYTES = 1024
 MAX_AUDIO_BYTES = 3_000_000  # Una orden hablada de hasta un minuto pesa mucho menos.
 
@@ -2867,8 +3054,13 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 self._send(200, "application/json", json.dumps(status.snapshot()).encode("utf-8"))
             elif path == "/settings" and status.settings is not None:
                 self._json(200, status.settings.snapshot(not self._is_remote()))
-            elif path in ("/tasks", "/usage", "/history", "/extras"):
+            elif path in ("/tasks", "/usage", "/history", "/extras", "/receipts"):
                 self._send(200, "application/json", json.dumps(status.read(path[1:])).encode("utf-8"))
+            elif path.startswith("/recibo/") and path.endswith(".jpg") and path[8:-4].isdigit() and status.receipt_photo:
+                photo = status.receipt_photo(int(path[8:-4]))
+                if photo is None:
+                    return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
+                self._send(200, "image/jpeg", photo)
             else:
                 self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
 
@@ -2950,7 +3142,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 return self._settings()
             if path == "/sessions":
                 return self._sessions()
-            if path not in ("/voice", "/tasks", "/speak", "/extras") or (path != "/voice" and not status.has_action(path[1:])):
+            if path not in ("/voice", "/tasks", "/speak", "/extras", "/receipts") or (path != "/voice" and not status.has_action(path[1:])):
                 return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
             if path == "/speak":
                 return self._speak()

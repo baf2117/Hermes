@@ -770,6 +770,38 @@ class TelegramTests(Harness):
         self.assertEqual(self.store.pending_tasks(), [])
         self.assertEqual(len(self.client.sent), 1)
 
+    def test_photo_goes_to_the_receipt_reader(self):
+        import threading
+
+        from hermes.assistant import Reply
+
+        seen = []
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = TelegramBot(self.client, self.assistant, self.store, OWNER, None, Path(tmp))
+            bot.photo_handler = lambda image: (seen.append(image), Reply("🧾 Guardé: X"))[1]
+            bot.handle_update(self.message(OWNER, photo=[{"file_id": "chica"}, {"file_id": "grande"}]))
+            bot.handle_update(self.message(OWNER, document={"file_id": "doc", "mime_type": "image/jpeg"}))
+            for thread in [t for t in threading.enumerate() if t.name == "recibo"]:
+                thread.join(5)
+            self.assertEqual(seen, [b"audio", b"audio"])  # El cliente falso descarga siempre lo mismo.
+            self.assertEqual([text for _, text in self.client.sent].count("🧾 Guardé: X"), 2)
+            self.assertEqual(list(Path(tmp).iterdir()), [])  # La copia temporal se borra.
+        bot = TelegramBot(self.client, self.assistant, self.store, OWNER)
+        bot.handle_update(self.message(OWNER, document={"file_id": "doc", "mime_type": "application/pdf"}))
+        self.assertIn("fotos de recibos", self.client.sent[-1][1])
+
+    def test_buttons_with_an_address_open_the_page(self):
+        from hermes.telegram import TelegramClient
+
+        client = TelegramClient("token-de-prueba")
+        calls = []
+        client.call = lambda method, payload, timeout=30.0: calls.append(payload)
+        client.send_message(1, "hola", [[("✏️ Corregir", "https://baf.example.com/#apuntes/gastos"), ("🗑 No guardar", "rcpdel:3")]])
+        self.assertEqual(calls[0]["reply_markup"]["inline_keyboard"], [[
+            {"text": "✏️ Corregir", "url": "https://baf.example.com/#apuntes/gastos"},
+            {"text": "🗑 No guardar", "callback_data": "rcpdel:3"},
+        ]])
+
     def test_voice_without_transcriber_is_declined(self):
         self.bot.handle_update(self.message(OWNER, voice={"file_id": "a"}))
         self.assertIn("no están disponibles", self.client.sent[0][1])
