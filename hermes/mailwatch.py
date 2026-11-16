@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from .config import Config
-from .gmail import Email, GmailAuthError, GmailError
+from .gmail import DEFAULT_ACCOUNT, Email, GmailAuthError, GmailError
 from .llm import LLMError
 from .store import MailNote, Store
 
@@ -29,9 +29,9 @@ OPEN_HOURS = 48
 _URL = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
 
 AUTH_ALERT = (
-    "📧 Perdí el permiso para leer tu correo (caducó o lo retiraste).\n"
+    "📧 Perdí el permiso para leer tu correo {account} (caducó o lo retiraste).\n"
     "Para renovarlo, en tu computadora abre una terminal en la carpeta de Hermes y ejecuta:\n"
-    "python -m hermes gmail-auth"
+    "python -m hermes gmail-auth {account}"
 )
 
 
@@ -73,10 +73,15 @@ class MailWatcher:
         send: Callable[..., Any],
         describe: Callable[[MailNote], str],
         now: Callable[[], datetime] | None = None,
+        account: str = DEFAULT_ACCOUNT,
     ):
         self.store, self.gmail, self.llm, self.config, self.send, self.describe = store, gmail, llm, config, send, describe
         self._now = now or (lambda: datetime.now().astimezone())
         self._auth_retry_at = 0.0
+        self.account = account
+        # La cuenta personal conserva las claves originales; las demás llevan su nombre.
+        suffix = "" if account == DEFAULT_ACCOUNT else f":{account}"
+        self._since_key, self._alert_key, self._id_prefix = SINCE_KEY + suffix, AUTH_ALERT_KEY + suffix, suffix[1:] + suffix[:1]
 
     def tick(self) -> None:
         now = self._now()
@@ -86,28 +91,28 @@ class MailWatcher:
             self._notify_pending(now)
             self._read_new(now)
         except GmailAuthError as exc:
-            log.warning("Correo: hace falta volver a autorizar (%s)", exc)
+            log.warning("Correo %s: hace falta volver a autorizar (%s)", self.account, exc)
             self._auth_retry_at = now.timestamp() + AUTH_RETRY_SECONDS
-            if self.store.kv_get(AUTH_ALERT_KEY) != "1":
+            if self.store.kv_get(self._alert_key) != "1":
                 try:
-                    self.send(AUTH_ALERT, [])
-                    self.store.kv_set(AUTH_ALERT_KEY, "1")
+                    self.send(AUTH_ALERT.format(account=self.account), [])
+                    self.store.kv_set(self._alert_key, "1")
                 except Exception as send_exc:
                     log.warning("Correo: no pude avisar de la autorización: %s", send_exc)
         except GmailError as exc:
-            log.warning("Correo: no pude revisar la bandeja: %s", exc)
+            log.warning("Correo %s: no pude revisar la bandeja: %s", self.account, exc)
 
     def _read_new(self, now: datetime) -> None:
-        raw_since = self.store.kv_get(SINCE_KEY)
+        raw_since = self.store.kv_get(self._since_key)
         if raw_since is None:
             # Primera vez: empieza desde ahora para no avisar de todo el correo viejo.
-            self.store.kv_set(SINCE_KEY, str(int(now.timestamp())))
-            log.info("Correo: vigilancia iniciada")
+            self.store.kv_set(self._since_key, str(int(now.timestamp())))
+            log.info("Correo %s: vigilancia iniciada", self.account)
             return
         since = int(raw_since)
-        ids = [i for i in self.gmail.list_ids(since - 60) if not self.store.email_known(i)]
-        if self.store.kv_get(AUTH_ALERT_KEY) == "1":
-            self.store.kv_set(AUTH_ALERT_KEY, "0")
+        ids = [i for i in self.gmail.list_ids(since - 60) if not self.store.email_known(self._id_prefix + i)]
+        if self.store.kv_get(self._alert_key) == "1":
+            self.store.kv_set(self._alert_key, "0")
         for message_id in ids[:MAX_PER_TICK]:
             email = self.gmail.get(message_id)
             try:
@@ -117,7 +122,7 @@ class MailWatcher:
                 return
             note = self._save(email, data, now)
             since = max(since, email.ts)
-            self.store.kv_set(SINCE_KEY, str(since))
+            self.store.kv_set(self._since_key, str(since))
             if note.important:
                 self._notify(note, now)
 
@@ -125,20 +130,25 @@ class MailWatcher:
         important = data.get("important") is True
         title = clean(data.get("task_title"), 120) if important else ""
         category = str(data.get("category") or "").strip().lower()
+        if category not in self.config.categories:
+            # Una cuenta llamada como una categoría («trabajo») sugiere esa categoría.
+            suggested = self.account != DEFAULT_ACCOUNT and self.account in self.config.categories
+            category = self.account if suggested else ""
         return self.store.add_email(
-            gmail_id=email.id,
+            account=self.account,
+            gmail_id=self._id_prefix + email.id,
             ts=email.ts,
             sender=email.sender,
             subject=email.subject,
             summary=clean(data.get("summary"), 240),
             important=important,
             task_title=title or None,
-            task_category=category if category in self.config.categories else None,
+            task_category=category or None,
             task_due_at=resolve_due(data, now, self.config.default_task_time) if title else None,
         )
 
     def _notify_pending(self, now: datetime) -> None:
-        for note in self.store.unnotified_emails():
+        for note in self.store.unnotified_emails(self.account):
             self._notify(note, now)
 
     def _notify(self, note: MailNote, now: datetime) -> None:
@@ -149,10 +159,12 @@ class MailWatcher:
             return
         self.store.mark_email(note.id, notified_at=int(now.timestamp()))
 
-    def run_forever(self, stop: threading.Event, interval: float) -> None:
-        while not stop.is_set():
+def run_watchers(watchers: list[MailWatcher], stop: threading.Event, interval: float) -> None:
+    """Revisa las cuentas una tras otra: el modelo local atiende un correo a la vez."""
+    while not stop.is_set():
+        for watcher in watchers:
             try:
-                self.tick()
+                watcher.tick()
             except Exception:
-                log.exception("Error en la vigilancia del correo")
-            stop.wait(interval)
+                log.exception("Error en la vigilancia del correo %s", watcher.account)
+        stop.wait(interval)

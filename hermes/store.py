@@ -154,6 +154,7 @@ class MailNote:
     task_due_at: int | None = None
     notified_at: int | None = None
     handled: bool = False
+    account: str = "personal"  # De qué cuenta de correo vino.
 
 
 class Store:
@@ -176,6 +177,8 @@ class Store:
             ):
                 if name not in columns:
                     self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
+            if "account" not in {row["name"] for row in self._conn.execute("PRAGMA table_info(emails)")}:
+                self._conn.execute("ALTER TABLE emails ADD COLUMN account TEXT NOT NULL DEFAULT 'personal'")
             if self.kv_get(FTS_READY_KEY) is None:
                 # Indexa los mensajes guardados antes de que existiera la búsqueda.
                 self._conn.execute("INSERT INTO messages_fts (messages_fts) VALUES ('rebuild')")
@@ -433,7 +436,7 @@ class Store:
             id=row["id"], gmail_id=row["gmail_id"], ts=row["ts"], sender=row["sender"], subject=row["subject"],
             summary=row["summary"], important=bool(row["important"]), task_title=row["task_title"],
             task_category=row["task_category"], task_due_at=row["task_due_at"], notified_at=row["notified_at"],
-            handled=bool(row["handled"]),
+            handled=bool(row["handled"]), account=row["account"],
         )
 
     def email_known(self, gmail_id: str) -> bool:
@@ -451,12 +454,13 @@ class Store:
         task_title: str | None = None,
         task_category: str | None = None,
         task_due_at: int | None = None,
+        account: str = "personal",
     ) -> MailNote:
         with self._lock, self._conn:
             cursor = self._conn.execute(
                 "INSERT INTO emails (gmail_id, ts, sender, subject, summary, important, task_title, task_category,"
-                " task_due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (gmail_id, ts, sender, subject, summary, int(important), task_title, task_category, task_due_at),
+                " task_due_at, account) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (gmail_id, ts, sender, subject, summary, int(important), task_title, task_category, task_due_at, account),
             )
             return self.get_email(int(cursor.lastrowid))  # type: ignore[return-value]
 
@@ -472,10 +476,12 @@ class Store:
             if handled is not None:
                 self._conn.execute("UPDATE emails SET handled = ? WHERE id = ?", (int(handled), email_id))
 
-    def unnotified_emails(self) -> list[MailNote]:
+    def unnotified_emails(self, account: str = "personal") -> list[MailNote]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM emails WHERE important = 1 AND notified_at IS NULL AND handled = 0 ORDER BY ts"
+                "SELECT * FROM emails WHERE important = 1 AND notified_at IS NULL AND handled = 0 AND account = ?"
+                " ORDER BY ts",
+                (account,),
             ).fetchall()
         return [self._mail(r) for r in rows]
 

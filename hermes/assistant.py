@@ -150,6 +150,11 @@ FALLBACK_FACTS = 8
 # Verdadero mientras se atiende una orden dicha en voz alta: el modelo redacta para ser escuchado.
 _SPOKEN = contextvars.ContextVar("hermes_spoken", default=False)
 
+def mail_tag(note: MailNote) -> str:
+    """Marca de qué cuenta vino un correo cuando no es la personal: "[trabajo] "."""
+    return "" if note.account == "personal" else f"[{note.account}] "
+
+
 MAIL_OPEN_HOURS = 48  # El resumen lista los correos importantes de este lapso que siguen sin atender.
 MAX_MAILS_IN_SUMMARY = 5
 
@@ -242,7 +247,7 @@ class Assistant:
             parts.append("No tienes tareas para hoy.")
         mails = self.store.open_emails(int(now.timestamp()) - MAIL_OPEN_HOURS * 3600)
         if mails:
-            lines = [f"• {m.sender}: {m.subject}" for m in mails[:MAX_MAILS_IN_SUMMARY]]
+            lines = [f"• {mail_tag(m)}{m.sender}: {m.subject}" for m in mails[:MAX_MAILS_IN_SUMMARY]]
             if len(mails) > MAX_MAILS_IN_SUMMARY:
                 lines.append(f"… y {len(mails) - MAX_MAILS_IN_SUMMARY} más")
             parts.append("\nCorreos sin atender:\n" + "\n".join(lines))
@@ -252,7 +257,7 @@ class Assistant:
         """Aviso de un correo importante. Sin enlaces; el remitente se muestra con su dirección real."""
         from .mailwatch import clean  # Importación tardía: mailwatch no depende del asistente.
 
-        text = f"📧 Correo de {note.sender}\nAsunto: {clean(note.subject, 200) or '(sin asunto)'}"
+        text = f"📧 {mail_tag(note)}Correo de {note.sender}\nAsunto: {clean(note.subject, 200) or '(sin asunto)'}"
         if note.summary:
             text += f"\n{note.summary}"
         if note.task_title:

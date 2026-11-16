@@ -301,3 +301,54 @@ class HelperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccountTests(Harness):
+    def setUp(self):
+        super().setUp()
+        self.sent = []
+        self.llm.classify_email = lambda *_: {
+            "important": True, "summary": "Pide algo", "task_title": "Responder", "due_date": None, "due_time": None,
+            "category": None,
+        }
+        self.personal, self.work = FakeGmail(), FakeGmail()
+        make = lambda gmail, **extra: MailWatcher(  # noqa: E731
+            self.store, gmail, self.llm, self.config, lambda t, b: self.sent.append((t, b)), self.assistant.mail_text,
+            now=lambda: self.moment, **extra,
+        )
+        self.watchers = [make(self.personal), make(self.work, account="trabajo")]
+        for watcher in self.watchers:
+            watcher.tick()
+
+    def test_accounts_are_kept_apart_and_labelled(self):
+        ts = int(self.moment.timestamp()) + 60
+        # El mismo identificador en las dos cuentas no se confunde.
+        self.personal.mails.append(Email("x1", "Ana <ana@example.com>", "Cena", ts, ""))
+        self.work.mails.append(Email("x1", "Luis <luis@example.com>", "Contrato", ts, ""))
+        for watcher in self.watchers * 2:
+            watcher.tick()
+        self.assertEqual(len(self.sent), 2)
+        self.assertTrue(self.sent[0][0].startswith("📧 Correo de Ana"))
+        self.assertTrue(self.sent[1][0].startswith("📧 [trabajo] Correo de Luis"))
+        self.assertEqual(self.store.kv_get("mail_since:trabajo"), str(ts))
+        self.assistant.handle_button("mailtask:2")
+        self.assertEqual(self.store.pending_tasks()[0].category, "trabajo")  # La cuenta sugiere la categoría.
+        self.moment = self.moment.replace(hour=11)
+        self.assertIn("• Ana <ana@example.com>: Cena", self.assistant.build_summary())
+
+    def test_lost_permission_names_the_account(self):
+        self.work.error = GmailAuthError("invalid_grant")
+        self.watchers[1].tick()
+        self.assertIn("gmail-auth trabajo", self.sent[0][0])
+        self.assertIsNone(self.store.kv_get(AUTH_ALERT_KEY))  # La cuenta personal no se marca.
+
+    def test_token_files_map_to_accounts(self):
+        from hermes.gmail import find_accounts, token_path, valid_account
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name in ("google-token-trabajo.json", "google-token.json", "google-token-Mal Nombre.json", "google-client.json"):
+                (root / name).write_text("{}", encoding="utf-8")
+            self.assertEqual([name for name, _ in find_accounts(root)], ["personal", "trabajo"])
+            self.assertEqual(token_path(root, "trabajo").name, "google-token-trabajo.json")
+        self.assertFalse(valid_account("../otro"))

@@ -21,8 +21,8 @@ from .homevoice import HomeVoice, PiperSpeaker, WakeWordDetector, run_microphone
 from .llm import LLMError, OllamaClient
 from .scheduler import Scheduler
 from .speakers import VOICE_KEY, SwitchableSpeaker
-from .gmail import GmailAuthError, GmailClient, authorize
-from .mailwatch import MailWatcher
+from .gmail import DEFAULT_ACCOUNT, GmailAuthError, GmailClient, authorize, find_accounts, token_path, valid_account
+from .mailwatch import MailWatcher, run_watchers
 from .remote import RemoteAccess
 from .status import VoiceStatus, history_report, start_status_server, tasks_snapshot, usage_report
 from .store import LLMUsage, Store
@@ -249,17 +249,24 @@ def run(config: Config) -> int:
 
         scheduler = Scheduler(store, assistant, config, send)
         threading.Thread(target=scheduler.run_forever, args=(stop,), daemon=True, name="scheduler").start()
-        gmail = GmailClient(config.gmail_client_path, config.gmail_token_path)
+        accounts = find_accounts(config.gmail_client_path.parent) if config.gmail_client_path.exists() else []
         if not config.mail_enabled:
             logging.info("Correo: vigilancia apagada (HERMES_MAIL=off)")
-        elif not gmail.configured:
+        elif not accounts:
             logging.info("Correo: sin autorizar; ejecuta «python -m hermes gmail-auth» para encenderlo")
         else:
-            watcher = MailWatcher(store, gmail, llm, config, send, assistant.mail_text)
+            watchers = [
+                MailWatcher(
+                    store, GmailClient(config.gmail_client_path, path), llm, config, send, assistant.mail_text, account=name
+                )
+                for name, path in accounts
+            ]
             threading.Thread(
-                target=watcher.run_forever, args=(stop, config.mail_poll_seconds), daemon=True, name="mail"
+                target=run_watchers, args=(watchers, stop, config.mail_poll_seconds), daemon=True, name="mail"
             ).start()
-            logging.info("Correo: vigilando la bandeja principal cada %d s", config.mail_poll_seconds)
+            logging.info(
+                "Correo: vigilando %s cada %d s", ", ".join(name for name, _ in accounts), config.mail_poll_seconds
+            )
         if problem := backup_problem(config):
             logging.warning("Respaldo desactivado: %s", problem)
         else:
@@ -291,25 +298,32 @@ def run(config: Config) -> int:
     return 0
 
 
-def gmail_auth(config: Config) -> int:
+def gmail_auth(config: Config, account: str = DEFAULT_ACCOUNT) -> int:
     """Pide en el navegador el permiso de solo lectura de Gmail y guarda la llave en la carpeta de datos."""
     import webbrowser
 
+    if not valid_account(account):
+        print("El nombre de la cuenta solo puede llevar letras minúsculas y números, por ejemplo: trabajo", file=sys.stderr)
+        return 2
+    token = token_path(config.gmail_client_path.parent, account)
     if not config.gmail_client_path.exists():
         print(f"Falta la credencial de Google en {config.gmail_client_path}", file=sys.stderr)
         return 2
-    print("Se abrirá el navegador. Elige tu cuenta y acepta el permiso «ver tus correos».")
+    print(f"Se abrirá el navegador. Elige la cuenta «{account}» y acepta el permiso «ver tus correos».")
     print("Si aparece «Google no ha verificado esta app»: Configuración avanzada → Ir a Hermes.")
     try:
-        authorize(config.gmail_client_path, config.gmail_token_path, webbrowser.open)
-        count = len(GmailClient(config.gmail_client_path, config.gmail_token_path).list_ids(int(time.time()) - 86400))
+        authorize(config.gmail_client_path, token, webbrowser.open)
+        client = GmailClient(config.gmail_client_path, token)
+        address = client.address()
+        count = len(client.list_ids(int(time.time()) - 86400))
     except GmailAuthError as exc:
         print(f"No se pudo autorizar: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
         print(f"Autorizado, pero no pude leer la bandeja: {exc}", file=sys.stderr)
         return 1
-    print(f"Listo: permiso de solo lectura guardado. Correos en la bandeja principal en las últimas 24 h: {count}")
+    print(f"Listo: la cuenta «{account}» quedó conectada a {address}, con permiso de solo lectura.")
+    print(f"Correos en su bandeja principal en las últimas 24 h: {count}")
     print("Reinicia Hermes para que empiece a vigilar.")
     return 0
 
@@ -318,7 +332,7 @@ def main() -> int:
     config = Config.load()
     command = sys.argv[1] if len(sys.argv) > 1 else "run"
     if command == "gmail-auth":
-        return gmail_auth(config)
+        return gmail_auth(config, sys.argv[2].strip().lower() if len(sys.argv) > 2 else DEFAULT_ACCOUNT)
     if command == "check":
         return check(config)
     if command == "backup":

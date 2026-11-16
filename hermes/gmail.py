@@ -37,7 +37,29 @@ MAX_LISTED = 25
 TIMEOUT = 20.0
 AUTH_WAIT_SECONDS = 300
 
+DEFAULT_ACCOUNT = "personal"
+_ACCOUNT_NAME = re.compile(r"[a-z0-9]{1,20}")
+
 Fetch = Callable[[urllib.request.Request], bytes]
+
+
+def valid_account(name: str) -> bool:
+    return bool(_ACCOUNT_NAME.fullmatch(name))
+
+
+def token_path(folder: Path, account: str) -> Path:
+    """La cuenta «personal» usa google-token.json; las demás, google-token-<nombre>.json."""
+    return Path(folder) / ("google-token.json" if account == DEFAULT_ACCOUNT else f"google-token-{account}.json")
+
+
+def find_accounts(folder: Path) -> list[tuple[str, Path]]:
+    """Las cuentas ya autorizadas, la personal primero."""
+    found = []
+    for path in sorted(Path(folder).glob("google-token*.json")):
+        name = DEFAULT_ACCOUNT if path.name == "google-token.json" else path.stem.removeprefix("google-token-")
+        if valid_account(name) and path == token_path(folder, name):
+            found.append((name, path))
+    return sorted(found, key=lambda item: item[0] != DEFAULT_ACCOUNT)
 
 
 class GmailError(Exception):
@@ -176,6 +198,10 @@ class GmailClient:
     def _get(self, path: str, **params: Any) -> dict[str, Any]:
         url = f"{API}/{path}" + ("?" + urllib.parse.urlencode(params) if params else "")
         return self._json(urllib.request.Request(url, headers={"Authorization": f"Bearer {self._access_token()}"}))
+
+    def address(self) -> str:
+        """La dirección de la cuenta autorizada, para confirmar que es la que se quería conectar."""
+        return str(self._get("profile").get("emailAddress", ""))
 
     def list_ids(self, after_ts: int) -> list[str]:
         """Los correos de la bandeja principal recibidos después de ese momento, del más viejo al más nuevo."""
