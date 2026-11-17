@@ -658,6 +658,15 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
 .ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
 .ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
+#ln-list, .ln-done { max-width:760px; }
+.ln-row { display:flex; align-items:flex-start; gap:12px; padding:12px 14px; background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; flex-wrap:wrap; }
+.ln-row.read { opacity:.7; }
+.ln-body { flex:1 1 260px; min-width:0; }
+.ln-title { color:var(--ink); font-weight:600; font-size:15px; text-decoration:none; overflow-wrap:anywhere; }
+.ln-title:hover { color:var(--accent); text-decoration:underline; }
+.ln-body small { display:block; color:var(--muted); font-size:13px; }
+.ln-summary { margin:6px 0 0; font-size:14px; color:var(--ink); opacity:.9; }
+.ln-done summary { cursor:pointer; color:var(--muted); margin:14px 0 8px; font-size:14px; }
 .bl-summary { margin-bottom:14px; }
 .bl-next { color:var(--muted); font-size:14px; }
 .bl-add { max-width:760px; }
@@ -980,6 +989,7 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     <a href="#apuntes/seguimientos" data-sub="seguimientos">Seguimientos<span id="ap-tab-seguimientos"></span></a>
     <a href="#apuntes/gastos" data-sub="gastos">Gastos<span id="ap-tab-gastos"></span></a>
     <a href="#apuntes/pagos" data-sub="pagos">Pagos<span id="ap-tab-pagos"></span></a>
+    <a href="#apuntes/lecturas" data-sub="lecturas">Lecturas<span id="ap-tab-lecturas"></span></a>
   </nav>
   <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="primary" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
   <div class="ap-grid">
@@ -1021,6 +1031,15 @@ body.can-speak main { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
         <button type="submit" class="primary">+ Agregar</button>
       </form>
       <div id="ap-dates"></div>
+    </section>
+    <section class="ap-page" data-sub="lecturas" hidden>
+      <form class="ap-form ap-create" id="ln-form" autocomplete="off">
+        <input id="ln-url" type="url" inputmode="url" maxlength="2000" placeholder="Pega un enlace (https://…)" aria-label="Enlace para leer después">
+        <button type="submit" class="primary">+ Guardar</button>
+      </form>
+      <p class="rc-hint">También puedes mandarle el enlace a Hermes por Telegram. Lo resume el modelo de tu computadora y los domingos te recuerda lo que falta.</p>
+      <div id="ln-list"></div>
+      <details class="ln-done" id="ln-done-box" hidden><summary id="ln-done-title"></summary><div id="ln-done"></div></details>
     </section>
     <section class="ap-page" data-sub="pagos" hidden>
       <div class="rc-summary bl-summary" id="bl-summary"></div>
@@ -1210,7 +1229,7 @@ function hideToast() { $("toast").classList.remove("show"); }
 const VIEWS = ["tareas", "apuntes", "consumo", "historial", "vivo", "ajustes"];
 function currentView() { const v = location.hash.slice(1).split("/")[0]; return VIEWS.includes(v) ? v : "tareas"; }
 // Apuntes tiene un submenú: cada apartado es su propia página (#apuntes/listas, #apuntes/habitos…).
-const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", seguimientos: "Seguimientos", gastos: "Gastos", pagos: "Pagos" };
+const AP_SUBS = { listas: "Listas", habitos: "Hábitos", notas: "Notas", fechas: "Fechas", seguimientos: "Seguimientos", gastos: "Gastos", pagos: "Pagos", lecturas: "Lecturas" };
 let lastSub = "listas";
 function currentSub() {
   const sub = location.hash.slice(1).split("/")[1];
@@ -2493,6 +2512,65 @@ function featureTab(sub, enabled) {
   if (link) link.hidden = !enabled;
   if (!enabled && currentView() === "apuntes" && currentSub() === sub) location.hash = "#apuntes/listas";
 }
+/* ---------- Lecturas: enlaces para leer después ---------- */
+let linksSerialized = "";
+function linkAgo(ts) {
+  const days = Math.floor((Date.now() / 1000 - ts) / 86400);
+  return days <= 0 ? "hoy" : days === 1 ? "ayer" : "hace " + days + " días";
+}
+function linkRow(l) {
+  const row = text("div", "ln-row" + (l.read_at ? " read" : ""), "");
+  const body = text("div", "ln-body", "");
+  const a = document.createElement("a");
+  a.href = /^https?:/.test(l.url) ? l.url : "#"; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = l.title;
+  a.className = "ln-title";
+  body.append(a, text("small", "", l.site + " · " + linkAgo(l.saved_at)));
+  if (l.summary) body.appendChild(text("p", "ln-summary", l.summary));
+  const actions = text("div", "bl-actions", "");
+  const toggle = text("button", "bl-paid", l.read_at ? "↩ No leído" : "✓ Leído"); toggle.type = "button";
+  toggle.setAttribute("aria-label", (l.read_at ? "Volver a para leer: " : "Marcar como leído: ") + l.title);
+  toggle.onclick = async () => {
+    try { toast((await send("/links", { action: l.read_at ? "unread" : "read", id: l.id })).message); await loadLinks(true); } catch (e) { toast(e.message); }
+  };
+  const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Quitar: " + l.title);
+  remove.onclick = async () => {
+    if (!(await ask("¿Quitar «" + l.title + "»?", "Quitar"))) return;
+    try { toast((await send("/links", { action: "delete", id: l.id })).message); await loadLinks(true); } catch (e) { toast(e.message); }
+  };
+  actions.append(toggle, remove);
+  row.append(body, actions);
+  return row;
+}
+async function loadLinks(force) {
+  try {
+    const res = await fetch("/links", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.links) return;
+    featureTab("lecturas", data.enabled);
+    const unread = data.links.filter(l => !l.read_at), read = data.links.filter(l => l.read_at);
+    $("ap-tab-lecturas").textContent = unread.length || "";
+    const serialized = JSON.stringify(data);
+    if (!force && serialized === linksSerialized) return;
+    linksSerialized = serialized;
+    const box = $("ln-list"); box.textContent = "";
+    if (!unread.length) box.appendChild(text("div", "ap-empty card", read.length ? "Ya leíste todo lo que guardaste. 🎉" : "Todavía no tienes enlaces. Pega uno aquí arriba o mándaselo a Hermes."));
+    unread.forEach(l => box.appendChild(linkRow(l)));
+    $("ln-done-box").hidden = !read.length;
+    $("ln-done-title").textContent = "Leídos (" + read.length + ")";
+    const done = $("ln-done"); done.textContent = "";
+    read.forEach(l => done.appendChild(linkRow(l)));
+  } catch {}
+}
+$("ln-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const url = $("ln-url").value.trim();
+  if (!url) { $("ln-url").focus(); return; }
+  const button = $("ln-form").querySelector("button"); button.disabled = true; button.textContent = "Leyendo…";
+  try { toast((await send("/links", { action: "add", url })).message); $("ln-url").value = ""; await loadLinks(true); }
+  catch (e) { toast(e.message); }
+  finally { button.disabled = false; button.textContent = "+ Guardar"; }
+});
 /* ---------- Pagos que se repiten ---------- */
 let billsData = null, billsSerialized = "", editingBill = null, editingBillFields = null, payingBill = null;
 function billsMoney(total, currency) {
@@ -2823,6 +2901,7 @@ $("rc-next").addEventListener("click", () => { rcMonth.month++; if (rcMonth.mont
 async function loadApuntes(force) {
   loadReceipts(force);
   loadBills(force);
+  loadLinks(force);
   try {
     const res = await fetch("/extras", { cache: "no-store" });
     if (res.status === 401) { location.href = "/login"; return; }
@@ -3318,7 +3397,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 self._send(200, "application/json", json.dumps(status.snapshot()).encode("utf-8"))
             elif path == "/settings" and status.settings is not None:
                 self._json(200, status.settings.snapshot(not self._is_remote()))
-            elif path in ("/tasks", "/usage", "/history", "/extras", "/receipts", "/bills"):
+            elif path in ("/tasks", "/usage", "/history", "/extras", "/receipts", "/bills", "/links"):
                 self._send(200, "application/json", json.dumps(status.read(path[1:])).encode("utf-8"))
             elif path.startswith("/recibo/") and path.endswith(".jpg") and path[8:-4].isdigit() and status.receipt_photo:
                 photo = status.receipt_photo(int(path[8:-4]))
@@ -3427,7 +3506,7 @@ def make_handler(status: VoiceStatus, port: int, remote: RemoteAccess | None = N
                 return self._settings()
             if path == "/sessions":
                 return self._sessions()
-            if path not in ("/voice", "/tasks", "/speak", "/extras", "/receipts", "/bills") or (path != "/voice" and not status.has_action(path[1:])):
+            if path not in ("/voice", "/tasks", "/speak", "/extras", "/receipts", "/bills", "/links") or (path != "/voice" and not status.has_action(path[1:])):
                 return self._send(404, "text/plain; charset=utf-8", b"No encontrado.")
             if path == "/speak":
                 return self._speak()

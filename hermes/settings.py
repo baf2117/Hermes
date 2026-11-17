@@ -37,7 +37,7 @@ LIVE_FIELDS = (
     "summary_time", "evening_time", "weekly_time", "default_task_time", "repeat_quiet_start", "repeat_quiet_end",
     "categories", "voice", "category_colors",
     "receipts_enabled", "budget_enabled", "bills_enabled", "briefing_enabled", "day_plan_enabled", "work_start", "work_end",
-    "followup_enabled", "followup_days",
+    "followup_enabled", "followup_days", "search_enabled", "links_enabled",
 )
 
 
@@ -103,6 +103,11 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("HERMES_MAIL_FOLLOWUP", "Correos que esperan respuesta", "switch", "Funciones",
             "Una vez al día: lo que te toca contestar y lo que te deben contestar.", "on", live=True),
     Setting("HERMES_FOLLOWUP_DAYS", "Días sin respuesta para avisar", "int", "Funciones", "", "3", live=True, low=1, high=30),
+    Setting("HERMES_SEARCH", "«¿Qué sabes de…?»", "switch", "Funciones",
+            "Busca una persona o un tema en tareas, notas, correos, gastos, pagos, fechas y listas.", "on", live=True),
+    Setting("HERMES_LINKS", "Enlaces para leer", "switch", "Funciones",
+            "Mándale un enlace: lo resume el modelo local y lo guarda en Apuntes → Lecturas. Los domingos te recuerda lo pendiente.",
+            "on", live=True),
     Setting("TELEGRAM_ALLOWED_CHAT_ID", "Chat de Telegram autorizado", "chat", "Acceso", "El único chat al que Hermes obedece.", "", local_only=True),
     Setting("TELEGRAM_BOT_TOKEN", "Token del bot de Telegram", "secret", "Acceso", "", "", local_only=True),
     Setting("HERMES_PUBLIC_HOST", "Dominio de la página", "host", "Acceso", "Por ejemplo baf.hola-hermes.com. Vacío apaga el acceso desde fuera.", "", local_only=True),

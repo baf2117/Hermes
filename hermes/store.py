@@ -118,6 +118,15 @@ CREATE TABLE IF NOT EXISTS bill_payments (
     paid_day TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    site TEXT NOT NULL,
+    saved_at INTEGER NOT NULL,
+    read_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS budgets (
     category TEXT PRIMARY KEY,
     amount REAL NOT NULL
@@ -958,6 +967,39 @@ class Store:
                 f"UPDATE receipts SET {', '.join(f'{name} = ?' for name in columns)} WHERE id = ?",
                 (*(fields[name] for name in columns), receipt_id),
             ).rowcount > 0
+
+    # --- Enlaces para leer después ---
+
+    def add_link(self, url: str, title: str, summary: str, site: str, now: int) -> int:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "INSERT INTO links (url, title, summary, site, saved_at) VALUES (?, ?, ?, ?, ?)", (url, title, summary, site, now)
+            )
+            return int(cursor.lastrowid)
+
+    def get_link(self, link_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM links WHERE id = ?", (link_id,)).fetchone()
+        return dict(row) if row else None
+
+    def link_by_url(self, url: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM links WHERE url = ?", (url,)).fetchone()
+        return dict(row) if row else None
+
+    def links(self) -> list[dict[str, Any]]:
+        """Primero los que faltan por leer, del más nuevo al más viejo; después los leídos."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM links ORDER BY read_at IS NOT NULL, saved_at DESC, id DESC").fetchall()
+        return [dict(row) for row in rows]
+
+    def set_link_read(self, link_id: int, read_at: int | None) -> bool:
+        with self._lock, self._conn:
+            return self._conn.execute("UPDATE links SET read_at = ? WHERE id = ?", (read_at, link_id)).rowcount > 0
+
+    def delete_link(self, link_id: int) -> bool:
+        with self._lock, self._conn:
+            return self._conn.execute("DELETE FROM links WHERE id = ?", (link_id,)).rowcount > 0
 
     def budgets(self) -> dict[str, float]:
         """Presupuesto mensual por categoría, en quetzales."""

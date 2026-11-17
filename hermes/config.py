@@ -114,6 +114,8 @@ class Config:
     work_end: time = time(18, 0)
     followup_enabled: bool = True
     followup_days: int = 3  # Días sin respuesta para mencionar un correo.
+    search_enabled: bool = True
+    links_enabled: bool = True
 
     @classmethod
     def load(cls) -> "Config":
@@ -189,4 +191,6 @@ class Config:
             work_end=_parse_time(work_end),
             followup_enabled=on("HERMES_MAIL_FOLLOWUP"),
             followup_days=min(30, max(1, int(get("HERMES_FOLLOWUP_DAYS", "3")))),
+            search_enabled=on("HERMES_SEARCH"),
+            links_enabled=on("HERMES_LINKS"),
         )

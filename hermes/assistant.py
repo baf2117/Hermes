@@ -47,6 +47,8 @@ HELP_TEXT = (
     "/pagos: luz, internet y suscripciones que vienen; «pagué la luz 345» lo anota\n"
     "/plan: te propongo un orden con horas para lo que urge hoy\n"
     "/correos: lo que te toca contestar y lo que te deben contestar\n"
+    "/buscar Carlos o «¿qué sabes de Carlos?»: todo lo que tengo de alguien o de un tema\n"
+    "Mándame un enlace y lo guardo con su resumen; /leer muestra lo pendiente\n"
     "Mándame la foto de un recibo y lo guardo como gasto\n"
     "/silencio 2h: no te aviso durante ese tiempo (/silencio off lo quita)\n"
     "/sesiones: quién tiene abierta tu página, y cerrarlas\n"

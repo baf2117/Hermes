@@ -29,7 +29,9 @@ from .bills import Bills
 from .briefing import Briefing
 from .dayplan import DayPlan
 from .followup import MailFollowup
+from .links import Links
 from .receipts import Receipts
+from .search import Everything
 from .net import prefer_ipv4
 from .outside import (
     CALENDAR_SCOPE, Agenda, CalendarClient, Weather, calendar_token_path, find_calendars, run_heartbeat, valid_heartbeat,
@@ -387,6 +389,21 @@ def run(config: Config) -> int:
         planner.send = send
         planner.events = agenda.today if calendars else None
         scheduler.extra_ticks.append(planner.tick)
+    # Enlaces para leer: los resume el modelo local; la página es contenido no confiable.
+    links = Links(store, reader.read_page, config, assistant._now, Reply)
+    assistant.text_hooks.insert(0, links.handle)  # Un enlace suelto se guarda, antes que cualquier otra lectura.
+    assistant.command_hooks["/leer"] = lambda _: links.report()
+    assistant.button_hooks.update(linkread=links.mark_read, linkdel=links.remove)
+    assistant.summary_hooks.append(links.sunday_lines)
+    if config.allowed_chat_id is not None:
+        links.send = send
+    status.set_source("links", links.snapshot)
+    status.set_action("links", links.apply)
+    # «¿Qué sabes de…?»: busca en todo lo guardado, sin modelo.
+    everything = Everything(store, config, assistant._now, Reply,
+                            agenda.today if config.allowed_chat_id is not None and calendars else None)
+    assistant.text_hooks.append(everything.handle)
+    assistant.command_hooks["/buscar"] = everything.command
     status.set_source("bills", bills.snapshot)
     status.set_action("bills", bills.apply)
     piper = shared_piper(config)
