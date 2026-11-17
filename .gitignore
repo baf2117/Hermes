@@ -4,8 +4,9 @@
 *.db-shm
 *.log
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
+venv/
 muestras-voz/
 sitio-google/
 
