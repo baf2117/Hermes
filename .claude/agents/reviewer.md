@@ -3,7 +3,7 @@ name: reviewer
 description: SDD - revisa una spec como QA (clarificación) o valida la implementación RF por RF. Solo lectura. Úsalo al revisar o validar una spec.
 # Ya permite los ejecutores de tests habituales. Si el de tu stack no está, añádelo a tools
 # y anótalo en CLAUDE.md (sección "Personalizaciones de la plantilla").
-tools: Read, Grep, Glob, Bash(git diff:*), Bash(git status:*), Bash(npm test:*), Bash(npm run test:*), Bash(pnpm test:*), Bash(yarn test:*), Bash(pytest:*), Bash(python -m pytest:*), Bash(dotnet test:*), Bash(go test:*), Bash(cargo test:*), Bash(mvn test:*), Bash(gradle test:*), Bash(./gradlew test:*)
+tools: Read, Grep, Glob, Bash(git diff:*), Bash(git status:*), Bash(npm test:*), Bash(npm run test:*), Bash(pnpm test:*), Bash(yarn test:*), Bash(pytest:*), Bash(python -m pytest:*), Bash(dotnet test:*), Bash(go test:*), Bash(cargo test:*), Bash(mvn test:*), Bash(gradle test:*), Bash(./gradlew test:*), Bash(~/.hermes/venv/Scripts/python.exe -m unittest:*)
 mcpServers:
   - playwright
 ---

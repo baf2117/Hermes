@@ -80,7 +80,8 @@ lógica, qué no hay que tocar. Si crece, muévelo a `docs/ARCHITECTURE.md`.]
 Archivos de la plantilla SDD que este proyecto modificó a propósito (se conservan al
 actualizar la plantilla; ver `CHANGELOG.md`).
 
-- [Ninguna. Ejemplo: `.claude/agents/reviewer.md` — añadido `Bash(make test:*)`.]
+- `.claude/agents/reviewer.md` — añadido `Bash(~/.hermes/venv/Scripts/python.exe -m unittest:*)`
+  a `tools`, para que pueda ejecutar el comando de tests (Hermes usa `unittest`, no pytest).
 
 ## Memoria
 
