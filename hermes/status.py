@@ -645,7 +645,8 @@ dialog#ask p { margin:0 0 18px; font-size:16px; line-height:1.45; overflow-wrap:
 .hb-stats b { color:var(--ink); font-size:15px; }
 .hb-stats .fire b { color:var(--accent); }
 .hb-week { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; }
-.hb-day { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--faint); }
+.hb-day { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--faint); background:none; border:0; padding:2px 0; font:inherit; font-size:11px; cursor:pointer; min-height:0; }
+.hb-day:hover i { border-color:var(--accent); }
 .hb-day i { width:22px; height:22px; border-radius:50%; background:var(--soft); border:1px solid var(--line); }
 .hb-day.on i { background:var(--accent); border-color:var(--accent); }
 .hb-day.today { color:var(--ink); font-weight:600; }
@@ -2373,8 +2374,11 @@ function habitCard(h) {
   h.week.forEach((d, i) => {
     const [y, m, day] = d.day.split("-").map(Number);
     const label = i === h.week.length - 1 ? "hoy" : HB_DAYS[new Date(y, m - 1, day).getDay()];
-    const cell = text("div", "hb-day" + (d.done ? " on" : "") + (i === h.week.length - 1 ? " today" : ""), "");
-    cell.title = day + "/" + m + (d.done ? ": hecho" : ": sin marcar");
+    const cell = text("button", "hb-day" + (d.done ? " on" : "") + (i === h.week.length - 1 ? " today" : ""), ""); cell.type = "button";
+    cell.title = day + "/" + m + (d.done ? ": hecho · toca para desmarcar" : ": sin marcar · toca para marcar");
+    cell.setAttribute("aria-pressed", String(d.done));
+    cell.setAttribute("aria-label", (d.done ? "Desmarcar " : "Marcar hecho ") + (label === "hoy" ? "hoy" : "el " + day + "/" + m) + ": " + h.title);
+    cell.onclick = () => apunte({ action: "habit_day", id: h.id, day: d.day, done: !d.done });
     cell.append(text("i", "", ""), text("span", "", label));
     week.append(cell);
   });

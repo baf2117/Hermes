@@ -59,6 +59,7 @@ HABIT_NEW = re.compile(
 HABIT_DONE = re.compile(
     r"^(?:ya\s+)?(?:hice|cumpli|complete|marca|marcame|marcar)\s+(?:como\s+hecho\s+)?(?:el\s+|mi\s+)?habito(?:\s+de)?\s+(?P<title>.+)$"
 )
+PAST_DAY = re.compile(r"\s+(?:de\s+|el\s+dia\s+de\s+)?(ayer|antier|anteayer|antes\s+de\s+ayer)$")
 HABITS_ALL = re.compile(r"^(?:como\s+van\s+|cuales\s+son\s+|dime\s+|muestrame\s+)?mis\s+habitos$")
 
 WAITING = re.compile(
@@ -345,20 +346,28 @@ class Extras:
         when = f" Te lo recuerdo todos los días a las {remind}." if remind else " Sin recordatorio; márcalo cuando lo hagas."
         return self.R(f"🔁 Hábito creado: {title}.{when}")
 
-    def _habit_done(self, habit: dict[str, Any]) -> Any:
+    def _habit_done(self, habit: dict[str, Any], back: int = 0) -> Any:
+        """Lo marca hoy, o `back` días atrás si se te olvidó marcarlo («ayer», «antier»)."""
         today = self._now().date()
-        fresh = self.store.mark_habit(habit["id"], today.isoformat())
+        when = "hoy" if back == 0 else "ayer" if back == 1 else "antier"
+        fresh = self.store.mark_habit(habit["id"], (today - timedelta(days=back)).isoformat())
         run = streak(self.store.habit_days(habit["id"]), today)
         if not fresh:
-            return self.R(f"Ya lo habías marcado hoy: {habit['title']}. Racha: {days_word(run)}.")
-        return self.R(f"✅ {habit['title']}: hecho hoy. Racha: {days_word(run)}.")
+            return self.R(f"Ya lo habías marcado {when}: {habit['title']}. Racha: {days_word(run)}.")
+        return self.R(f"✅ {habit['title']}: hecho {when}. Racha: {days_word(run)}.")
 
     def _habit_done_named(self, title: str) -> Any:
-        wanted = plain(title)
+        back = 0
+        if day := PAST_DAY.search(plain(title)):
+            back = 1 if day.group(1) == "ayer" else 2
+            title = title[: day.start()]
+        wanted = plain(title).strip()
+        if not wanted:
+            return self.R("No identifiqué ese hábito. Míralos con /habitos.")
         matches = [h for h in self.store.habits() if wanted in plain(h["title"]) or plain(h["title"]) in wanted]
         if len(matches) != 1:
             return self.R("No identifiqué ese hábito. Míralos con /habitos.")
-        return self._habit_done(matches[0])
+        return self._habit_done(matches[0], back)
 
     def habit_status(self, today: date) -> list[tuple[dict[str, Any], bool, int]]:
         """Cada hábito con si ya se cumplió hoy y su racha."""

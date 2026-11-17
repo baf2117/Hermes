@@ -118,6 +118,27 @@ class ApuntesTests(Harness):
             with self.assertRaises(ApunteError, msg=bad):
                 self.do("habit_undo", **bad)
 
+    def test_a_forgotten_day_can_be_marked_later(self):
+        self.do("habit_add", title="leer", time=None)
+        habit = self.editor.snapshot()["habits"][0]
+        self.assertEqual(self.do("habit_day", id=habit["id"], day="2026-11-09", done=True), "Marqué «Leer» ayer. Racha: 1 día.")
+        self.do("habit_done", id=habit["id"])
+        self.assertEqual(self.editor.snapshot()["habits"][0]["streak"], 2)
+        self.assertEqual(self.do("habit_day", id=habit["id"], day="2026-11-04", done=True), "Marqué «Leer» el 4 de noviembre. Racha: 2 días.")
+        self.assertEqual(self.do("habit_day", id=habit["id"], day="2026-11-09", done=False), "Desmarqué «Leer» ayer. Racha: 1 día.")
+        self.assertEqual([d["done"] for d in self.editor.snapshot()["habits"][0]["week"]], [True, False, False, False, False, False, True])
+        for bad in (dict(id=habit["id"], day="2026-11-03", done=True), dict(id=habit["id"], day="2026-11-11", done=True),
+                    dict(id=habit["id"], day="ayer", done=True), dict(id=habit["id"], day="2026-11-09", done="si"), dict(id=999, day="2026-11-09", done=True)):
+            with self.assertRaises(ApunteError, msg=bad):
+                self.do("habit_day", **bad)
+
+    def test_yesterday_by_chat(self):
+        self.do("habit_add", title="leer", time=None)
+        self.assertIn("✅ Leer: hecho ayer. Racha: 1 día.", self.assistant.handle_text("ya hice mi hábito de leer ayer").text)
+        self.assertIn("Ya lo habías marcado ayer", self.assistant.handle_text("marca el hábito de leer de ayer").text)
+        self.assertIn("hecho antier", self.assistant.handle_text("cumplí el hábito de leer antier").text)
+        self.assertIn("hecho hoy. Racha: 3 días.", self.assistant.handle_text("ya hice el hábito de leer").text)
+
     def test_notes_are_the_memory(self):
         self.do("note_add", text="  la clave del wifi   está en el cajón ")
         notes = self.editor.snapshot()["notes"]

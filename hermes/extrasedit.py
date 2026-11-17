@@ -107,6 +107,7 @@ class ExtrasEditor:
             "note_delete": self._note_delete,
             "habit_add": self._habit_add,
             "habit_done": self._habit_done,
+            "habit_day": self._habit_day,
             "habit_delete": self._habit_delete,
             "habit_edit": self._habit_edit,
             "date_add": self._date_add,
@@ -242,6 +243,27 @@ class ExtrasEditor:
     def _habit_done(self, payload: dict[str, Any]) -> str:
         habit_id = _number(payload.get("id"), "Falta el hábito.")
         return self.extras.button("habit", habit_id).text
+
+    def _habit_day(self, payload: dict[str, Any]) -> str:
+        """Marca o desmarca uno de los últimos 7 días, por si se te olvidó marcarlo a tiempo."""
+        habit_id = _number(payload.get("id"), "Falta el hábito.")
+        habit = next((h for h in self.store.habits() if h["id"] == habit_id), None)
+        if habit is None:
+            raise ApunteError("Ese hábito ya no existe. Recarga la página.")
+        today = self._now().date()
+        try:
+            day = date.fromisoformat(payload.get("day"))
+        except (TypeError, ValueError):
+            raise ApunteError("Falta el día.") from None
+        if not 0 <= (today - day).days <= 6:
+            raise ApunteError("Solo puedes corregir los últimos 7 días.")
+        done = payload.get("done")
+        if not isinstance(done, bool):
+            raise ApunteError("Solicitud inválida.")
+        (self.store.mark_habit if done else self.store.unmark_habit)(habit_id, day.isoformat())
+        run = streak(self.store.habit_days(habit_id), today)
+        label = "hoy" if day == today else "ayer" if (today - day).days == 1 else f"el {day.day} de {MONTH_NAMES[day.month - 1]}"
+        return f"{'Marqué' if done else 'Desmarqué'} «{habit['title']}» {label}. Racha: {days_word(run)}."
 
     def _habit_delete(self, payload: dict[str, Any]) -> str:
         if not self.store.delete_habit(_number(payload.get("id"), "Falta el hábito.")):
