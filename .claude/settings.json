@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean:*)",
+      "Bash(rm -rf:*)",
+      "Bash(git switch -C:*)",
+      "Bash(git switch --force-create:*)",
+      "Bash(git switch -f:*)",
+      "Bash(git switch --force:*)",
+      "Bash(git switch --discard-changes:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git branch -d -f:*)",
+      "Bash(git branch -d --force:*)",
+      "Bash(git branch --force:*)",
+      "Bash(git worktree remove --force:*)",
+      "Bash(git worktree remove -f:*)",
+      "Bash(git worktree add:*)",
+      "mcp__playwright__browser_run_code_unsafe",
+      "mcp__playwright__browser_file_upload",
+      "mcp__playwright-taste__browser_run_code_unsafe",
+      "mcp__playwright-taste__browser_file_upload",
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.production)"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node .claude/scripts/sdd-progress.js"
+  }
+}

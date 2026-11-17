@@ -8,3 +8,27 @@ __pycache__/
 .venv/
 muestras-voz/
 sitio-google/
+
+# Plantilla SDD 0.7.0: secretos y configuración local
+.env.*
+!.env.example
+.claude/settings.local.json
+.claude/worktrees/
+.playwright-mcp/
+
+# Capturas de sitios ajenos (taste) y checkpoints visuales: no se versionan
+docs/references/**/*.jpeg
+docs/references/**/*.jpg
+docs/references/**/*.png
+specs/*/checkpoint/
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Node (de la plantilla)
+node_modules/
+dist/
