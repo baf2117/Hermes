@@ -18,7 +18,8 @@ Migración por secciones (plan 3.2 y decisión «@legacy»):
 - Estado inicial (antes de T6): mientras `:root` no declare `--surface` (token nuevo que la
   página anterior no tenía), `:root` está pendiente y todo el CSS y los `style="…"` se tratan
   como `@legacy`, aunque no lleven la marca. En cuanto `:root` se migra, valen solo las marcas.
-- Las pruebas pendientes salen como «skipped» con lo que falta. T23 exige que no quede ninguna.
+- Desde T23 la migración está cerrada: `:root` debe estar migrado y sin alias viejos, y no puede
+  quedar ninguna sección ni `style="…"` `@legacy` (las pruebas fallan, ya no se saltan).
 """
 from __future__ import annotations
 
@@ -35,9 +36,9 @@ DESIGN = Path(__file__).resolve().parent.parent / "docs" / "design.md"
 
 # Token nuevo cuya presencia en `:root` indica que `:root` ya está migrado (T6).
 ROOT_MIGRATION_TOKEN = "--surface"
-# Nombres viejos que `:root` puede conservar como alias mientras alguna sección `@legacy` los use
-# (plan, apartado 6). Se retiran en T18 (`--s-*`) y T23 (el resto); T23 vacía este conjunto.
-ALIAS_VIEJOS = {"--card", "--muted", "--faint", "--soft", "--bar", "--shadow", "--s-claude", "--s-local"}
+# Nombres viejos que `:root` podía conservar como alias mientras alguna sección `@legacy` los usara
+# (plan, apartado 6). Retirados en T18 (`--s-*`) y T23 (el resto): ya no se admite ninguno.
+ALIAS_VIEJOS: set[str] = set()
 
 TOKEN_HEADER = ["Token", "Claro", "Oscuro", "Escala", "Uso"]
 CONTRAST_HEADER = ["Color", "Fondo", "Mínimo", "Claro", "Oscuro"]
@@ -892,9 +893,7 @@ class PageTokensTests(unittest.TestCase):
 
     def test_root_matches_design(self):
         errors = compare_root(self.sheet, self.tokens, ALIAS_VIEJOS)
-        if not self.migrated:
-            self.assertTrue(errors, f":root ya coincide con docs/design.md, pero no declara {ROOT_MIGRATION_TOKEN}.")
-            self.skipTest(f"Pendiente (T6): :root sin migrar, {len(errors)} diferencias con docs/design.md.")
+        self.assertTrue(self.migrated, f":root no declara {ROOT_MIGRATION_TOKEN}: la migración está cerrada desde T23.")
         self.assertEqual(errors, [], "\n".join(errors))
 
     def test_legacy_marks_name_a_view(self):
@@ -928,10 +927,12 @@ class PageTokensTests(unittest.TestCase):
     def test_pending_legacy_sections(self):
         found = sections(self.sheet)
         self.assertTrue(len(found) > 1 and any(rules for _, _, rules in found), "No se encontró el CSS de la página.")
-        pending = [title for title, legacy, rules in found if rules and (legacy or not self.migrated)]
-        inline = [s for s in inline_styles(PAGE) if not self.migrated or re.search(r"/\*\s*@legacy\b", s)]
-        if pending or inline:
-            self.skipTest(f"Pendiente: {len(pending)} secciones de CSS y {len(inline)} style=\"…\" @legacy sin migrar.")
+        # T23: LEGACY == ∅. Ya no se admite nada pendiente (antes salía como «skipped»).
+        self.assertTrue(self.migrated, f":root no declara {ROOT_MIGRATION_TOKEN}.")
+        pending = [title for title, legacy, _ in found if legacy]
+        inline = [s for s in inline_styles(PAGE) if re.search(r"/\*\s*@legacy\b", s)]
+        self.assertEqual(pending, [], "Secciones de CSS @legacy: " + ", ".join(pending))
+        self.assertEqual(inline, [], 'style="…" @legacy: ' + " | ".join(inline))
 
 
 if __name__ == "__main__":

@@ -87,8 +87,11 @@ Neutros con tinte verde azulado leve (matiz ≈ 195°, el del acento). Un único
   `default`. `:root { color-scheme: light dark; }` (controles nativos siguen el modo).
 
 ### Contraste
-Calculado con la luminancia relativa WCAG 2.x sobre los valores de arriba (los `color-mix`,
-mezclados en Oklab). **Estimado, se mide en T23** sobre la página pintada (`tests/browser/medir.js`).
+Luminancia relativa WCAG 2.x. **Medido en T23 (2026-11-18)** en el navegador (Chromium del MCP de
+Playwright, demo con datos ficticios): cada token pintado con `var()` y leído en un lienzo de 1×1, en
+claro y en oscuro; `tests/browser/medir.js` sin fallos de contraste en todas las vistas y diálogos a
+375×812 y 1280×800. Los `color-mix` los resuelve el navegador (redondeo a 8 bits), por eso cuatro
+pares difieren en ±0,01 del cálculo en Oklab de `tests/test_design_tokens.py`, que admite ±0,02.
 Mínimo: 4,5 texto · 3 texto grande, iconos, bordes de control, foco y datos.
 
 | Color | Fondo | Mínimo | Claro | Oscuro |
@@ -96,8 +99,8 @@ Mínimo: 4,5 texto · 3 texto grande, iconos, bordes de control, foco y datos.
 | `--ink` | `--bg` | 4.5 | 15.36 | 15.80 |
 | `--ink` | `--surface` | 4.5 | 16.66 | 14.65 |
 | `--ink` | `--surface-soft` | 4.5 | 14.26 | 12.93 |
-| `--ink` | `--accent-soft` | 4.5 | 13.92 | 12.07 |
-| `--ink` | `--danger-soft` | 4.5 | 14.32 | 12.76 |
+| `--ink` | `--accent-soft` | 4.5 | 13.91 | 12.08 |
+| `--ink` | `--danger-soft` | 4.5 | 14.30 | 12.75 |
 | `--ink-2` | `--bg` | 4.5 | 8.45 | 8.92 |
 | `--ink-2` | `--surface` | 4.5 | 9.17 | 8.27 |
 | `--ink-2` | `--surface-soft` | 4.5 | 7.85 | 7.30 |
@@ -107,7 +110,7 @@ Mínimo: 4,5 texto · 3 texto grande, iconos, bordes de control, foco y datos.
 | `--accent` | `--bg` | 4.5 | 5.80 | 9.03 |
 | `--accent` | `--surface` | 4.5 | 6.29 | 8.37 |
 | `--accent` | `--surface-soft` | 4.5 | 5.38 | 7.39 |
-| `--accent` | `--accent-soft` | 3 | 5.26 | 6.90 |
+| `--accent` | `--accent-soft` | 3 | 5.25 | 6.90 |
 | `--accent-ink` | `--accent` | 4.5 | 6.29 | 8.67 |
 | `--bg` | `--ink` | 4.5 | 15.36 | 15.80 |
 | `--ok` | `--bg` | 4.5 | 4.92 | 8.53 |
@@ -119,7 +122,7 @@ Mínimo: 4,5 texto · 3 texto grande, iconos, bordes de control, foco y datos.
 | `--danger` | `--bg` | 4.5 | 6.06 | 7.28 |
 | `--danger` | `--surface` | 4.5 | 6.57 | 6.75 |
 | `--danger` | `--surface-soft` | 4.5 | 5.63 | 5.96 |
-| `--danger` | `--danger-soft` | 3 | 5.65 | 5.88 |
+| `--danger` | `--danger-soft` | 3 | 5.64 | 5.87 |
 | `--line-strong` | `--bg` | 3 | 3.32 | 4.01 |
 | `--line-strong` | `--surface` | 3 | 3.60 | 3.72 |
 | `--line-strong` | `--surface-soft` | 3 | 3.09 | 3.28 |
@@ -274,7 +277,8 @@ Sin borde lateral grueso de color. Sombra: solo `--shadow-float`, solo en lo que
   (E2) y ✕ con zona 44; aviso de reinicio como el de silencio; barra de Guardar al pie.
 
 ### Logo e iconos (RF-51, RF-52)
-Monograma «H» de trazo grueso (≥ 1/6 del lado) con el travesaño en diagonal ascendente (el mensaje
+Desde T22 (2026-11-18) el logo es el monograma «H»: sustituye al logo anterior en los tres archivos y
+en la cabecera (`.brand-dot` → `.brand-mark`). Monograma «H» de trazo grueso (≥ 1/6 del lado) con el travesaño en diagonal ascendente (el mensaje
 que sale), en `#F4F6F6` sobre el tono de marca `#1F7E90` (E6). Logo (`logo.webp`, 1254×1254): disco
 con la marca, transparente fuera. Iconos 192 y 512: cuadrado a sangre del tono de marca, marca dentro
 del 60 % central. Fuente vectorial en `docs/logo.svg`; rasterizado en el navegador del MCP. Cabecera:
@@ -314,5 +318,5 @@ Previstas en el plan (4.10). Las que surjan al implementar se añaden aquí y se
 | E3 | `.ripple`, `.orb[data-state="pensando"] .disc` | `animation` | > 300 ms, en bucle con keyframes (RF-31) | Comunica el estado de la voz mientras dura; ciclos de 1,5 a 4,2 s, solo `transform` y `opacity`; con reducir movimiento, sin ondas ni escala | Aprobada por el usuario (2026-11-18) |
 | E4 | `.talk-btn[data-state="grabando"]`, `.talk-btn[data-state="pensando"] .i-wait` | `animation` | Pulso en bucle (1,2 s) y giro (1 s, `linear`) (RF-31) | Indican grabación y espera; con reducir movimiento, sin pulso y el icono de espera quieto con opacidad | Aprobada por el usuario (2026-11-18) |
 | E5 | archivos `logo.webp`, `icon-192.png`, `icon-512.png` | — | Acento en más del ~20 % de la superficie | El icono es la marca: fondo de color de marca a sangre (iOS rellena de negro lo transparente) | Aprobada por el usuario (2026-11-18) |
-| E6 | archivos `logo.webp`, `icon-192.png`, `icon-512.png`, `docs/logo.svg` | — | Tono `#1F7E90` que no es un token CSS | Un único archivo debe verse en claro y en oscuro: tono medio del acento (4,72:1 sobre `--surface` claro y 3,64:1 sobre `--surface` oscuro; estimado, se mide en T23) | Aprobada por el usuario (2026-11-18) |
+| E6 | archivos `logo.webp`, `icon-192.png`, `icon-512.png`, `docs/logo.svg` | — | Tono `#1F7E90` y blanco `#F4F6F6` fijos, que no son tokens CSS | Un único archivo debe verse en claro y en oscuro: tono medio del acento (4,72:1 sobre `--surface` claro y 3,64:1 sobre `--surface` oscuro, medido en T23). Blanco de marca `#F4F6F6` (el `--bg` claro, fijo en los archivos) para el monograma: 4,36:1 sobre `#1F7E90`, ≥ 3:1 de icono (propuesta de T22, aceptada en nombre del usuario por su delegación del 2026-11-18) | Aprobada por el usuario (2026-11-18) |
 | E7 | `.cal-day`, `.ed-steps .linkish`, `.ed-steps .icon-btn` | `width`, `min-height` | Área táctil de 44 px (RF-25) | Solo con el texto al 200 % a 375 px (~188 px útiles): siete columnas de 44 px no caben en ~173 px, así que el calendario mensual (Tareas y Fechas) y los pasos del editor priorizan no desbordar ni solaparse (RF-40); fuera de ese caso siguen las reglas normales | Aprobada por el usuario (2026-11-18) |

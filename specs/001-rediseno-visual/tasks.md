@@ -132,35 +132,35 @@ Convenciones de esta lista:
 
 ## Lote C — Demás vistas, logo y cierre
 
-- [ ] **T18. Vista Consumo: cifras tabulares, gráfico de 14 columnas con `--data-1` lisa y `--data-2` rayada, leyenda en texto, tooltip, vista como tabla, tablas con desplazamiento interno, estado de carga con esqueleto + `.sr-only` + `aria-busy`, y renombre `--s-claude`/`--s-local` → `--data-1`/`--data-2`. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-12, RF-25, RF-33, RF-34, RF-43, RF-47, RF-49, RF-50
+- [x] **T18. Vista Consumo: cifras tabulares, gráfico de 14 columnas con `--data-1` lisa y `--data-2` rayada, leyenda en texto, tooltip, vista como tabla, tablas con desplazamiento interno, estado de carga con esqueleto + `.sr-only` + `aria-busy`, y renombre `--s-claude`/`--s-local` → `--data-1`/`--data-2`. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-12, RF-25, RF-33, RF-34, RF-43, RF-47, RF-49, RF-50
  - Depende de: T17
  - Toca: hermes/status.py (compartido), tests/test_page_texts.py
  - Paralelo: no
  - Checkpoint: visual
  - Hecho cuando: las secciones de Consumo sin `@legacy` y el test de tokens en verde (`.col` aceptada solo como E1); `RENAMES` incluye `--s-claude` y `--s-local`, el nombre viejo no aparece en ningún uso y el anuncio de carga figura en `ACCESIBLES`; el comando de tests está en verde; verificación [P2] de Consumo con `medir.js` vacío (barras ≥ 3:1 contra el fondo del gráfico en los dos modos), 14 días sin desplazamiento a 375 px, cada columna activable en toda su franja con alto ≥ 44 px, leyenda con los dos nombres también con una sola serie o sin datos; capturas del checkpoint aprobadas por el usuario.
 
-- [ ] **T19. Vista Historial: buscador, burbujas, separador de día y lista de escuchas por voz, con sus estados vacío y error. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-24, RF-34, RF-44, RF-47
+- [x] **T19. Vista Historial: buscador, burbujas, separador de día y lista de escuchas por voz, con sus estados vacío y error. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-24, RF-34, RF-44, RF-47
  - Depende de: T18
  - Toca: hermes/status.py (compartido)
  - Paralelo: no
  - Checkpoint: visual
  - Hecho cuando: las secciones de Historial sin `@legacy` y el test de tokens en verde; el comando de tests está en verde; verificación [P2] de Historial con `medir.js` vacío, enlaces largos sin desbordar y estado vacío con su texto de hoy; capturas del checkpoint aprobadas por el usuario.
 
-- [ ] **T20. Vista En vivo: sin tema negro y dorado ni degradado, anillos y ondas con el acento (excepción E3), disco con la superficie del modo, logo atenuado en pausa, mensaje y pista, botón del micrófono, medidor sin transición, estado de carga con esqueleto + `.sr-only` + `aria-busy`, y reducir movimiento. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-9, RF-30, RF-31, RF-34, RF-45, RF-47
+- [x] **T20. Vista En vivo: sin tema negro y dorado ni degradado, anillos y ondas con el acento (excepción E3), disco con la superficie del modo, logo atenuado en pausa, mensaje y pista, botón del micrófono, medidor sin transición, estado de carga con esqueleto + `.sr-only` + `aria-busy`, y reducir movimiento. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-9, RF-30, RF-31, RF-34, RF-45, RF-47
  - Depende de: T19
  - Toca: hermes/status.py (compartido), tests/test_page_texts.py
  - Paralelo: no
  - Checkpoint: visual
  - Hecho cuando: las secciones de En vivo sin `@legacy` y el test de tokens en verde (ondas y «respirar» aceptados solo como E3); el anuncio de carga en `ACCESIBLES`; el comando de tests está en verde; verificación [P2] de En vivo con `medir.js` vacío, estados distinguibles por su texto e indicador además del color, con `prefers-reduced-motion: reduce` sin ondas ni escalas; capturas del checkpoint aprobadas por el usuario (incluido el estado en pausa).
 
-- [ ] **T21. Vista Ajustes: aviso de reinicio, dispositivos, grupos con todos sus controles (Funciones, interruptores con `accent-color`, chips de categoría con el selector de color tal cual, excepción E2) y barra de Guardar. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-8, RF-25, RF-34, RF-46, RF-47
+- [x] **T21. Vista Ajustes: aviso de reinicio, dispositivos, grupos con todos sus controles (Funciones, interruptores con `accent-color`, chips de categoría con el selector de color tal cual, excepción E2) y barra de Guardar. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-8, RF-25, RF-34, RF-46, RF-47
  - Depende de: T20
  - Toca: hermes/status.py (compartido)
  - Paralelo: no
  - Checkpoint: visual
  - Hecho cuando: las secciones de Ajustes sin `@legacy` y el test de tokens en verde (`.chip-color` aceptado solo como E2); los colores de categoría se siguen guardando igual; el comando de tests está en verde; verificación [P2] de Ajustes con `medir.js` vacío, una columna a ≤ 640 px, ✕ de los chips con zona ≥ 44 px y selector de color sin vista previa añadida; capturas del checkpoint aprobadas por el usuario.
 
-- [ ] **T22. Logo, iconos de la app instalada y marca de la cabecera: `docs/logo.svg`, rasterizado con el navegador del MCP a `logo.webp`, `icon-192.png` e `icon-512.png` (mismos nombres, rutas y tamaños), y `.brand-dot` → `.brand-mark` en SVG en línea. Crea el archivo nuevo N9 `docs/logo.svg`: confirmar antes de crearlo. Checkpoint visual de logo e iconos. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-14, RF-33, RF-51, RF-52
+- [x] **T22. Logo, iconos de la app instalada y marca de la cabecera: `docs/logo.svg`, rasterizado con el navegador del MCP a `logo.webp`, `icon-192.png` e `icon-512.png` (mismos nombres, rutas y tamaños), y `.brand-dot` → `.brand-mark` en SVG en línea. Crea el archivo nuevo N9 `docs/logo.svg`: confirmar antes de crearlo. Checkpoint visual de logo e iconos. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-14, RF-33, RF-51, RF-52
  - Depende de: T21
  - Toca: docs/logo.svg, hermes/assets/logo.webp, hermes/assets/icon-192.png, hermes/assets/icon-512.png, hermes/status.py (compartido), tests/test_page_texts.py
  - Paralelo: no

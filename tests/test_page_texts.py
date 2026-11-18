@@ -21,12 +21,24 @@ REFERENCE = Path(__file__).parent / "data" / "page_reference.json"
 # El nombre viejo no puede aparecer en ningún uso de la página (HTML, CSS ni script).
 RENAMES: dict[str, str | None] = {
     "stage": None,  # T6: se retira el tema negro y dorado (`body.stage`); el script no la usaba.
+    "--s-claude": "--data-1",  # T18: serie Claude del gráfico de Consumo (leyenda y tooltip).
+    "--s-local": "--data-2",  # T18: serie Modelo local del gráfico de Consumo (leyenda y tooltip).
+    "brand-dot": "brand-mark",  # T22: el punto de la cabecera pasa a ser la marca en SVG en línea.
+    # T23: se retiran los alias viejos de `:root` (plan, apartado 6); sus usos ya eran tokens nuevos.
+    "--card": "--surface",
+    "--muted": "--ink-2",
+    "--faint": "--ink-3",
+    "--soft": "--surface-soft",
+    "--bar": "--surface-soft",
+    "--shadow": "--shadow-float",  # Solo en elementos flotantes.
 }
 
 # Textos nuevos permitidos: solo para lectores de pantalla (`.sr-only` o `aria-*`), lista cerrada.
 ACCESIBLES: set[str] = {
     "Cargando las tareas",  # T10: anuncio de carga de Tareas, solo para lectores de pantalla (RF-21).
     "Cargando los apuntes",  # T11: anuncio de carga de Apuntes, solo para lectores de pantalla (RF-47).
+    "Cargando el consumo",  # T18: anuncio de carga de Consumo, solo para lectores de pantalla (RF-47).
+    "Cargando el estado de la voz",  # T20: anuncio de carga de En vivo, solo para lectores de pantalla (RF-47).
 }
 
 # Atributos del HTML cuyo texto se ve o se lee en voz alta.

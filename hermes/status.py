@@ -276,11 +276,6 @@ PAGE = """<!doctype html>
     --c-salud:#ec86a7; --c-finanzas:#93c56f; --c-reptiles:#b8c55a; --c-otra:#a3a198;
   }
 }
-/* @legacy alias — nombres viejos que usan las secciones sin migrar (plan, apartado 6). Se retiran en T18 (--s-*) y T23 (el resto). */
-:root {
-  --card:var(--surface); --muted:var(--ink-2); --faint:var(--ink-3); --soft:var(--surface-soft); --bar:var(--surface-soft);
-  --shadow:none; --s-claude:var(--data-1); --s-local:var(--data-2);
-}
 /* Base: tipografía propia, servida por la propia página (font-src 'self'); si no carga, la del sistema. */
 @font-face {
   font-family:"Atkinson Hyperlegible Next";
@@ -299,7 +294,10 @@ header { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:
 .bar { max-width:var(--w-page); min-height:56px; margin:0 auto; padding:0 max(var(--sp-4), env(safe-area-inset-right)) 0 max(var(--sp-4), env(safe-area-inset-left));
   display:flex; align-items:stretch; flex-wrap:wrap; gap:0 var(--sp-4); }
 .brand { align-self:center; margin-right:auto; padding:var(--sp-3) 0; display:flex; align-items:center; gap:var(--sp-2); font-size:var(--fs-lg); font-weight:600; line-height:1.3; }
-.brand-dot { width:10px; height:10px; border-radius:var(--r-full); background:var(--accent); }
+/* Marca: el monograma del logo (docs/logo.svg) en el acento del modo activo. */
+.brand-mark { flex:none; width:20px; height:20px; }
+.brand-mark .bm-bg { fill:var(--accent); }
+.brand-mark .bm-fg { fill:var(--accent-ink); }
 .tabs { display:flex; gap:var(--sp-1); max-width:100%; overflow-x:auto; scrollbar-width:none; }
 .tabs::-webkit-scrollbar { display:none; }
 .tabs a { flex:none; display:inline-flex; align-items:center; min-height:44px; padding:0 var(--sp-3); border-bottom:2px solid transparent;
@@ -394,12 +392,6 @@ body.can-speak .toast { bottom:calc(var(--sp-7) * 2 + env(safe-area-inset-bottom
   .toast, .toast.show { transform:none; }
   .primary:active:not(:disabled), .ghost:active:not(:disabled), .danger:active:not(:disabled), .icon-btn:active:not(:disabled) { transform:none; }
 }
-
-/* @legacy consumo — contadores (los de Tareas, #stats, ya están migrados abajo) */
-.stats { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:18px; }
-.stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; box-shadow:var(--shadow); }
-.stat b { display:block; font-size:28px; font-weight:650; line-height:1.15; font-variant-numeric:tabular-nums; }
-.stat span { color:var(--muted); font-size:13px; }
 
 /* Tareas — contadores, Lista/Calendario, filtros, grupos, tarjetas, pasos, terminadas y estados de carga y vacío (docs/design.md, Vistas; RF-19 a RF-23, RF-35).
    El estado vive en el glifo, no en la fila: urgencia en una columna fija (triángulo, círculo lleno o hueco),
@@ -499,13 +491,6 @@ button.group-head:focus-visible { outline-offset:-2px; }
   text-decoration:underline; background:none; border:0; border-radius:var(--r-sm); cursor:pointer; white-space:nowrap; }
 .undo.danger-link { color:var(--danger); }
 .fin-mark { flex:none; width:18px; color:var(--ink-2); }
-details.finished { margin-top:var(--sp-4); }
-details.finished summary { padding:var(--sp-1) 0; color:var(--ink-2); font-size:var(--fs-sm); cursor:pointer; }
-.finished-list { padding:var(--sp-1) var(--sp-4); }
-.finished-list div { display:flex; gap:var(--sp-3); padding:var(--sp-2) 0; border-top:1px solid var(--line); font-size:var(--fs-sm); }
-.finished-list div:first-child { border-top:0; }
-.finished-list span:first-child { width:22px; color:var(--ink-2); }
-.finished-list span.when { margin-left:auto; color:var(--ink-3); font-size:var(--fs-xs); white-space:nowrap; }
 /* Vacío: centrado, con el mismo texto de hoy. Carga: esqueleto quieto de 3 filas, sin animación. */
 .empty-state { grid-column:1 / -1; display:flex; flex-direction:column; align-items:center; gap:var(--sp-1); padding:var(--sp-7) var(--sp-4);
   color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; text-align:center; }
@@ -556,7 +541,6 @@ details.finished summary { padding:var(--sp-1) 0; color:var(--ink-2); font-size:
   .urg { height:44px; }
   .task.ended .urg { height:32px; }
   .task-title.linkish, .steps .linkish { min-height:44px; }
-  details.finished summary { padding:var(--sp-3) 0; }
 }
 @media (max-width:640px) {
   #stats { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:var(--sp-2); }
@@ -577,109 +561,205 @@ details.finished summary { padding:var(--sp-1) 0; color:var(--ink-2); font-size:
   .group-head .chev { transition:none; }
 }
 
-/* @legacy en-vivo */
-.live { max-width:760px; }
-#state { font-size:30px; font-weight:650; color:var(--accent); }
-#hint { color:var(--muted); margin-top:4px; min-height:1.45em; }
-.meter { position:relative; height:22px; background:var(--bar); border-radius:6px; overflow:hidden; }
-#fill { position:absolute; inset:0 auto 0 0; width:0; background:var(--accent); transition:width .12s linear; }
-#fill.voice { background:var(--warn); }
-#mark { position:absolute; top:0; bottom:0; width:2px; background:var(--ink); }
-.nums { display:flex; justify-content:space-between; color:var(--muted); font-size:13px; margin-top:6px; font-variant-numeric:tabular-nums; }
-.event { padding:12px 0; border-top:1px solid var(--line); }
-.event:first-of-type { border-top:0; padding-top:0; }
-.top { display:flex; justify-content:space-between; gap:12px; color:var(--muted); font-size:13px; }
-.outcome { font-weight:600; color:var(--accent); }
-.outcome.bad { color:var(--warn); }
-.line { margin-top:4px; overflow-wrap:anywhere; }
-.line b { font-weight:600; }
-.times { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.chip { background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:1px 9px; font-size:13px; font-variant-numeric:tabular-nums; }
-.chip.total { font-weight:600; }
-table { width:100%; border-collapse:collapse; font-size:14px; font-variant-numeric:tabular-nums; }
-th, td { text-align:right; padding:6px 0 6px 10px; border-top:1px solid var(--line); white-space:nowrap; }
-th { color:var(--muted); font-weight:500; border-top:0; }
-th:first-child, td:first-child { text-align:left; padding-left:0; white-space:normal; }
-.wide { overflow-x:auto; }
-.note { color:var(--muted); font-size:13px; margin-top:10px; }
-.sub { color:var(--muted); font-size:13px; margin:16px 0 4px; }
-/* @legacy consumo */
-.stat small { display:block; color:var(--faint); font-size:12px; margin-top:2px; }
-.legend { display:flex; gap:18px; font-size:13px; color:var(--muted); margin-bottom:12px; }
-.legend i { width:10px; height:10px; border-radius:3px; display:inline-block; margin-right:6px; vertical-align:-1px; }
-.chart { position:relative; height:200px; display:flex; align-items:flex-end; gap:6px; margin-left:44px; border-bottom:1px solid var(--line); }
-.gridline { position:absolute; left:0; right:0; border-top:1px dashed var(--line); }
-.gridline span { position:absolute; left:-46px; top:-8px; width:40px; text-align:right; font-size:11px; color:var(--faint); font-variant-numeric:tabular-nums; }
-.col { flex:1; height:100%; display:flex; align-items:flex-end; justify-content:center; outline:none; position:relative; z-index:1; }
-.col:hover, .col:focus-visible { background:color-mix(in srgb, var(--ink) 5%, transparent); border-radius:6px 6px 0 0; }
-.stack { width:min(24px, 70%); display:flex; flex-direction:column; gap:2px; }
-.seg.claude { background:var(--s-claude); } .seg.local { background:var(--s-local); }
-.stack .seg:first-child { border-radius:4px 4px 0 0; }
-.xlabels { display:flex; gap:6px; margin:6px 0 0 44px; }
-.xlabels span { flex:1; min-width:0; text-align:center; font-size:11px; color:var(--faint); white-space:nowrap; overflow:hidden; }
-.col { min-width:0; }
-.tooltip { position:absolute; pointer-events:none; background:var(--card); border:1px solid var(--line); box-shadow:0 6px 20px rgba(0,0,0,.14); border-radius:10px; padding:8px 11px; font-size:12px; white-space:nowrap; z-index:4; display:none; }
-.tooltip b { display:block; margin-bottom:3px; }
-.tooltip div { display:flex; align-items:center; gap:6px; color:var(--muted); }
-.tooltip i { width:8px; height:8px; border-radius:2px; display:inline-block; }
+/* Consumo — cifras, gráfico de 14 días con leyenda y tooltip, vista como tabla, tablas y estado de carga (docs/design.md, Vistas;
+   RF-12, RF-25, RF-43, RF-47, RF-49, RF-50). Los colores de datos solo se usan aquí: en las barras, la leyenda y el tooltip.
+   La serie 2 (Modelo local) va además rayada y siempre encima de Claude, separada 2 px: se distingue sin el color.
+   La acción principal, «Ver como tabla», es lo único con acento (borde y texto, como la navegación de mes de Gastos).
+   Toda cifra, con cifras tabulares. Sin transiciones en cifras, columnas ni tooltip. */
+/* Cifras: como los contadores de Tareas, sin ser botones; dos columnas en pantalla estrecha. */
+#view-consumo .stats { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:var(--sp-3); margin:0 0 var(--sp-4); }
+#view-consumo .stat { display:flex; flex-direction:column; gap:var(--sp-0); min-width:0; padding:var(--sp-3) var(--sp-4);
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); }
+#view-consumo .stat b { display:block; font-size:var(--fs-xl); font-weight:600; line-height:1.25; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+#view-consumo .stat span { color:var(--ink-2); font-size:var(--fs-sm); font-weight:500; line-height:1.4; overflow-wrap:anywhere; }
+#view-consumo .stat small { display:block; color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; font-variant-numeric:tabular-nums; }
+/* Leyenda: muestra (lisa o rayada, como su barra) y nombre en texto. */
+.legend { display:flex; flex-wrap:wrap; gap:var(--sp-1) var(--sp-4); margin:0 0 var(--sp-3); color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; }
+.legend span { display:inline-flex; align-items:center; gap:var(--sp-2); }
+.swatch { flex:none; display:inline-block; width:14px; height:14px; border-radius:0; }
+/* Series: Claude lisa; Modelo local rayada en diagonal (el color de fondo queda debajo del rayado). */
+.swatch.claude, .seg.claude { background-color:var(--data-1); }
+.swatch.local, .seg.local { background-color:var(--data-2);
+  background-image:repeating-linear-gradient(135deg, var(--data-2) 0 4px, var(--surface) 4px 6px); }
+/* Gráfico: 14 columnas que se reparten el ancho, sin huecos entre ellas: cada columna es la zona pulsable de toda su franja
+   y a todo el alto (200 px; E1: estrechas, pero ≥ 44 px de alto). Ejes en --fs-xs y --ink-3. */
 .chart-box { position:relative; }
-details.table-view summary { cursor:pointer; color:var(--muted); font-size:13px; margin-top:12px; }
-.grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap:14px; }
-.grid2 > *, .groups > *, .stats > * { min-width:0; }
-
-/* @legacy en-vivo — escenario con el logo */
-.stage-wrap { min-height:calc(100vh - 150px); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:18px; }
-.orb { --level:0; --glow:.3; --speed:4s; --gold:242,194,48; position:relative; width:min(78vw, 380px); aspect-ratio:1; display:grid; place-items:center; }
-.ring { position:absolute; inset:0; border-radius:50%; border:1.5px solid rgba(var(--gold), calc(var(--glow) * .55));
-  transform:scale(calc(.6 + var(--i) * .13 + var(--level) * var(--i) * .05));
-  box-shadow:0 0 calc(6px + var(--level) * 36px) rgba(var(--gold), calc(var(--glow) * .45)), inset 0 0 calc(4px + var(--level) * 20px) rgba(var(--gold), calc(var(--glow) * .25));
-  transition:transform .15s ease-out, border-color .4s, box-shadow .15s ease-out; }
-.ripple { position:absolute; inset:0; border-radius:50%; border:2px solid rgba(var(--gold), .7); opacity:0; animation:ripple var(--speed) cubic-bezier(.2,.6,.3,1) infinite; }
-.ripple.r2 { animation-delay:calc(var(--speed) / -3); } .ripple.r3 { animation-delay:calc(var(--speed) / -1.5); }
-@keyframes ripple { 0% { transform:scale(.5); opacity:calc(var(--glow) * .9); } 100% { transform:scale(1.18); opacity:0; } }
-.disc { position:relative; z-index:2; width:44%; aspect-ratio:1; border-radius:50%; background:#fdfdfd; display:grid; place-items:center; overflow:hidden;
-  box-shadow:0 0 0 calc(4px + var(--level) * 6px) rgba(var(--gold), calc(.25 + var(--glow) * .5)), 0 0 calc(24px + var(--level) * 90px) rgba(var(--gold), calc(var(--glow) * .7));
-  transition:box-shadow .15s ease-out; }
-.disc img { width:78%; height:78%; object-fit:contain; transform:translate(-2%, 2%); user-select:none; }
-.orb[data-state="inactiva"] { --glow:.06; } .orb[data-state="inactiva"] .ripple { animation:none; }
-.orb[data-state="escuchando"] { --glow:.32; --speed:4.2s; }
-.orb[data-state="pausada"] { --glow:.04; } .orb[data-state="pausada"] .ripple { animation:none; }
-.orb[data-state="pausada"] .disc { filter:grayscale(1) brightness(.55); transition:filter .4s; }
-.orb[data-state="pitido"], .orb[data-state="grabando"] { --glow:1; --speed:1.5s; }
-.orb[data-state="transcribiendo"], .orb[data-state="pensando"] { --glow:.7; --speed:2.4s; }
-.orb[data-state="pensando"] .disc { animation:breathe 1.6s ease-in-out infinite; }
-.orb[data-state="hablando"] { --glow:.85; --speed:1.9s; }
-@keyframes breathe { 50% { transform:scale(1.035); } }
-.stage-wrap #state { color:rgb(242,194,48); font-size:28px; }
-.stage-wrap #hint { margin-top:-12px; }
-.stage-meter { width:min(78vw, 360px); }
-.mic-btn { font:inherit; font-weight:600; font-size:15px; display:inline-flex; align-items:center; gap:9px; padding:10px 22px; border-radius:999px;
-  border:1.5px solid var(--accent); background:transparent; color:var(--accent); cursor:pointer; transition:background .2s, color .2s; }
-.mic-btn:hover { background:color-mix(in srgb, var(--accent) 12%, transparent); }
-.mic-btn:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
-.mic-btn[aria-pressed="true"] { background:var(--accent); color:#14110a; }
-.mic-btn:disabled { opacity:.5; cursor:default; }
-.mic-btn svg { width:18px; height:18px; flex:none; }
-.stage-meter .meter { height:6px; border-radius:6px; }
-.stage-meter .nums { font-size:12px; }
-@media (prefers-reduced-motion: reduce) {
-  .ripple, .orb[data-state="pensando"] .disc { animation:none; }
-  .ring, .disc { transition:none; }
+.chart { position:relative; height:200px; display:flex; align-items:flex-end; gap:0; margin-left:var(--sp-7); border-bottom:1px solid var(--line-strong); }
+.gridline { position:absolute; left:0; right:0; border-top:1px dashed var(--line); }
+.gridline span { position:absolute; right:calc(100% + var(--sp-1)); top:calc(-1 * var(--sp-2) - var(--sp-0)); color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4;
+  white-space:nowrap; font-variant-numeric:tabular-nums; }
+.col { position:relative; z-index:1; flex:1; min-width:0; height:100%; display:flex; align-items:flex-end; justify-content:center; cursor:default; }
+.col:focus-visible { outline-offset:-2px; background:var(--surface-soft); }
+@media (hover:hover) and (pointer:fine) {
+  .col:hover { background:var(--surface-soft); }
+}
+.stack { width:min(24px, 70%); display:flex; flex-direction:column; gap:var(--sp-0); }
+.xlabels { display:flex; gap:0; margin:var(--sp-1) 0 0 var(--sp-7); }
+.xlabels span { flex:1; min-width:0; color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; text-align:center; white-space:nowrap; overflow:hidden;
+  font-variant-numeric:tabular-nums; }
+/* Tooltip: flota sobre el gráfico (superficie y sombra flotante); se muestra al pasar el ratón, con el foco o al tocar. */
+.tooltip { position:absolute; z-index:4; display:none; pointer-events:none; padding:var(--sp-2) var(--sp-3); color:var(--ink); background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--r-md); box-shadow:var(--shadow-float); font-size:var(--fs-sm); line-height:1.4;
+  width:max-content; max-width:100%; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.tooltip b { display:block; margin-bottom:var(--sp-1); font-weight:600; }
+.tooltip div { display:flex; align-items:center; gap:var(--sp-2); color:var(--ink-2); }
+.tooltip .swatch { width:10px; height:10px; }
+/* Ver como tabla: la acción principal; abierta, con el fondo de lo seleccionado. */
+details.table-view { margin-top:var(--sp-3); }
+details.table-view summary { display:inline-flex; align-items:center; gap:var(--sp-2); min-height:36px; padding:0 var(--sp-4); color:var(--accent); font-size:var(--fs-md);
+  font-weight:600; line-height:1.25; list-style:none; background:var(--surface); border:1px solid var(--accent); border-radius:var(--r-md); cursor:pointer; }
+details.table-view summary::-webkit-details-marker { display:none; }
+details.table-view summary::before { content:""; width:0; height:0; border-style:solid; border-width:5px 0 5px 7px; border-color:transparent transparent transparent currentColor; }
+details.table-view[open] summary { background:var(--accent-soft); }
+details.table-view[open] summary::before { transform:rotate(90deg); }
+details.table-view .wide { margin-top:var(--sp-3); }
+/* Tablas: 14 px y cifras tabulares; si no caben, se desplazan por dentro (la página no). */
+.wide { max-width:100%; overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:var(--fs-sm); line-height:1.4; font-variant-numeric:tabular-nums; }
+th, td { padding:var(--sp-2) 0 var(--sp-2) var(--sp-3); text-align:right; border-top:1px solid var(--line); white-space:nowrap; }
+th { color:var(--ink-2); font-weight:500; border-top:0; }
+th:first-child, td:first-child { padding-left:0; text-align:left; white-space:normal; }
+#recent-calls td:first-child { white-space:nowrap; }  /* La hora no se parte en tres líneas: la tabla se desplaza por dentro. */
+/* Dos columnas en pantalla ancha (también la usa Historial). */
+.grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap:var(--sp-4); }
+.grid2 > *, .groups > * { min-width:0; }
+/* Carga: esqueleto quieto en el sitio del gráfico (el script lo sustituye al pintar el gráfico). */
+#chart-box > .skeleton i { height:60px; }
+@media (pointer:coarse), (max-width:640px) {
+  details.table-view summary { min-height:44px; }
+}
+@media (max-width:640px) {
+  #view-consumo .stats { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .xlabels span:nth-child(even):not(:first-child) { visibility:hidden; }
+  .xlabels span:nth-child(odd) { overflow:visible; }
+}
+/* Texto al 200 % en el teléfono (~188 px útiles): cifras en una columna y, en el eje, solo el primer y el último día. */
+@media (max-width:300px) {
+  #view-consumo .stats { grid-template-columns:minmax(0, 1fr); }
+  .xlabels span:not(:first-child):not(:last-child) { visibility:hidden; }
+  .xlabels span:first-child { text-align:left; }
+  .xlabels span:last-child:not(:first-child) { visibility:visible; overflow:visible; direction:rtl; text-align:right; }
 }
 
-/* @legacy historial */
-.search { width:100%; font:inherit; padding:9px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); margin-bottom:6px; }
-.thread { max-width:760px; }
-.day { text-align:center; color:var(--faint); font-size:12px; margin:18px 0 8px; }
-.day::first-letter { text-transform:uppercase; }
-.msg { width:fit-content; max-width:min(620px, 88%); padding:8px 12px; border-radius:14px; margin:5px 0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
-.msg.user { margin-left:auto; background:var(--accent-soft); border-bottom-right-radius:4px; }
-.msg.hermes { background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
-.msg small { display:block; color:var(--faint); font-size:11px; margin-top:3px; }
+/* En vivo — indicador con el logo, mensaje y pista, botón del micrófono, medidor y estado de carga (docs/design.md, Vistas;
+   RF-9, RF-30, RF-31, RF-45, RF-47). Sin el tema negro y dorado ni degradado: fondo de la página, disco con la superficie
+   del modo y anillos finos de acento sin halos. El estado lo nombra el mensaje (texto), no solo el color; en pausa el
+   logo queda gris y atenuado y los anillos pasan a --line-strong. Las ondas y el «respirar» son la excepción E3; con
+   reducir movimiento no hay ondas, escala ni desplazamiento (el nivel se ve solo en la opacidad de los anillos).
+   La acción principal es el botón del micrófono: secundario mientras escucha y principal (acento) en pausa.
+   El medidor no tiene transición: se actualiza 5 veces por segundo. */
+.stage-wrap { min-height:calc(100vh - 150px); min-height:calc(100dvh - 150px); display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:var(--sp-4); text-align:center; }
+/* Indicador: --level (0..1) lo pone el script según el nivel del micrófono; --glow y --speed dependen del estado. */
+.orb { --level:0; --glow:.3; --speed:4s; position:relative; width:min(78vw, 380px); aspect-ratio:1; display:grid; place-items:center; }
+.ring { position:absolute; inset:0; border-radius:var(--r-full); border:1.5px solid var(--accent); opacity:min(1, calc(var(--glow) * .6 + var(--level) * .35));
+  transform:scale(calc(.6 + var(--i) * .13 + var(--level) * var(--i) * .05));
+  transition:transform var(--dur-1) var(--ease-out), opacity var(--dur-1) var(--ease), border-color var(--dur-2) var(--ease); }
+/* Ondas (E3): solo escuchando, grabando, pensando y hablando (y sus pasos intermedios); en reposo y en pausa, quietas. */
+.ripple { position:absolute; inset:0; border-radius:var(--r-full); border:2px solid var(--accent); opacity:0; animation:ripple var(--speed) var(--ease-out) infinite; }
+.ripple.r2 { animation-delay:calc(var(--speed) / -3); }
+.ripple.r3 { animation-delay:calc(var(--speed) / -1.5); }
+@keyframes ripple { 0% { transform:scale(.5); opacity:calc(var(--glow) * .9); } 100% { transform:scale(1.18); opacity:0; } }
+/* Disco con el logo: superficie del modo y borde de control, sin sombra ni resplandor. */
+.disc { position:relative; z-index:2; width:44%; aspect-ratio:1; display:grid; place-items:center; overflow:hidden;
+  background:var(--surface); border:1px solid var(--line-strong); border-radius:var(--r-full); }
+.disc img { width:78%; height:78%; object-fit:contain; user-select:none; transition:opacity var(--dur-2) var(--ease); }
+.orb[data-state="inactiva"] { --glow:.06; }
+.orb[data-state="escuchando"] { --glow:.32; --speed:4.2s; }
+.orb[data-state="pausada"] { --glow:0; }
+.orb[data-state="pitido"], .orb[data-state="grabando"] { --glow:1; --speed:1.5s; }
+.orb[data-state="transcribiendo"], .orb[data-state="pensando"] { --glow:.7; --speed:2.4s; }
+.orb[data-state="hablando"] { --glow:.85; --speed:1.9s; }
+.orb[data-state="inactiva"] .ripple, .orb[data-state="pausada"] .ripple { animation:none; }
+/* En pausa: logo gris y atenuado, anillos neutros y quietos. */
+.orb[data-state="pausada"] .disc img { filter:grayscale(1); opacity:.45; }
+.orb[data-state="pausada"] .ring { border-color:var(--line-strong); opacity:1; }
+/* «Respirar» (E3) mientras piensa. */
+.orb[data-state="pensando"] .disc { animation:breathe 1.6s var(--ease-io) infinite; }
+@keyframes breathe { 50% { transform:scale(1.035); } }
+/* Mensaje de estado y pista. */
+#state { font-size:var(--fs-xl); font-weight:600; line-height:1.25; color:var(--ink); overflow-wrap:anywhere; }
+#hint { min-height:1.5em; max-width:70ch; margin-top:calc(-1 * var(--sp-3)); color:var(--ink-2); font-size:var(--fs-md); line-height:1.5; overflow-wrap:anywhere; }
+/* Botón del micrófono: secundario mientras escucha (micrófono tachado: «Dejar de escuchar»); en pausa, principal
+   con el micrófono sin tachar («Volver a escuchar»). El icono y el texto cambian, no solo el color. */
+.mic-btn { display:inline-flex; align-items:center; justify-content:center; gap:var(--sp-2); min-height:36px; padding:0 var(--sp-5);
+  font:inherit; font-size:var(--fs-md); line-height:1.25; color:var(--ink); background:var(--surface); border:1px solid var(--line-strong); border-radius:var(--r-md); cursor:pointer;
+  transition:background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease-out); }
+.mic-btn[aria-pressed="true"] { color:var(--accent-ink); background:var(--accent); border-color:var(--accent); font-weight:600; }
+.mic-btn:disabled { color:var(--ink-3); background:var(--surface-soft); border-color:var(--surface-soft); cursor:default; }
+.mic-btn:active:not(:disabled) { transform:scale(.97); }
+.mic-btn svg { flex:none; width:20px; height:20px; }
+@media (hover:hover) and (pointer:fine) {
+  .mic-btn:not([aria-pressed="true"]):hover:not(:disabled) { background:var(--surface-soft); }
+  .mic-btn[aria-pressed="true"]:hover:not(:disabled) { background:color-mix(in oklab, var(--accent) 92%, var(--ink)); border-color:color-mix(in oklab, var(--accent) 92%, var(--ink)); }
+}
+@media (hover:hover) and (pointer:fine) and (prefers-color-scheme: dark) {
+  .mic-btn[aria-pressed="true"]:hover:not(:disabled) { background:color-mix(in oklab, var(--accent) 92%, var(--bg)); border-color:color-mix(in oklab, var(--accent) 92%, var(--bg)); }
+}
+/* Medidor: pista --surface-soft, nivel --ink-3 (--ok cuando cuenta como voz) y umbral --ink; cifras tabulares. */
+.stage-meter { width:min(78vw, 360px); }
+.meter { position:relative; height:6px; overflow:hidden; background:var(--surface-soft); border-radius:var(--r-full); }
+#fill { position:absolute; inset:0 auto 0 0; width:0; background:var(--ink-3); }
+#fill.voice { background:var(--ok); }
+#mark { position:absolute; top:0; bottom:0; width:2px; background:var(--ink); }
+.nums { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0 var(--sp-3); margin-top:var(--sp-2); color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4;
+  font-variant-numeric:tabular-nums; }
+/* Carga: hasta el primer dato, disco quieto en --surface-soft sin logo ni anillos, y anuncio .sr-only. */
+#view-vivo[aria-busy="true"] .ring, #view-vivo[aria-busy="true"] .ripple { display:none; }
+#view-vivo[aria-busy="true"] .disc { background:var(--surface-soft); border-color:var(--surface-soft); }
+#view-vivo[aria-busy="true"] .disc img { visibility:hidden; }
+#view-vivo[aria-busy="false"] .stage-wrap > .sr-only { display:none; }
+@media (pointer:coarse), (max-width:640px) {
+  .mic-btn { min-height:44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ripple, .orb[data-state="pensando"] .disc { animation:none; }
+  .ring { transform:scale(calc(.6 + var(--i) * .13)); transition:opacity var(--dur-1) var(--ease), border-color var(--dur-2) var(--ease); }
+  .mic-btn:active:not(:disabled) { transform:none; }
+}
 
-/* @legacy en-vivo — alto dinámico en el iPhone */
-@supports (height:100dvh) {
-  .stage-wrap { min-height:calc(100dvh - 150px); }
+/* Historial — buscador, conversación (burbujas y separador de día), escuchas por voz y estados de carga y vacío (docs/design.md, Vistas;
+   RF-24, RF-44, RF-47). El buscador es la acción principal: el campo de la base común (16 px, 44 px y anillo de foco), sin más acento.
+   Las burbujas se distinguen por el lado y la esquina, no solo por el fondo: las tuyas a la derecha, en --surface-soft y con la
+   esquina inferior derecha en --r-sm; las de Hermes a la izquierda, en --surface con borde y la esquina inferior izquierda en --r-sm.
+   Sin sombras (no flotan) ni colores de categoría o de datos. Los textos largos se parten: la página nunca se desplaza en horizontal. */
+#view-historial .grid2 { align-items:start; }
+.thread { min-width:0; max-width:var(--w-col); }
+.search { display:block; width:100%; margin:0 0 var(--sp-3); }
+/* Carga: el «Cargando…» de hoy, acompañado de un esqueleto quieto con forma de burbujas alternas. */
+#messages > .empty { margin:0 0 var(--sp-2); color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; }
+#messages > .skeleton i { width:70%; height:44px; border-radius:var(--r-lg); }
+#messages > .skeleton i:nth-child(even) { align-self:flex-end; }
+#messages > .empty-state { margin-top:var(--sp-2); }
+/* Separador de día: discreto, centrado, con la inicial en mayúscula. */
+.day { margin:var(--sp-5) 0 var(--sp-2); color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; text-align:center; }
+#messages > .day:first-child { margin-top:var(--sp-2); }
+.day::first-letter { text-transform:uppercase; }
+.msg { width:fit-content; max-width:88%; margin:var(--sp-2) 0; padding:var(--sp-2) var(--sp-3); color:var(--ink); font-size:var(--fs-md); line-height:1.5;
+  white-space:pre-wrap; overflow-wrap:anywhere; border:1px solid transparent; border-radius:var(--r-lg); }
+.msg.user { margin-left:auto; background:var(--surface-soft); border-bottom-right-radius:var(--r-sm); }
+.msg.hermes { margin-right:auto; background:var(--surface); border-color:var(--line); border-bottom-left-radius:var(--r-sm); }
+.msg small { display:block; margin-top:var(--sp-1); color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; white-space:normal; font-variant-numeric:tabular-nums; }
+.msg.user small { text-align:right; }
+/* Escuchas por voz: resultado con punto lleno --ok (respondió) o hueco --danger (no), como el indicador de conexión;
+   el texto del resultado ya lo nombra. Tiempos en chips de 13 px con cifras tabulares (no se pulsan). */
+#events .event { padding:var(--sp-3) 0; border-top:1px solid var(--line); }
+#events .event:first-child { padding-top:0; border-top:0; }
+#events .top { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:var(--sp-1) var(--sp-3);
+  color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; font-variant-numeric:tabular-nums; }
+#events .outcome { display:inline-flex; align-items:center; gap:var(--sp-2); min-width:0; color:var(--ok); font-size:var(--fs-sm); font-weight:600; overflow-wrap:anywhere; }
+#events .outcome::before { content:""; flex:none; width:8px; height:8px; border-radius:var(--r-full); background:var(--ok); }
+#events .outcome.bad { color:var(--danger); }
+#events .outcome.bad::before { background:transparent; border:2px solid var(--danger); }
+#events .line { margin-top:var(--sp-1); color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; overflow-wrap:anywhere; }
+#events .line b { color:var(--ink); font-weight:600; }
+#events .times { display:flex; flex-wrap:wrap; gap:var(--sp-1); margin-top:var(--sp-2); }
+#events .chip { display:inline-block; padding:0 var(--sp-2); color:var(--ink-2); font-size:var(--fs-xs); font-weight:400; line-height:1.5; white-space:nowrap;
+  font-variant-numeric:tabular-nums; background:var(--surface-soft); border:0; border-radius:var(--r-full); }
+#events .chip.total { color:var(--ink); font-weight:600; }
+#events > .empty-state { padding:var(--sp-5) 0; }
+@media (max-width:640px) {
+  .msg { max-width:92%; }
 }
 
 /* Apuntes — marco (título, explicación, subpestañas, aviso de silencio y estado de carga) y Listas (docs/design.md, Vistas; RF-15, RF-34, RF-42, RF-47).
@@ -881,6 +961,11 @@ details.table-view summary { cursor:pointer; color:var(--muted); font-size:13px;
   .hb-check:not(.on):hover, .hb-day:not(.on):hover i { border-color:var(--accent); }
   .hb-day:hover { background:var(--surface-soft); }
 }
+/* Texto al 200 % en el teléfono (~188 px útiles, RF-40): siete días de ~21 px juntan sus nombres («sábdomlun»), así
+   que la semana pasa a dos filas de cuatro, en el mismo orden. */
+@media (max-width:300px) {
+  .hb-week { grid-template-columns:repeat(4, minmax(0, 1fr)); row-gap:var(--sp-1); }
+}
 @media (prefers-reduced-motion: reduce) {
   .hb-check { transition:none; }
 }
@@ -1040,53 +1125,106 @@ details.table-view summary { cursor:pointer; color:var(--muted); font-size:13px;
   .ln-row .bl-actions { flex-wrap:wrap; }
 }
 
-/* @legacy ajustes */
-.set-group { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 16px; margin:0 0 16px; }
-.set-group h3 { font-size:15px; margin:12px 0 4px; }
-.set-row { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 260px); gap:6px 16px; align-items:center; padding:12px 0; border-top:1px solid var(--line); }
-.set-row:first-of-type { border-top:0; }
-.set-row label { font-weight:600; font-size:14px; }
-.set-row small { display:block; font-weight:400; color:var(--muted); font-size:13px; margin-top:2px; }
-.set-row input[type="text"], .set-row input[type="password"], .set-row input[type="number"], .set-row input[type="time"], .set-row select {
-  width:100%; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:9px 11px; }
-.set-row input:focus, .set-row select:focus { outline:none; border-color:var(--accent); }
-.set-row input:disabled, .set-row select:disabled { opacity:.5; }
-.set-row input[type="checkbox"] { width:22px; height:22px; accent-color:var(--accent); justify-self:start; }
-.set-row.wide { grid-template-columns:1fr; }
-.pw { position:relative; display:block; min-width:0; }
-.pw input { width:100%; padding-right:46px !important; }
-.pw-eye { position:absolute; right:4px; top:50%; transform:translateY(-50%); width:38px; height:38px; display:grid; place-items:center;
-  background:none; border:0; border-radius:8px; color:var(--muted, #a19f96); cursor:pointer; padding:0; }
-.pw-eye:hover, .pw-eye:focus-visible { color:var(--accent, #f2c230); outline:none; }
-.pw-eye:disabled { opacity:.4; cursor:default; }
-.pw-eye[aria-pressed="false"] .eye-off { display:none; }
-.chips { display:flex; flex-direction:column; gap:10px; min-width:0; }
-.chip-list { display:flex; flex-wrap:wrap; gap:8px; }
-.chip { display:inline-flex; align-items:center; gap:7px; padding:5px 6px 5px 12px; border:1px solid var(--line); border-radius:999px; background:var(--soft); font-size:14px; font-weight:550; }
-.chip { padding-left:6px; }
-.chip-color { -webkit-appearance:none; appearance:none; width:24px; height:24px; padding:0; border:2px solid var(--card); border-radius:50%;
-  background:none; cursor:pointer; flex:none; overflow:hidden; box-shadow:0 0 0 1px var(--line); }
-.chip-color::-webkit-color-swatch-wrapper { padding:0; }
-.chip-color::-webkit-color-swatch { border:0; border-radius:50%; }
-.chip-color::-moz-color-swatch { border:0; border-radius:50%; }
-.chip-color:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-.chip-color:disabled { cursor:default; }
-.chip-x { font:inherit; font-size:12px; color:var(--muted); background:none; border:0; border-radius:50%; width:24px; height:24px; cursor:pointer; display:grid; place-items:center; }
-.chip-x:hover:not(:disabled) { color:var(--warn); background:var(--card); }
-.chip-x:disabled { opacity:.35; cursor:default; }
-.chip-add { display:flex; gap:8px; max-width:420px; }
-.chip-add input { flex:1; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:9px 11px; }
-.chip-add input:focus { outline:none; border-color:var(--accent); }
-.chip-add .ghost { flex:none; }
-.chip-note { font-size:13px; color:var(--warn); min-height:0; }
-.chip-note:empty { display:none; }
-@media (pointer:coarse) { .chip-x { width:32px; height:32px; } .chip-color { width:30px; height:30px; } }
-.set-tag { display:inline-block; font-size:11px; font-weight:600; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:1px 8px; margin-left:6px; vertical-align:1px; }
-.set-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 18px; }
-.set-bar .primary { margin-left:0; }
-.set-note { background:var(--accent-soft); border:1px solid var(--accent); border-radius:12px; padding:12px 14px; margin:0 0 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:14px; }
+/* Ajustes — aviso de reinicio, dispositivos, grupos de ajustes (Funciones, interruptores, campos, secretos y categorías),
+   barra de Guardar y estado de carga (docs/design.md, Vistas; RF-8, RF-25, RF-46, RF-47). Un solo acento: «Guardar
+   cambios» (la acción principal, en el flujo al pie del formulario); los interruptores marcados usan el acento como
+   selección (accent-color) y el resto de botones son secundarios o de texto. Los grupos son tarjetas --surface sin
+   sombra; dentro, los campos van sobre --surface-soft con la base común (16 px, 44 px y anillo de foco). Una columna
+   a ≤ 640 px. El color de cada categoría se ve tal cual solo en su selector nativo (E2), sin vista previa añadida; el
+   nombre de la categoría va en neutro. */
+#view-ajustes > h1 { margin:var(--sp-1) 0 var(--sp-0); font-size:var(--fs-xl); font-weight:600; line-height:1.25; }
+#set-restart, #set-sessions, #set-form { max-width:var(--w-col); }
+/* Aviso de reinicio: como el aviso de silencio de Apuntes (fondo y borde de acento, en el flujo, botón secundario). */
+.set-note { display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2) var(--sp-3); max-width:var(--w-col); margin:0 0 var(--sp-4); padding:var(--sp-3) var(--sp-4);
+  color:var(--ink); font-size:var(--fs-md); line-height:1.5; background:var(--accent-soft); border:1px solid var(--accent); border-radius:var(--r-md); }
 .set-note[hidden] { display:none; }
-@media (max-width:640px) { .set-row { grid-template-columns:1fr; } }
+.set-note > span { flex:1 1 16em; min-width:0; }
+.set-note .ghost { flex:none; }
+/* Grupos: tarjeta con su título y filas etiqueta / control separadas por una línea. */
+.set-group { margin:0 0 var(--sp-4); padding:var(--sp-1) var(--sp-5); background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); }
+.set-group h3 { margin:var(--sp-4) 0 var(--sp-1); font-size:var(--fs-lg); font-weight:600; line-height:1.3; overflow-wrap:anywhere; }
+.set-row { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 260px); gap:var(--sp-1) var(--sp-4); align-items:center; padding:var(--sp-2) 0; border-top:1px solid var(--line); }
+.set-row:first-of-type { border-top:0; }
+.set-row.wide { grid-template-columns:minmax(0, 1fr); }
+/* Etiqueta: se toca para ir a su control (32 px de alto con ratón, 44 en táctil). La ayuda, atenuada debajo. */
+.set-row > label { display:block; min-width:0; min-height:32px; padding:var(--sp-1) 0; color:var(--ink); font-size:var(--fs-md); font-weight:500; line-height:1.5; overflow-wrap:anywhere; }
+.set-row > label small { display:block; margin-top:var(--sp-0); color:var(--ink-2); font-size:var(--fs-sm); font-weight:400; line-height:1.4; }
+.set-tag { display:inline-block; margin-left:var(--sp-2); padding:0 var(--sp-2); color:var(--ink-2); font-size:var(--fs-xs); font-weight:500; line-height:1.5; vertical-align:middle;
+  background:var(--surface-soft); border-radius:var(--r-sm); }
+/* Campos dentro de la tarjeta: la base común sobre --surface-soft, a todo el ancho de su columna. */
+.set-row input:not([type="checkbox"], [type="color"], [type="hidden"]), .set-row select { width:100%; min-width:0; background:var(--surface-soft); }
+/* Interruptores: la casilla nativa con el acento al marcarse, dentro de una zona de 32 px (44 en táctil) que también la marca. */
+.set-switch { display:inline-grid; place-items:center; justify-self:start; width:32px; height:32px; margin-left:calc(-1 * var(--sp-1)); border-radius:var(--r-md); cursor:pointer; }
+.set-switch input { width:22px; height:22px; margin:0; accent-color:var(--accent); cursor:pointer; }
+.set-switch input:disabled { cursor:default; }
+/* Secretos: el ojo va dentro del campo, a su altura (lo guardado nunca llega a la página). */
+.pw { position:relative; display:block; min-width:0; }
+.pw input { padding-right:var(--sp-7); }
+.pw-eye { position:absolute; top:0; right:0; width:44px; height:100%; min-height:44px; display:grid; place-items:center; padding:0;
+  color:var(--ink-2); background:none; border:0; border-radius:var(--r-md); cursor:pointer; transition:color var(--dur-1) var(--ease); }
+.pw-eye:focus-visible { outline-offset:-2px; }
+.pw-eye:disabled { color:var(--ink-3); opacity:.5; cursor:default; }
+.pw-eye[aria-pressed="false"] .eye-off { display:none; }
+/* Categorías: chips --surface-soft con el selector de color nativo (E2: el color guardado tal cual), el nombre en neutro y ✕. */
+.chips { display:flex; flex-direction:column; gap:var(--sp-3); min-width:0; }
+.chip-list { display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.chip { display:inline-flex; align-items:center; gap:0; min-width:0; max-width:100%; min-height:32px; padding:0; color:var(--ink-2); font-size:var(--fs-sm); font-weight:500; line-height:1.4;
+  background:var(--surface-soft); border-radius:var(--r-full); }
+.chip > span { min-width:0; padding:0 var(--sp-1); overflow-wrap:anywhere; }
+.chip > span:last-child { padding-right:var(--sp-3); }
+.chip-color { -webkit-appearance:none; appearance:none; flex:none; width:32px; height:32px; padding:var(--sp-1); font-size:var(--fs-sm); background:none; border:0; border-radius:var(--r-full); cursor:pointer; }
+.chip-color::-webkit-color-swatch-wrapper { padding:0; }
+.chip-color::-webkit-color-swatch { border:1px solid var(--line-strong); border-radius:var(--r-full); }
+.chip-color::-moz-color-swatch { border:1px solid var(--line-strong); border-radius:var(--r-full); }
+.chip-color:focus-visible { outline-offset:-2px; }
+.chip-color:disabled { cursor:default; }
+.chip-x { flex:none; display:grid; place-items:center; width:32px; height:32px; padding:0; font:inherit; font-size:var(--fs-sm); line-height:1; color:var(--ink-2);
+  background:none; border:0; border-radius:var(--r-full); cursor:pointer; transition:color var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease); }
+.chip-x:focus-visible { outline-offset:-2px; }
+.chip-x:disabled { color:var(--ink-3); opacity:.5; cursor:default; }
+.chip-add { display:flex; gap:var(--sp-2); max-width:420px; }
+.chip-add input { flex:1; min-width:0; background:var(--surface-soft); }
+.chip-add .ghost { flex:none; min-height:44px; }
+.chip-note { color:var(--warn); font-size:var(--fs-sm); line-height:1.4; }
+.chip-note:empty { display:none; }
+/* Dispositivos con la página abierta: filas como las de Apuntes y, debajo, sus botones secundarios. */
+#set-sessions-list > .ap-row:first-child { border-top:0; }
+#set-sessions-list > .ap-empty { padding:var(--sp-1) 0 var(--sp-2); }
+#set-sessions .set-bar { margin:var(--sp-3) 0; }
+/* Barra de Guardar: al pie del formulario, en el flujo (no tapa campos; el aviso emergente queda en el margen reservado de main). */
+.set-bar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2) var(--sp-3); margin:0 0 var(--sp-5); }
+.set-bar .primary { margin-left:0; min-height:44px; }
+#set-status:empty { display:none; }
+/* Carga: el «Cargando…» de hoy y debajo el esqueleto quieto de Tareas (el script lo sustituye por los grupos). */
+#set-groups > .empty { margin:0 0 var(--sp-2); color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; }
+#set-groups > .skeleton i { height:96px; }
+@media (hover:hover) and (pointer:fine) {
+  .set-switch:hover { background:var(--surface-soft); }
+  .pw-eye:hover:not(:disabled) { color:var(--ink); }
+  .chip-x:hover:not(:disabled) { color:var(--danger); background:var(--surface); }
+}
+/* Táctil o pantalla estrecha: zonas de 44×44 px (el selector, el ✕ y la casilla crecen; el dibujo no). */
+@media (pointer:coarse), (max-width:640px) {
+  .set-row > label { min-height:44px; padding:var(--sp-2) 0; }
+  .set-switch { width:44px; height:44px; margin-left:calc(-1 * var(--sp-3)); }
+  .chip { min-height:44px; }
+  .chip-color { width:44px; height:44px; padding:var(--sp-2); }
+  .chip-x { width:44px; height:44px; }
+}
+@media (max-width:640px) {
+  .set-group { padding:var(--sp-1) var(--sp-4); }
+  .set-row { grid-template-columns:minmax(0, 1fr); }
+}
+/* Texto al 200 % en el teléfono (~188 px útiles, RF-40): el campo de categoría nueva y «+ Agregar» se apilan, y los
+   botones de los avisos y de Dispositivos pueden partir su texto en dos líneas. */
+@media (max-width:300px) {
+  .chip-add { flex-wrap:wrap; }
+  .chip-add input { flex:1 1 100%; }
+  .set-note .ghost, .set-bar .ghost { max-width:100%; white-space:normal; text-align:center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-eye, .chip-x { transition:none; }
+}
 
 /* Voz — botón de hablar y panel de voz (docs/design.md, Componentes clave; RF-26, RF-30, RF-31, RF-38).
    Cada estado cambia el icono, no solo el color: reposo micrófono; grabando ■ sobre --danger con pulso;
@@ -1135,22 +1273,6 @@ details.table-view summary { cursor:pointer; color:var(--muted); font-size:13px;
   .talk-btn[data-state="grabando"]::after { animation:none; inset:calc(-1 * var(--sp-1)); background:transparent; border:2px solid var(--danger); opacity:1; }
   .talk-btn[data-state="pensando"] .i-wait { animation:talk-fade 1s ease-in-out infinite alternate; }
   .talk-panel { animation-name:talk-in-fade; }
-}
-
-/* @legacy en-vivo, consumo e historial — zonas de toque y pantalla estrecha de las vistas aún sin migrar */
-@media (pointer:coarse) {
-  .mic-btn { min-height:44px; }
-  details.table-view summary { padding:10px 0; }
-  /* Con menos de 16 px, el teléfono acerca la página al tocar un campo. */
-  .search { font-size:16px; min-height:44px; }
-}
-@media (max-width:640px) {
-  .stats { grid-template-columns:repeat(2, 1fr); gap:10px; }
-  .stat { padding:12px 14px; }
-  .stat b { font-size:24px; }
-  .top { flex-wrap:wrap; }
-  .msg { max-width:92%; }
-  .xlabels span:nth-child(even):not(:first-child) { visibility:hidden; }
 }
 
 /* Diálogos — editor de tarea, confirmación y foto de recibo (docs/design.md, Componentes clave; RF-17).
@@ -1235,6 +1357,12 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
   .date-row { flex-wrap:wrap; }
   .date-row input { flex:1 1 190px; }
 }
+/* Texto al 200 % en el teléfono (~188 px útiles, RF-40): la urgencia se apila en una columna y «Marcar como hecha»
+   puede partir su texto, para que el editor no se desplace en horizontal. */
+@media (max-width:300px) {
+  .seg-ctl { grid-template-columns:minmax(0, 1fr); }
+  .ed-actions .ghost { max-width:100%; white-space:normal; text-align:center; }
+}
 /* Reducir movimiento: los diálogos y la hoja solo aparecen, sin escala ni desplazamiento. */
 @media (prefers-reduced-motion: reduce) {
   dialog#editor[open], dialog#ask[open], dialog#rc-photo[open] { animation-name:dialog-fade; }
@@ -1244,7 +1372,7 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
 <body>
 <header>
   <div class="bar">
-    <div class="brand"><span class="brand-dot"></span>Hermes</div>
+    <div class="brand"><svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle class="bm-bg" cx="50" cy="50" r="50"/><g class="bm-fg"><rect x="20" y="22" width="17" height="56" rx="2.5"/><rect x="63" y="22" width="17" height="56" rx="2.5"/><polygon points="28,48.4 72,34.9 72,52.6 28,66.1"/></g></svg>Hermes</div>
     <nav class="tabs" aria-label="Secciones">
       <a href="#tareas" data-view="tareas">Tareas</a>
       <a href="#apuntes" data-view="apuntes">Apuntes</a>
@@ -1281,8 +1409,9 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
   <div class="groups" id="groups"><div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div><span class="sr-only" role="status">Cargando las tareas</span></div>
 </div>
 
-<div class="view" id="view-vivo" hidden>
+<div class="view" id="view-vivo" aria-busy="true" hidden>
   <div class="stage-wrap">
+    <span class="sr-only" role="status">Cargando el estado de la voz</span>
     <div class="orb" id="orb" data-state="inactiva" aria-hidden="true">
       <span class="ripple"></span><span class="ripple r2"></span><span class="ripple r3"></span>
       <span class="ring" style="--i:1"></span><span class="ring" style="--i:2"></span><span class="ring" style="--i:3"></span>
@@ -1301,7 +1430,7 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
   </div>
 </div>
 
-<div class="view" id="view-consumo" hidden>
+<div class="view" id="view-consumo" aria-busy="true" hidden>
   <h2>Consumo</h2>
   <div class="subtitle">Con tu suscripción, Claude se descuenta de los límites de tu plan: el costo equivalente es solo lo que valdría por API, como referencia. El modelo local es gratis.</div>
   <div class="stats">
@@ -1312,8 +1441,8 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
   </div>
   <section>
     <div class="label">Tokens por día · últimos 14 días</div>
-    <div class="legend"><span><i style="background:var(--s-claude)"></i>Claude</span><span><i style="background:var(--s-local)"></i>Modelo local</span></div>
-    <div class="chart-box" id="chart-box"></div>
+    <div class="legend"><span><i class="swatch claude"></i>Claude</span><span><i class="swatch local"></i>Modelo local</span></div>
+    <div class="chart-box" id="chart-box"><div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div><span class="sr-only" role="status">Cargando el consumo</span></div>
     <details class="table-view"><summary>Ver como tabla</summary><div class="wide" id="daily-table"></div></details>
   </section>
   <div class="grid2">
@@ -1422,38 +1551,38 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
   </div>
 </div>
 
-<div class="view" id="view-ajustes" hidden>
+<div class="view" id="view-ajustes" aria-busy="true" hidden>
   <h1>Ajustes</h1>
   <div class="subtitle" id="set-subtitle">Lo que cambies se guarda en el archivo de configuración de Hermes.</div>
   <div class="set-note" id="set-restart" hidden>
     <span>Hay cambios que se aplican al reiniciar Hermes.</span>
-    <button type="button" class="primary" id="set-restart-btn" style="margin-left:0">Reiniciar Hermes</button>
+    <button type="button" class="ghost" id="set-restart-btn">Reiniciar Hermes</button>
   </div>
   <section class="set-group" id="set-sessions" hidden>
     <h3>Dispositivos con la página abierta</h3>
     <div id="set-sessions-list"></div>
-    <div class="set-bar" style="/* @legacy ajustes */ margin:10px 0 8px">
+    <div class="set-bar">
       <button type="button" class="ghost" id="set-sessions-all" hidden>Cerrar las demás</button>
       <button type="button" class="ghost" id="set-logout" hidden>Cerrar sesión aquí</button>
     </div>
   </section>
   <form id="set-form" autocomplete="off">
-    <div id="set-groups"><div class="empty">Cargando…</div></div>
+    <div id="set-groups"><div class="empty" role="status">Cargando…</div><div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div></div>
     <div class="set-bar"><button type="submit" class="primary" id="set-save" disabled>Guardar cambios</button><span class="subtitle" id="set-status" style="margin:0"></span></div>
   </form>
 </div>
 
-<div class="view" id="view-historial" hidden>
+<div class="view" id="view-historial" aria-busy="true" hidden>
   <h2>Historial</h2>
   <div class="subtitle">Tus conversaciones con Hermes por Telegram y por voz, de la más antigua a la más reciente.</div>
   <div class="grid2">
     <div class="thread">
       <input class="search" id="search" type="search" placeholder="Buscar en el historial…" aria-label="Buscar en el historial">
-      <div id="messages"><div class="empty">Cargando…</div></div>
+      <div id="messages"><div class="empty" role="status">Cargando…</div><div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div></div>
     </div>
     <section style="align-self:start">
       <div class="label">Últimas veces que te escuchó por voz (desde el último arranque)</div>
-      <div id="events"><div class="empty">Di “Hermes” para empezar.</div></div>
+      <div id="events"><div class="empty-state"><b>Di “Hermes” para empezar.</b></div></div>
     </section>
   </div>
 </div>
@@ -2187,7 +2316,7 @@ function line(label, value) {
 }
 function renderEvents(events) {
   const box = $("events"); box.replaceChildren();
-  if (!events.length) { box.append(text("div", "empty", "Di “Hermes” para empezar.")); return; }
+  if (!events.length) { const empty = text("div", "empty-state", ""); empty.append(text("b", "", "Di “Hermes” para empezar.")); box.append(empty); return; }
   for (const e of events) {
     const item = text("div", "event", "");
     const top = text("div", "top", "");
@@ -2268,7 +2397,7 @@ function renderChart(data) {
       tip.replaceChildren(text("b", "", title));
       for (const [key, label, value] of [["claude", "Claude", d.claude], ["local", "Modelo local", d.local]]) {
         const row = document.createElement("div"); const sw = document.createElement("i");
-        sw.style.background = "var(--s-" + key + ")"; row.append(sw, document.createTextNode(label + ": " + num(value) + " tokens"));
+        sw.className = "swatch " + key; row.append(sw, document.createTextNode(label + ": " + num(value) + " tokens"));  // Misma muestra que la leyenda (--data-1 lisa, --data-2 rayada).
         tip.append(row);
       }
       if (d.cost) tip.append(text("div", "", "Costo equivalente: " + usd(d.cost)));
@@ -2278,7 +2407,7 @@ function renderChart(data) {
       tip.style.left = Math.max(0, Math.min(left, box.clientWidth - tip.offsetWidth)) + "px";
       tip.style.top = "0px";
     };
-    col.addEventListener("mouseenter", show); col.addEventListener("focus", show);
+    col.addEventListener("mouseenter", show); col.addEventListener("focus", show); col.addEventListener("click", show);  // Ratón, teclado o toque.
     col.addEventListener("mouseleave", () => tip.style.display = "none"); col.addEventListener("blur", () => tip.style.display = "none");
     chart.append(col);
   }
@@ -2316,6 +2445,7 @@ async function loadUsage() {
     const data = await (await fetch("/usage", { cache: "no-store" })).json();
     const serialized = JSON.stringify(data);
     if (serialized !== usageSerialized) { usageSerialized = serialized; renderUsage(data); }
+    $("view-consumo").setAttribute("aria-busy", "false");  // Ya hay datos: el gráfico sustituyó al esqueleto y al anuncio de carga.
   } catch { $("offline").style.display = "block"; }
 }
 
@@ -2327,7 +2457,11 @@ function renderHistory() {
   const query = plainText($("search").value.trim());
   const box = $("messages"); box.replaceChildren();
   const messages = historyData.messages.filter(m => !query || plainText(m.text).includes(query));
-  if (!messages.length) box.append(text("div", "empty", query ? "Nada coincide con tu búsqueda." : "Todavía no hay conversaciones."));
+  if (!messages.length) {
+    const empty = text("div", "empty-state card", "");
+    empty.append(text("b", "", query ? "Nada coincide con tu búsqueda." : "Todavía no hay conversaciones."));
+    box.append(empty);
+  }
   let lastDay = "";
   for (const m of messages) {
     const when = new Date(m.ts * 1000);
@@ -2349,6 +2483,7 @@ async function loadHistory() {
       historySerialized = serialized; historyData = data; renderHistory();
       if (atBottom) window.scrollTo(0, document.body.scrollHeight);
     }
+    $("view-historial").setAttribute("aria-busy", "false");  // Ya hay datos: la conversación sustituyó al «Cargando…» y al esqueleto.
   } catch { $("offline").style.display = "block"; }
 }
 $("search").addEventListener("input", renderHistory);
@@ -3574,6 +3709,14 @@ function withEye(input) {
   wrap.append(input, eye);
   return wrap;
 }
+// Interruptor: la casilla va dentro de una etiqueta vacía que es su zona de 32 px (44 en táctil); sigue siendo la misma casilla.
+function withZone(control) {
+  if (control.type !== "checkbox") return control;
+  const zone = document.createElement("label");
+  zone.className = "set-switch";
+  zone.append(control);
+  return zone;
+}
 function settingValue(el) { return el.type === "checkbox" ? (el.checked ? "on" : "off") : el.value.trim(); }
 function settingChanges() {
   const changes = {};
@@ -3593,12 +3736,13 @@ function renderSettings(data) {
       const help = s.locked ? "Solo se cambia desde la computadora de Hermes."
         : s.confirm ? (s.help ? s.help + " " : "") + "Desde aquí, el cambio espera tu aprobación en Telegram." : s.help;
       if (help) label.appendChild(text("small", "", help));
-      row.appendChild(label); row.appendChild(withEye(settingControl(s))); card.appendChild(row);
+      row.appendChild(label); row.appendChild(withZone(withEye(settingControl(s)))); card.appendChild(row);
     }
     box.appendChild(card);
   }
   $("set-restart").hidden = !data.restart_needed || !data.can_restart;
   $("set-save").disabled = !Object.keys(settingChanges()).length;
+  $("view-ajustes").setAttribute("aria-busy", "false");  // Ya hay datos: los grupos sustituyeron al «Cargando…» y al esqueleto.
 }
 // Un cambio delicado pedido desde fuera queda en espera: la página revisa hasta que lo resuelvas en Telegram.
 async function waitForApproval() {
@@ -3621,7 +3765,7 @@ async function loadSettings() {
   try {
     const res = await fetch("/settings", { cache: "no-store" });
     if (res.status === 401) { location.href = "/login"; return; }
-    if (res.status === 404) { $("set-groups").textContent = ""; $("set-groups").appendChild(text("div", "empty", "Los ajustes no están disponibles.")); return; }
+    if (res.status === 404) { $("set-groups").textContent = ""; $("set-groups").appendChild(text("div", "empty", "Los ajustes no están disponibles.")); $("view-ajustes").setAttribute("aria-busy", "false"); return; }
     renderSettings(await res.json());
   } catch { $("offline").style.display = "block"; }
 }
@@ -3696,6 +3840,7 @@ async function tick() {
       $("level").textContent = "Nivel: " + s.level;
       $("threshold").textContent = "Mínimo para contar como voz: " + s.threshold;
       updateOrb(s);
+      $("view-vivo").setAttribute("aria-busy", "false");  // Ya hay datos: el disco muestra el logo y se quita el anuncio de carga.
     }
     if (s.version !== shown && currentView() === "historial") { shown = s.version; loadHistory(); }
   } catch {
