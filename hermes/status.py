@@ -681,192 +681,364 @@ details.table-view summary { cursor:pointer; color:var(--muted); font-size:13px;
 @supports (height:100dvh) {
   .stage-wrap { min-height:calc(100dvh - 150px); }
 }
-/* @legacy apuntes — Fechas: el día elegido del calendario (el calendario ya está migrado con Tareas) */
-.cal-picked { margin:-4px 0 12px; font-size:14px; color:var(--muted); }
-.cal-picked b { color:var(--ink); }
 
-/* @legacy apuntes — listas, notas, hábitos, fechas y esperas */
-.ap-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; min-width:0; max-width:760px; }
-.ap-card[hidden] { display:none; }
-.ap-create { max-width:760px; margin-bottom:16px; }
-.ap-create input { background:var(--card); padding:11px 13px; }
-.ap-drawers { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap:14px; align-items:start; }
-.ap-drawer { background:var(--card); border:1px solid var(--line); border-radius:14px; min-width:0; overflow:hidden; }
-.ap-drawer-head { display:flex; align-items:center; gap:10px; width:100%; font:inherit; font-weight:650; font-size:16px; color:inherit; background:none; border:0; padding:14px 16px; cursor:pointer; text-align:left; }
-.ap-drawer-head .name { text-transform:capitalize; flex:1; min-width:0; overflow-wrap:anywhere; }
-.ap-drawer-head em { font-style:normal; font-weight:500; font-size:13px; color:var(--muted); white-space:nowrap; }
-.ap-drawer-head .chev { width:8px; height:8px; border:solid var(--muted); border-width:0 2px 2px 0; transform:rotate(45deg); margin:0 4px 3px; transition:transform .15s; flex:none; }
-.ap-drawer.closed .chev { transform:rotate(-45deg); margin-bottom:0; }
-.ap-drawer-head:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
-.ap-drawer-body { padding:0 16px 12px; border-top:1px solid var(--line); }
-.ap-drawer-body .ap-row:first-child { border-top:0; }
-.ap-add { margin:10px 0 4px; }
-.ap-row.done .ap-item { text-decoration:line-through; color:var(--faint); }
-.ap-item { font:inherit; color:inherit; background:none; border:0; padding:2px 0; text-align:left; cursor:text; border-radius:6px; }
-.ap-item:hover { color:var(--accent); }
-.ap-item:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-.ap-editing { gap:8px; }
-.ap-editing input { flex:1; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:7px 10px; }
-.ap-editing input:focus { outline:none; }
-.ap-editing .primary { margin-left:0; padding:7px 12px; flex:none; }
-.ap-editing-note { align-items:flex-start; }
-.ap-editing-wait { flex-wrap:wrap; }
-.ap-editing-wait input[type="text"], .ap-editing-wait input:not([type]) { flex:1 1 100%; }
-.ap-editing-wait input[type="date"] { flex:1 1 140px; }
-.ap-item small { display:block; color:var(--muted); font-size:13px; text-decoration:none; }
-.ap-editing textarea { flex:1; min-width:0; font:inherit; font-size:16px; line-height:1.4; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:8px 10px; resize:vertical; }
-.ap-editing textarea:focus { outline:none; }
-.ap-edit-buttons { display:flex; flex-direction:column; align-items:center; gap:4px; flex:none; }
-.ap-drawer-foot { display:flex; justify-content:space-between; gap:12px; margin-top:4px; flex-wrap:wrap; }
-.ap-link[hidden] { display:none; }
+/* Apuntes — marco (título, explicación, subpestañas, aviso de silencio y estado de carga) y Listas (docs/design.md, Vistas; RF-15, RF-34, RF-42, RF-47).
+   Las piezas comunes de todos los apartados (formularios, filas, casillas, ✕, enlaces de acción y vacíos) también
+   quedan aquí; lo propio de cada apartado va en su sección, más abajo. Cada apartado es una página sin caja
+   propia: sus tarjetas ya son las superficies (sin tarjetas dentro de tarjetas). */
+#ap-title { margin:var(--sp-1) 0 var(--sp-0); font-size:var(--fs-xl); font-weight:600; line-height:1.25; }
 #ap-tabs a[hidden] { display:none; }
-.ap-link:disabled { opacity:.4; cursor:default; text-decoration:none; }
-.ap-link.danger-link { color:var(--warn); }
-.ap-empty.card { padding:28px 16px; text-align:center; background:var(--card); border:1px solid var(--line); border-radius:14px; }
-/* @legacy apuntes — Hábitos: una tarjeta por hábito, con el botón de hoy, la racha y la semana */
-.hb-today { margin:0 0 12px; font-size:14px; color:var(--muted); }
-.hb-today:empty { display:none; }
-.hb-today b { color:var(--ink); }
-.hb-bar { height:6px; border-radius:3px; background:var(--soft); overflow:hidden; margin-top:6px; max-width:420px; }
-.hb-bar i { display:block; height:100%; background:var(--accent); border-radius:3px; transition:width .3s; }
-.hb-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap:14px; align-items:start; }
-.hb-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:12px; min-width:0; }
-.hb-card.done { border-color:color-mix(in srgb, var(--accent) 55%, var(--line)); }
-.hb-top { display:flex; align-items:center; gap:12px; }
-.hb-check { flex:none; width:46px; height:46px; border-radius:50%; border:2px solid var(--faint); background:none; cursor:pointer; position:relative; transition:background .15s, border-color .15s; }
-.hb-check:hover { border-color:var(--accent); }
-.hb-check:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
-.hb-check.on { background:var(--accent); border-color:var(--accent); }
-.hb-check.on::after { content:""; position:absolute; left:16px; top:9px; width:9px; height:18px; border:solid #14110a; border-width:0 3px 3px 0; transform:rotate(45deg); }
-.hb-name { flex:1; min-width:0; }
-.hb-name .ap-item { font-size:16px; font-weight:650; overflow-wrap:anywhere; }
-.hb-name small { display:block; color:var(--muted); font-size:13px; }
-.hb-stats { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted); }
-.hb-stats b { color:var(--ink); font-size:15px; }
-.hb-stats .fire b { color:var(--accent); }
-.hb-week { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; }
-.hb-day { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--faint); background:none; border:0; padding:2px 0; font:inherit; font-size:11px; cursor:pointer; min-height:0; }
-.hb-day:hover i { border-color:var(--accent); }
-.hb-day i { width:22px; height:22px; border-radius:50%; background:var(--soft); border:1px solid var(--line); }
-.hb-day.on i { background:var(--accent); border-color:var(--accent); }
-.hb-day.today { color:var(--ink); font-weight:600; }
-.hb-edit { display:flex; flex-wrap:wrap; gap:8px; }
-.hb-edit input { font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:7px 10px; min-width:0; }
-.hb-edit input:not([type]) { flex:1 1 100%; }
-.hb-edit input[type="time"] { flex:1 1 120px; border-color:var(--line); }
-.hb-edit .primary { margin-left:0; }
-.hb-foot { display:flex; justify-content:flex-end; }
-.ap-card h3 { font-size:16px; margin:0 0 2px; display:flex; align-items:baseline; gap:8px; }
-.ap-card h3 span { font-size:13px; font-weight:400; color:var(--muted); }
-.ap-card p { color:var(--muted); font-size:13px; margin:0 0 10px; }
-#ln-list, .ln-done { max-width:760px; }
-.ln-row { display:flex; align-items:flex-start; gap:12px; padding:12px 14px; background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; flex-wrap:wrap; }
-.ln-row.read { opacity:.7; }
-.ln-body { flex:1 1 260px; min-width:0; }
-.ln-title { color:var(--ink); font-weight:600; font-size:15px; text-decoration:none; overflow-wrap:anywhere; }
-.ln-title:hover { color:var(--accent); text-decoration:underline; }
-.ln-body small { display:block; color:var(--muted); font-size:13px; }
-.ln-summary { margin:6px 0 0; font-size:14px; color:var(--ink); opacity:.9; }
-.ln-done summary { cursor:pointer; color:var(--muted); margin:14px 0 8px; font-size:14px; }
-.bl-summary { margin-bottom:14px; }
-.bl-next { color:var(--muted); font-size:14px; }
-.bl-add { max-width:760px; }
-.bl-add input:not([type]) { flex:1 1 100%; }
-.bl-date { display:flex; align-items:center; gap:8px; flex:1 1 220px; color:var(--muted); font-size:14px; }
-.bl-date input { flex:1; }
-#bl-list { max-width:760px; }
-.bl-row { display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; flex-wrap:wrap; }
-.bl-row.soon { border-color:color-mix(in srgb, var(--accent) 50%, var(--line)); }
-.bl-row.soon .when { color:var(--accent); }
-.bl-row.late { border-color:var(--warn); }
-.bl-row.late .when { color:var(--warn); }
-.bl-row.late .dt-badge { background:var(--warn); color:#14110a; }
-.bl-row.late .dt-badge span { color:#14110a; }
-.bl-actions { display:flex; align-items:center; gap:6px; margin-left:auto; }
-.bl-paid { font:inherit; font-size:14px; color:inherit; background:var(--soft); border:1px solid var(--line); border-radius:999px; padding:6px 12px; cursor:pointer; white-space:nowrap; }
-.bl-paid:hover { border-color:var(--accent); }
-.bl-pay { display:flex; align-items:center; gap:6px; }
-.bl-pay input { width:110px; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--accent); border-radius:10px; padding:6px 9px; }
-.bl-pay input:focus { outline:none; }
-.bl-pay .primary { margin-left:0; padding:6px 12px; }
-@media (max-width:640px) { .bl-actions { flex:1 1 100%; justify-content:flex-end; } }
-.rc-head { display:flex; align-items:center; gap:12px; margin:0 0 12px; }
-.rc-head h3 { margin:0; font-size:18px; min-width:120px; text-align:center; }
-.rc-nav { font:inherit; font-size:20px; line-height:1; width:36px; height:36px; border-radius:50%; border:1px solid var(--line); background:var(--card); color:inherit; cursor:pointer; }
-.rc-nav:disabled { opacity:.35; cursor:default; }
-.rc-summary { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:8px; max-width:760px; }
-.rc-total { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
-.rc-total b { font-size:26px; }
-.rc-total span { color:var(--muted); font-size:14px; }
-.rc-cat { display:grid; grid-template-columns:minmax(80px, 130px) 1fr auto; align-items:center; gap:10px; font-size:14px; }
-.rc-cat-amount { color:var(--muted); font-variant-numeric:tabular-nums; }
-.rc-bar { height:8px; border-radius:4px; background:var(--soft); overflow:hidden; }
-.rc-bar i { display:block; height:100%; border-radius:4px; }
-.rc-cat.near .rc-bar i { background:var(--u-media, #e2b44a); }
-.rc-cat.over .rc-bar i { background:var(--warn); }
-.rc-cat.over .rc-cat-amount { color:var(--warn); font-weight:600; }
-.rc-bar i { background:var(--accent); }
-.rc-total .ap-link { margin-left:auto; font-size:14px; }
-.rc-budgets { border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 0; margin:2px 0 6px; display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap:8px 16px; }
-.rc-budgets p { grid-column:1 / -1; margin:0 0 4px; color:var(--muted); font-size:13px; }
-.rc-budget-row { display:flex; align-items:center; gap:10px; font-size:14px; }
-.rc-budget-row span { flex:1; }
-.rc-budget-row input { width:120px; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:7px 10px; }
-.rc-budget-row input:focus { outline:none; border-color:var(--accent); }
-.rc-budget-buttons { grid-column:1 / -1; display:flex; justify-content:flex-end; gap:10px; }
-.rc-budget-buttons .primary { margin-left:0; }
-.rc-hint { color:var(--muted); font-size:13px; margin:12px 0; max-width:760px; }
-#rc-list { max-width:760px; }
-.rc-row { display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
-.rc-thumb { flex:none; width:48px; height:48px; border-radius:8px; border:1px solid var(--line); background:var(--soft); padding:0; overflow:hidden; cursor:zoom-in; font-size:22px; color:inherit; }
-.rc-thumb:disabled { cursor:default; }
-.rc-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-.rc-body { flex:1; min-width:0; }
-.rc-body .ap-item { font-weight:600; font-size:15px; overflow-wrap:anywhere; }
-.rc-body small { display:block; color:var(--muted); font-size:13px; }
-.rc-amount { font-weight:650; font-variant-numeric:tabular-nums; white-space:nowrap; }
-.rc-edit { background:var(--card); border:1px solid var(--accent); border-radius:12px; padding:10px; margin-bottom:8px; align-items:center; }
-.rc-edit input:not([type]) { flex:1 1 100%; }
-.rc-edit input[type="number"] { flex:1 1 110px; }
-.rc-edit input[type="date"] { flex:1 1 140px; }
-.rc-warranty { display:flex; align-items:center; gap:8px; flex:1 1 100%; color:var(--muted); font-size:14px; }
-@media (max-width:640px) { .rc-cat { grid-template-columns:1fr auto; row-gap:4px; } .rc-cat .rc-bar { grid-column:1 / -1; grid-row:2; } .rc-total b { font-size:22px; } }
-.dt-group h4 { font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:16px 0 8px; }
-.dt-group:first-child h4 { margin-top:6px; }
-.dt-row { display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
-.dt-row.soon { border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); }
-.dt-row.today { background:var(--accent-soft); border-color:var(--accent); }
-.dt-badge { flex:none; width:52px; padding:5px 0; border-radius:10px; background:var(--soft); text-align:center; line-height:1.1; }
-.dt-badge b { display:block; font-size:20px; }
-.dt-badge span { font-size:11px; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; }
-.dt-row.today .dt-badge { background:var(--accent); color:#14110a; }
-.dt-row.today .dt-badge span { color:#14110a; }
-.dt-body { flex:1; min-width:0; }
-.dt-body .ap-item { font-weight:600; font-size:15px; overflow-wrap:anywhere; }
-.dt-body small { display:block; color:var(--muted); font-size:13px; }
-.dt-body .when { color:var(--ink); font-weight:600; }
-.dt-row.today .when, .dt-row.soon .when { color:var(--accent); }
-.dt-edit { border:1px solid var(--accent); border-radius:12px; padding:10px; margin-bottom:8px; align-items:center; }
-.dt-edit input:not([type]) { flex:1 1 100%; }
-.ap-form { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 10px; }
-.ap-form input, .ap-form select { flex:1 1 110px; min-width:0; font:inherit; font-size:16px; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
-.ap-form input:focus, .ap-form select:focus { outline:none; border-color:var(--accent); }
-.ap-form input.narrow { flex:0 1 84px; }
-.ap-form input[type="time"] { flex:0 1 120px; }
-.ap-form .primary { margin-left:0; flex:none; }
-.ap-sub { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:12px 0 2px; font-weight:600; font-size:14px; text-transform:capitalize; }
-.ap-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line); font-size:15px; }
+.ap-page { padding:0; background:none; border:0; border-radius:0; }
+/* Aviso de silencio: el silencio es una elección activa del usuario, así que va como selección (fondo y borde de acento). */
+#ap-quiet { display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2) var(--sp-3); max-width:var(--w-col); margin:0 0 var(--sp-4); padding:var(--sp-3) var(--sp-4);
+  color:var(--ink); font-size:var(--fs-md); line-height:1.5; background:var(--accent-soft); border:1px solid var(--accent); border-radius:var(--r-md); }
+#ap-quiet[hidden] { display:none; }
+#ap-quiet span { flex:1 1 16em; min-width:0; }
+#ap-quiet .ghost { flex:none; }
+/* Formularios de crear y agregar: una fila que se parte en columnas a 375 px; campos de 44 y botón a su altura. */
+.ap-form { display:flex; flex-wrap:wrap; gap:var(--sp-2); margin:0 0 var(--sp-3); }
+.ap-form input, .ap-form select { flex:1 1 110px; min-width:0; }
+.ap-form .primary, .ap-form .ghost { flex:none; min-height:44px; margin-left:0; }
+.ap-create { max-width:var(--w-col); margin-bottom:var(--sp-4); }
+/* Listas: un cajón por lista, como los grupos de Tareas (cabecera con nombre, cuenta y chevron). */
+.ap-drawers { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap:var(--sp-4); align-items:start; }
+.ap-drawer { min-width:0; overflow:hidden; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); }
+.ap-drawer-head { display:flex; align-items:center; gap:var(--sp-2); width:100%; min-height:44px; padding:var(--sp-3) var(--sp-4);
+  font:inherit; font-size:var(--fs-lg); font-weight:600; line-height:1.3; color:inherit; text-align:left; background:none; border:0; cursor:pointer; }
+.ap-drawer-head:focus-visible { outline-offset:-2px; }
+.ap-drawer-head .name { flex:1; min-width:0; overflow-wrap:anywhere; text-transform:capitalize; }
+.ap-drawer-head em { color:var(--ink-3); font-size:var(--fs-sm); font-style:normal; font-weight:500; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.ap-drawer-head .chev { flex:none; width:8px; height:8px; margin:0 var(--sp-1) var(--sp-1); border:solid var(--ink-2); border-width:0 2px 2px 0;
+  transform:rotate(45deg); transition:transform var(--dur-1) var(--ease-out); }
+.ap-drawer.closed .chev { transform:rotate(-45deg); margin-bottom:0; }
+.ap-drawer-body { padding:0 var(--sp-4) var(--sp-3); border-top:1px solid var(--line); }
+.ap-drawer-body .ap-row:first-child { border-top:0; }
+/* Dentro de una tarjeta, los campos van sobre --surface-soft. */
+.ap-drawer .ap-form input, .ap-drawer .ap-editing input { background:var(--surface-soft); }
+.ap-add { margin:var(--sp-3) 0 var(--sp-1); }
+.ap-drawer-foot { display:flex; flex-wrap:wrap; justify-content:space-between; gap:var(--sp-1) var(--sp-4); margin-top:var(--sp-1); }
+/* Filas: casilla, texto que se toca para corregirlo y ✕ para quitar; la marcada se queda tachada y atenuada. */
+.ap-row { display:flex; align-items:center; gap:var(--sp-2); padding:var(--sp-1) 0; border-top:1px solid var(--line); font-size:var(--fs-md); }
 .ap-row .grow { flex:1; min-width:0; overflow-wrap:anywhere; }
-.ap-row small { display:block; color:var(--muted); font-size:13px; }
-.ap-check { flex:none; width:24px; height:24px; border-radius:50%; border:2px solid var(--faint); background:none; cursor:pointer; padding:0; position:relative; }
-.ap-check:hover { border-color:var(--accent); }
-.ap-check.on { background:var(--accent); border-color:var(--accent); }
-.ap-check.on::after { content:""; position:absolute; left:7px; top:3px; width:5px; height:10px; border:solid #14110a; border-width:0 2px 2px 0; transform:rotate(45deg); }
-.ap-x { flex:none; font:inherit; color:var(--faint); background:none; border:0; cursor:pointer; padding:4px 6px; border-radius:6px; }
-.ap-x:hover { color:var(--warn); }
-.ap-link { font:inherit; font-size:13px; font-weight:400; color:var(--muted); background:none; border:0; cursor:pointer; padding:4px 0; text-decoration:underline; text-transform:none; }
-.ap-empty { color:var(--faint); font-size:14px; padding:6px 0; }
-@media (pointer:coarse) { .ap-x { padding:8px 10px; } .ap-check { width:28px; height:28px; } .ap-check.on::after { left:9px; top:5px; } }
+.ap-item { min-height:32px; padding:var(--sp-1) 0; font:inherit; color:inherit; text-align:left; background:none; border:0; border-radius:var(--r-sm); cursor:text; }
+.ap-row.done .ap-item { color:var(--ink-3); text-decoration:line-through; }
+/* Casilla: círculo de 22 px con borde --line-strong en una zona de 32 px (44 en táctil); marcada, llena de acento con ✓. */
+.ap-check { position:relative; flex:none; display:grid; place-items:center; width:32px; height:32px; padding:0; background:transparent; border:0; border-radius:var(--r-full); cursor:pointer; }
+.ap-check::before { content:""; width:22px; height:22px; border:2px solid var(--line-strong); border-radius:var(--r-full); }
+.ap-check.on::before { background:var(--accent); border-color:var(--accent); }
+.ap-check.on::after { content:""; position:absolute; left:50%; top:50%; width:6px; height:11px; border:solid var(--accent-ink); border-width:0 2px 2px 0;
+  transform:translate(-50%, -60%) rotate(45deg); }
+.ap-x { flex:none; display:inline-grid; place-items:center; min-width:32px; min-height:32px; padding:0 var(--sp-2); font:inherit; font-size:var(--fs-md); line-height:1;
+  color:var(--ink-2); background:none; border:0; border-radius:var(--r-md); cursor:pointer; }
+.ap-x svg { display:block; width:16px; height:16px; pointer-events:none; }
+/* Corregir un elemento: el campo ocupa la fila, con Guardar y ✕ a su altura. */
+.ap-editing { gap:var(--sp-2); }
+.ap-editing input { flex:1; min-width:0; border-color:var(--accent); }
+.ap-editing .primary { flex:none; min-height:44px; margin-left:0; }
+/* Acciones de texto (Vaciar, Quitar marcados, Eliminar lista): como «Volver a pendientes» de Tareas. */
+.ap-link { display:inline-flex; align-items:center; min-height:32px; padding:0; font:inherit; font-size:var(--fs-sm); font-weight:500; color:var(--ink-2);
+  text-decoration:underline; text-transform:none; background:none; border:0; border-radius:var(--r-sm); cursor:pointer; white-space:nowrap; }
+.ap-link[hidden] { display:none; }
+.ap-link.danger-link { color:var(--danger); }
+.ap-link:disabled { color:var(--ink-3); text-decoration:none; cursor:default; }
+/* Vacíos: dentro de un cajón, una línea atenuada; sin nada que mostrar, una tarjeta centrada con el mismo texto de hoy. */
+.ap-empty { padding:var(--sp-2) 0; color:var(--ink-3); font-size:var(--fs-sm); line-height:1.4; }
+.ap-empty.card { padding:var(--sp-6) var(--sp-4); color:var(--ink-2); text-align:center; }
+/* Carga: el esqueleto quieto de Tareas, debajo del formulario del apartado abierto. */
+.ap-grid > .skeleton { max-width:var(--w-col); }
+@media (hover:hover) and (pointer:fine) {
+  .ap-drawer-head:hover { background:var(--surface-soft); }
+  .ap-item:not(:disabled):hover { text-decoration:underline; }
+  .ap-row.done .ap-item:hover { text-decoration:line-through underline; }
+  .ap-check:hover::before { border-color:var(--accent); }
+  .ap-x:hover { color:var(--danger); background:var(--surface-soft); }
+  .ap-link:not(:disabled):hover { color:var(--ink); }
+  .ap-link.danger-link:not(:disabled):hover { color:var(--danger); }
+}
+/* Táctil o pantalla estrecha: zonas de 44×44 px (la casilla y el ✕ crecen; el dibujo no). */
+@media (pointer:coarse), (max-width:640px) {
+  .ap-check { width:44px; height:44px; }
+  .ap-x { min-width:44px; min-height:44px; }
+  .ap-item, .ap-link { min-height:44px; }
+  .ap-link { min-width:44px; justify-content:center; }
+}
+@media (max-width:640px) {
+  .ap-drawer-head { padding-left:var(--sp-3); padding-right:var(--sp-3); }
+  .ap-drawer-body { padding:0 var(--sp-3) var(--sp-3); }
+  .ap-row { gap:var(--sp-1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ap-drawer-head .chev { transition:none; }
+}
+
+/* Apuntes — Notas y Seguimientos (docs/design.md, Vistas; RF-24, RF-34, RF-42, RF-47). Página sin caja propia:
+   título con su cuenta, explicación, formulario de crear (la acción principal) y una sola tarjeta con las filas.
+   Sin nada que mostrar, la tarjeta lleva el texto de hoy centrado (como el vacío de Listas). Los textos largos se
+   parten dentro de la fila y se ven completos; al tocarlos se corrigen en la misma fila. */
+.ap-head { display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--sp-0) var(--sp-2); margin:0 0 var(--sp-1); font-size:var(--fs-lg); font-weight:600; line-height:1.3; }
+.ap-head span { color:var(--ink-3); font-size:var(--fs-sm); font-weight:500; font-variant-numeric:tabular-nums; }
+.ap-hint { max-width:var(--w-col); margin:0 0 var(--sp-4); color:var(--ink-2); font-size:var(--fs-sm); line-height:1.5; }
+.ap-form input.narrow { flex:0 1 84px; }
+.ap-list { max-width:var(--w-col); min-width:0; padding:0 var(--sp-4); background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); }
+.ap-list > .ap-row:first-child { border-top:0; }
+.ap-list > .ap-empty { padding:var(--sp-6) 0; color:var(--ink-2); text-align:center; }
+.ap-list .ap-row { min-height:44px; }
+.ap-list .ap-item { line-height:1.5; }
+.ap-item small { display:block; margin-top:var(--sp-0); color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; text-decoration:none; }
+/* Corregir: dentro de la tarjeta los campos van sobre --surface-soft, con borde de acento mientras se editan. */
+.ap-list .ap-editing { padding:var(--sp-2) 0; }
+.ap-list .ap-editing input, .ap-list .ap-editing textarea { background:var(--surface-soft); }
+.ap-editing textarea { flex:1; min-width:0; line-height:1.5; border-color:var(--accent); resize:vertical;
+  field-sizing:content; /* Crece con el texto: la nota se ve entera al corregirla (donde el navegador lo admite). */ }
+/* Nota: el texto a lo ancho y, a su lado, Guardar arriba y ✕ debajo. */
+.ap-editing-note { align-items:flex-start; }
+.ap-edit-buttons { display:flex; flex:none; flex-direction:column; align-items:center; gap:var(--sp-1); }
+/* Seguimiento: el texto a lo ancho y, debajo, el día con Guardar y ✕. */
+.ap-editing-wait { flex-wrap:wrap; }
+.ap-editing-wait input:not([type]) { flex:1 1 100%; }
+.ap-editing-wait input[type="date"] { flex:1 1 140px; }
+/* A 375 px, lo que esperas va a lo ancho (se lee el ejemplo entero) y, debajo, los días y Agregar. */
+@media (max-width:640px) {
+  #ap-waiting-text { flex:1 1 100%; }
+}
+
+/* Apuntes — Fechas (docs/design.md, Vistas; RF-12, RF-24, RF-34, RF-42, RF-47). Como Notas: página sin caja propia,
+   título con su cuenta, explicación, el calendario de Tareas (número tabular, hoy en neutro invertido, día elegido
+   con borde de acento), el formulario de agregar (la acción principal) y las próximas agrupadas por mes, cada mes en
+   una tarjeta con sus filas. El distintivo del día va en --surface-soft (el de hoy, invertido como en el
+   calendario) y las próximas (hoy y los 7 días siguientes) llevan su plazo en --ink 600: el acento queda para la
+   selección y la acción principal. */
+#ap-dates-cal { max-width:var(--w-col); }
+.cal-picked { margin:calc(-1 * var(--sp-2)) 0 var(--sp-4); color:var(--ink-2); font-size:var(--fs-sm); line-height:1.5; }
+.cal-picked b { color:var(--ink); font-weight:600; }
+.dt-group { max-width:var(--w-col); margin-top:var(--sp-5); }
+.dt-group:first-child { margin-top:0; }
+.dt-group h4 { margin:0 0 var(--sp-2); color:var(--ink-2); font-size:var(--fs-sm); font-weight:600; line-height:1.4; }
+.dt-row { gap:var(--sp-3); padding:var(--sp-2) 0; }
+.dt-row .dt-badge { flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; width:48px; min-height:48px; padding:var(--sp-1) 0;
+  color:var(--ink); line-height:1.2; text-align:center; background:var(--surface-soft); border-radius:var(--r-md); }
+.dt-row .dt-badge b { font-size:var(--fs-lg); font-weight:600; line-height:1.1; font-variant-numeric:tabular-nums; }
+.dt-row .dt-badge span { color:var(--ink-2); font-size:var(--fs-xs); }
+.dt-row.today .dt-badge { color:var(--bg); background:var(--ink); }
+.dt-row.today .dt-badge span { color:var(--bg); }
+.dt-row .dt-body { flex:1; min-width:0; }
+.dt-row .dt-body .ap-item { display:block; width:100%; font-size:var(--fs-md); font-weight:500; overflow-wrap:anywhere; }
+.dt-row .dt-body small { display:block; color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; }
+.dt-row.today .when, .dt-row.soon .when { color:var(--ink); font-weight:600; }
+/* Corregir una fecha: de quién a lo ancho y, debajo, tipo, día, mes y año; Guardar y ✕ al final. */
+.dt-edit { flex-wrap:wrap; }
+.dt-edit input, .dt-edit select { flex:1 1 110px; min-width:0; }
+.dt-edit input:not([type]) { flex:1 1 100%; }
+.dt-edit input.narrow { flex:0 1 84px; }
+.ap-list .dt-edit select { background:var(--surface-soft); border-color:var(--accent); }
+/* A 375 px, el tipo con sitio para leerse entero junto a de quién; debajo, día, mes y año, y luego Agregar. */
+@media (max-width:640px) {
+  #ap-date-kind, #ap-date-name { flex:1 1 140px; }
+}
+/* Apuntes — Hábitos (docs/design.md, Vistas; RF-25, RF-34, RF-42). Una tarjeta por hábito: botón de hoy de 46 px
+   (casilla grande), nombre que se toca para corregirlo, racha en --ink 600 y la semana de 7 días. Los días van
+   sin huecos y la tarjeta con menos relleno para que cada uno tenga su zona de 44 px a 375 px. Hecho y sin hacer
+   se distinguen por algo más que el color: círculo lleno con ✓ frente a círculo hueco. */
+.hb-today { max-width:var(--w-col); margin:0 0 var(--sp-4); color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; }
+.hb-today:empty { display:none; }
+.hb-today b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
+.hb-bar { max-width:420px; height:6px; margin-top:var(--sp-2); overflow:hidden; background:var(--surface-soft); border-radius:var(--r-full); }
+.hb-bar i { display:block; height:100%; background:var(--accent); border-radius:var(--r-full); }
+.hb-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap:var(--sp-4); align-items:start; }
+.hb-grid > .ap-empty.card { grid-column:1 / -1; max-width:var(--w-col); }
+.hb-card { display:flex; flex-direction:column; gap:var(--sp-3); min-width:0; padding:var(--sp-3); background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); }
+.hb-top { display:flex; align-items:center; gap:var(--sp-3); min-width:0; }
+.hb-check { position:relative; flex:none; width:46px; height:46px; padding:0; background:transparent; border:2px solid var(--line-strong); border-radius:var(--r-full); cursor:pointer;
+  transition:background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
+.hb-check.on { background:var(--accent); border-color:var(--accent); }
+.hb-check.on::after { content:""; position:absolute; left:50%; top:50%; width:10px; height:19px; border:solid var(--accent-ink); border-width:0 3px 3px 0;
+  transform:translate(-50%, -60%) rotate(45deg); }
+.hb-name { flex:1; min-width:0; }
+.hb-name .ap-item { display:block; width:100%; font-size:var(--fs-md); font-weight:600; line-height:1.3; overflow-wrap:anywhere; }
+.hb-name small { display:block; color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; }
+.hb-stats { display:flex; flex-wrap:wrap; gap:var(--sp-1) var(--sp-4); color:var(--ink-2); font-size:var(--fs-xs); line-height:1.4; }
+.hb-stats b { color:var(--ink); font-size:var(--fs-sm); font-weight:600; font-variant-numeric:tabular-nums; }
+/* Semana: 7 columnas iguales; cada día es un botón a todo su ancho, con el círculo de 22 px y la letra del día debajo.
+   La fila invade casi todo el relleno lateral de la tarjeta para que cada día tenga sus 44 px a 375 px. */
+.hb-week { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:0; margin:0 calc(-1 * var(--sp-2)); }
+.hb-day { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--sp-0); min-width:0; min-height:44px; padding:var(--sp-1) 0;
+  font:inherit; font-size:var(--fs-xs); line-height:1.2; color:var(--ink-3); background:none; border:0; border-radius:var(--r-md); cursor:pointer; }
+.hb-day:focus-visible { outline-offset:-2px; }
+.hb-day i { position:relative; display:block; width:22px; height:22px; background:transparent; border:2px solid var(--line-strong); border-radius:var(--r-full); }
+.hb-day.on i { background:var(--accent); border-color:var(--accent); }
+.hb-day.on i::after { content:""; position:absolute; left:50%; top:50%; width:5px; height:10px; border:solid var(--accent-ink); border-width:0 2px 2px 0;
+  transform:translate(-50%, -60%) rotate(45deg); }
+.hb-day.today { color:var(--ink); font-weight:600; }
+/* Corregir el hábito: nombre a lo ancho y, debajo, la hora; Guardar y ✕ van juntos y, si no caben a su lado, bajan a otra fila. */
+.hb-edit { display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.hb-edit input { min-width:0; background:var(--surface-soft); }
+.hb-edit input:not([type]) { flex:1 1 100%; border-color:var(--accent); }
+.hb-edit input[type="time"] { flex:1 1 7em; }
+.hb-edit-actions { display:flex; flex:none; gap:var(--sp-2); }
+.hb-edit .primary { flex:none; min-height:44px; margin-left:0; }
+.hb-foot { display:flex; justify-content:flex-end; }
+@media (hover:hover) and (pointer:fine) {
+  .hb-check:not(.on):hover, .hb-day:not(.on):hover i { border-color:var(--accent); }
+  .hb-day:hover { background:var(--surface-soft); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hb-check { transition:none; }
+}
+/* Apuntes — Gastos (docs/design.md, Vistas; RF-12, RF-25, RF-34, RF-42, RF-47). Como Notas y Fechas: página sin caja
+   propia. Arriba, la navegación de mes ‹ ›: la acción principal y lo único con acento (borde y glifo; como los botones
+   del calendario, 36 px con ratón y 44 en táctil). Debajo, una tarjeta con el total del mes (--fs-xl), el enlace de
+   presupuestos y una barra por categoría; la explicación, y una tarjeta con los recibos. Barras en --ink-3; cerca del
+   presupuesto (desde el 80 %), --warn con el importe en 600; pasado, --danger con el importe en 600 y el triángulo de
+   «Urgente» de Tareas: el estado se lee también en «X de Y» y en la forma, no solo en el color. Todo importe con
+   cifras tabulares. La miniatura (48 px) abre la foto del recibo. */
+.rc-head { display:flex; align-items:center; gap:var(--sp-3); max-width:var(--w-col); margin:0 0 var(--sp-3); }
+.rc-head h3 { min-width:7em; margin:0; font-size:var(--fs-lg); font-weight:600; line-height:1.3; text-align:center; font-variant-numeric:tabular-nums; }
+.rc-nav { flex:none; display:inline-grid; place-items:center; width:36px; height:36px; padding:0; font:inherit; font-size:var(--fs-lg); font-weight:600; line-height:1;
+  color:var(--accent); background:var(--surface); border:1px solid var(--accent); border-radius:var(--r-md); cursor:pointer;
+  transition:background-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease-out); }
+.rc-nav:active:not(:disabled) { transform:scale(.97); }
+.rc-nav:disabled { color:var(--ink-3); background:var(--surface-soft); border-color:var(--surface-soft); cursor:default; }
+#rc-summary, #bl-summary { display:flex; flex-direction:column; gap:var(--sp-2); max-width:var(--w-col); margin:0 0 var(--sp-4); padding:var(--sp-4);
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); }
+#rc-summary .rc-total, #bl-summary .rc-total { display:flex; align-items:baseline; flex-wrap:wrap; gap:var(--sp-1) var(--sp-3); margin-bottom:var(--sp-1); }
+#rc-summary .rc-total b, #bl-summary .rc-total b { min-width:0; font-size:var(--fs-xl); font-weight:600; line-height:1.25; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+#rc-summary .rc-total span, #bl-summary .rc-total span { color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; font-variant-numeric:tabular-nums; }
+#rc-summary .rc-total .ap-link { margin-left:auto; }
+/* Una categoría: nombre, barra e importe en una fila, con columnas fijas para que las barras empiecen y acaben igual
+   (un importe más largo se parte en dos líneas); a 375 px, la barra baja a lo ancho. */
+.rc-cat { display:grid; grid-template-columns:minmax(80px, 130px) minmax(0, 1fr) 15em; align-items:center; gap:var(--sp-1) var(--sp-3); min-height:32px; font-size:var(--fs-sm); line-height:1.4; }
+.rc-cat-name { min-width:0; color:var(--ink); overflow-wrap:anywhere; }
+.rc-cat-amount { display:inline-flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:var(--sp-1); justify-self:end; min-width:0; color:var(--ink-2); text-align:right; font-variant-numeric:tabular-nums; }
+.rc-bar { height:8px; overflow:hidden; background:var(--surface-soft); border-radius:var(--r-full); }
+.rc-bar i { display:block; height:100%; background:var(--ink-3); border-radius:var(--r-full); }
+.rc-cat.near .rc-bar i { background:var(--warn); }
+.rc-cat.near .rc-cat-amount { color:var(--warn); font-weight:600; }
+.rc-cat.over .rc-bar i { background:var(--danger); }
+.rc-cat.over .rc-cat-amount { color:var(--danger); font-weight:600; }
+.rc-cat.over .rc-cat-amount::before { content:""; flex:none; width:10px; height:10px; background:var(--danger); clip-path:polygon(50% 0, 100% 100%, 0 100%); }
+/* Presupuestos: dentro de la tarjeta del total, entre dos líneas; los campos sobre --surface-soft. */
+.rc-budgets { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap:var(--sp-2) var(--sp-4); margin:0 0 var(--sp-1); padding:var(--sp-3) 0;
+  border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.rc-budgets p { grid-column:1 / -1; max-width:var(--w-col); margin:0 0 var(--sp-1); color:var(--ink-2); font-size:var(--fs-sm); line-height:1.5; }
+.rc-budget-row { display:flex; align-items:center; gap:var(--sp-3); min-width:0; font-size:var(--fs-sm); }
+.rc-budget-row span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.rc-budget-row input { flex:0 1 128px; width:128px; min-width:0; background:var(--surface-soft); font-variant-numeric:tabular-nums; }
+.rc-budget-buttons { grid-column:1 / -1; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:var(--sp-2); }
+.rc-budget-buttons .primary { margin-left:0; }
+/* Recibos: miniatura, comercio que se toca para corregirlo con su día y categoría debajo, importe y ✕. */
+#rc-list .rc-row { gap:var(--sp-3); padding:var(--sp-2) 0; }
+.rc-thumb { flex:none; display:grid; place-items:center; width:48px; height:48px; padding:0; overflow:hidden; font:inherit; font-size:var(--fs-lg); line-height:1;
+  color:var(--ink-2); background:var(--surface-soft); border:1px solid var(--line-strong); border-radius:var(--r-md); cursor:zoom-in; }
+.rc-thumb:disabled { border-color:var(--line); cursor:default; }
+.rc-thumb img { display:block; width:100%; height:100%; object-fit:cover; }
+.rc-body { flex:1; min-width:0; }
+.rc-body .ap-item { display:block; width:100%; font-size:var(--fs-md); font-weight:500; overflow-wrap:anywhere; }
+#rc-list .rc-body small { display:block; color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; }
+.rc-amount { flex:none; font-size:var(--fs-md); font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
+/* Corregir un recibo: el comercio a lo ancho y, debajo, total, moneda, día, categoría y garantía; Guardar y ✕ al final. */
+#rc-list .rc-edit, #bl-list .rc-edit { flex-wrap:wrap; padding:var(--sp-2) 0; }
+#rc-list .rc-edit input, #rc-list .rc-edit select, #bl-list .rc-edit input, #bl-list .rc-edit select { flex:1 1 110px; min-width:0; }
+#rc-list .rc-edit input:not([type]), #bl-list .rc-edit input:not([type]) { flex:1 1 100%; }
+#rc-list .rc-edit input[type="number"], #bl-list .rc-edit input[type="number"] { font-variant-numeric:tabular-nums; }
+#rc-list .rc-edit input[type="date"], #bl-list .rc-edit input[type="date"] { flex:1 1 140px; }
+#rc-list .rc-edit select, #bl-list .rc-edit select { background:var(--surface-soft); border-color:var(--accent); }
+#rc-list .rc-warranty, #bl-list .rc-warranty { display:flex; flex:1 1 100%; align-items:center; gap:var(--sp-2); color:var(--ink-2); font-size:var(--fs-sm); }
+@media (hover:hover) and (pointer:fine) {
+  .rc-nav:hover:not(:disabled) { background:var(--accent-soft); }
+  .rc-thumb:not(:disabled):hover { border-color:var(--ink-2); }
+}
+@media (pointer:coarse), (max-width:640px) {
+  .rc-nav { width:44px; height:44px; }
+}
+@media (max-width:640px) {
+  .rc-cat { grid-template-columns:minmax(0, 1fr) auto; }
+  .rc-cat .rc-bar { grid-column:1 / -1; grid-row:2; }
+  /* A 375 px el comercio necesita el ancho: el importe baja debajo de la fecha y la categoría. */
+  #rc-list .rc-row { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; grid-template-areas:"thumb body x" "thumb amount x"; gap:0 var(--sp-3); }
+  #rc-list .rc-row .rc-thumb { grid-area:thumb; align-self:center; }
+  #rc-list .rc-row .rc-body { grid-area:body; }
+  #rc-list .rc-row .rc-amount { grid-area:amount; }
+  #rc-list .rc-row .ap-x { grid-area:x; align-self:center; }
+}
+/* Texto al 200 % en el teléfono (~188 px útiles, RF-40): el mes sube a su propia línea y ‹ › quedan debajo. */
+@media (max-width:300px) {
+  .rc-head { flex-wrap:wrap; }
+  .rc-head h3 { order:-1; flex:1 1 100%; min-width:0; text-align:left; overflow-wrap:anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc-nav { transition:none; }
+}
+/* Apuntes — Pagos (docs/design.md, Vistas; RF-12, RF-34, RF-42, RF-47). Como Gastos: página sin caja propia. Arriba, la
+   tarjeta del total al mes (la de Gastos: --fs-xl tabular) con el próximo pago; debajo, el formulario de agregar (la acción
+   principal), la explicación y una tarjeta con los pagos. Cada fila es la de Fechas (distintivo del día en --surface-soft,
+   nombre que se toca para corregirlo y su plazo debajo), con «Pagado» (secundario) y ✕ a la derecha. Próximo (vence en
+   3 días o menos): el plazo en --warn 600. Vencido: el distintivo con borde de 2 px --danger y el plazo en --danger 600
+   con el triángulo de «Urgente» de Tareas; el estado se lee también en su texto («venció hace…»), no solo en el color.
+   Todo importe con cifras tabulares. */
+.bl-next { color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; font-variant-numeric:tabular-nums; }
+.bl-add input:not([type]) { flex:1 1 100%; }
+.bl-add input[type="number"] { flex:1 1 160px; font-variant-numeric:tabular-nums; /* Con sitio para leer «Monto (opcional)» entero. */ }
+.bl-date { display:flex; flex:1 1 220px; align-items:center; gap:var(--sp-2); min-width:0; color:var(--ink-2); font-size:var(--fs-sm); line-height:1.4; }
+.bl-date input { flex:1; min-width:0; }
+.bl-row { flex-wrap:wrap; }
+.bl-row .dt-body small { font-variant-numeric:tabular-nums; }
+.bl-row.soon .when { color:var(--warn); font-weight:600; }
+.bl-row.late .when { color:var(--danger); font-weight:600; }
+.bl-row.late .when::before { content:""; display:inline-block; width:10px; height:10px; margin-right:var(--sp-1); background:var(--danger);
+  clip-path:polygon(50% 0, 100% 100%, 0 100%); }
+.bl-row.late .dt-badge { border:2px solid var(--danger); }
+.bl-row .bl-actions { display:flex; flex:none; align-items:center; justify-content:flex-end; gap:var(--sp-2); margin-left:auto; }
+/* Anotar lo pagado: el monto (campo dentro de la tarjeta, con borde de acento mientras se escribe), Anotar y ✕. */
+.bl-pay { display:flex; align-items:center; gap:var(--sp-2); min-width:0; }
+.bl-pay input { flex:0 1 128px; width:128px; min-width:0; background:var(--surface-soft); border-color:var(--accent); font-variant-numeric:tabular-nums; }
+.bl-pay .primary { flex:none; min-height:44px; margin-left:0; }
+/* A 375 px el nombre necesita el ancho: «Pagado» y ✕ (o el monto, Anotar y ✕) bajan a su propia línea, a la derecha. */
+@media (max-width:640px) {
+  .bl-row .bl-actions { flex:1 1 100%; }
+  .bl-pay { flex:1 1 auto; justify-content:flex-end; }
+  .bl-pay input { flex:1 1 110px; }
+}
+/* Texto al 200 % en el teléfono (~188 px útiles, RF-40): si «Pagado» (o Anotar) y ✕ no caben juntos, ✕ baja. */
+@media (max-width:300px) {
+  .bl-row .bl-actions, .bl-pay { flex-wrap:wrap; }
+}
+/* Apuntes — restos comunes de los apartados: la hora del formulario de Hábitos y el detalle bajo el texto de una fila.
+   Van aquí, después de los apartados, para conservar el orden en que se aplican hoy (el detalle de Notas y Seguimientos
+   sale en --ink-2). */
+.ap-form input[type="time"] { flex:0 1 120px; }
+.ap-row small { display:block; color:var(--ink-2); font-size:var(--fs-xs); }
+/* Apuntes — Lecturas (docs/design.md, Vistas; RF-24, RF-34, RF-40, RF-42, RF-47). Como Pagos: página sin caja propia,
+   el formulario de guardar (la acción principal), la explicación y una tarjeta con los enlaces por leer; los leídos,
+   en otra tarjeta dentro de «Leídos (n)», como las terminadas de Tareas. Cada fila: el título del enlace en una línea
+   (si es largo, se corta con … y se ve completo en su title y al abrirlo), el sitio y cuándo se guardó en --ink-3, el
+   resumen con overflow-wrap:anywhere y, a la derecha, «✓ Leído» (secundario) y ✕. Leído: el título en --ink-2 500
+   (sin bajar la opacidad, para no perder contraste). */
+.ln-row { flex-wrap:wrap; align-items:flex-start; gap:var(--sp-1) var(--sp-3); padding:var(--sp-2) 0; }
+.ln-body { flex:1 1 260px; min-width:0; }
+.ln-title { display:block; min-height:32px; padding:var(--sp-1) 0; overflow:hidden; color:var(--ink); font-size:var(--fs-md); font-weight:600; line-height:1.5;
+  text-decoration:none; white-space:nowrap; text-overflow:ellipsis; border-radius:var(--r-sm); }
+.ln-row.read .ln-title { color:var(--ink-2); font-weight:500; }
+.ln-body small { display:block; overflow:hidden; color:var(--ink-3); font-size:var(--fs-xs); line-height:1.4; white-space:nowrap; text-overflow:ellipsis; }
+.ln-summary { margin:var(--sp-1) 0 0; color:var(--ink-2); font-size:var(--fs-sm); line-height:1.5; overflow-wrap:anywhere; }
+.ln-row .bl-actions { display:flex; flex:none; align-items:center; justify-content:flex-end; gap:var(--sp-2); margin-left:auto; }
+.ln-done { max-width:var(--w-col); margin-top:var(--sp-4); }
+.ln-done summary { min-height:32px; padding:var(--sp-1) 0; color:var(--ink-2); font-size:var(--fs-sm); line-height:1.6; cursor:pointer; }
+.ln-done .ap-list { margin-top:var(--sp-2); }
+@media (hover:hover) and (pointer:fine) {
+  .ln-title:hover { text-decoration:underline; }
+}
+@media (pointer:coarse), (max-width:640px) {
+  .ln-title { min-height:44px; padding:var(--sp-2) 0; }
+  .ln-done summary { padding:var(--sp-3) 0; }
+}
+/* A 375 px el título necesita el ancho: «✓ Leído» y ✕ bajan a su propia línea, a la derecha. */
+@media (max-width:640px) {
+  .ln-row .bl-actions { flex:1 1 100%; }
+}
+/* Texto al 200 % en el teléfono (~188 px útiles, RF-40): si «✓ Leído» y ✕ no caben juntos, ✕ baja. */
+@media (max-width:300px) {
+  .ln-row .bl-actions { flex-wrap:wrap; }
+}
 
 /* @legacy ajustes */
 .set-group { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 16px; margin:0 0 16px; }
@@ -1150,7 +1322,7 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
   </div>
 </div>
 
-<div class="view" id="view-apuntes" hidden>
+<div class="view" id="view-apuntes" aria-busy="true" hidden>
   <h1 id="ap-title">Apuntes</h1>
   <div class="subtitle">También puedes pedírselo a Hermes con tus palabras.</div>
   <nav class="subtabs" id="ap-tabs" aria-label="Apartados de Apuntes">
@@ -1163,7 +1335,8 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
     <a href="#apuntes/pagos" data-sub="pagos">Pagos<span id="ap-tab-pagos"></span></a>
     <a href="#apuntes/lecturas" data-sub="lecturas">Lecturas<span id="ap-tab-lecturas"></span></a>
   </nav>
-  <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="primary" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
+  <div class="set-note" id="ap-quiet" hidden><span id="ap-quiet-text"></span><button type="button" class="ghost" id="ap-quiet-off" style="margin-left:0">Quitar el silencio</button></div>
+  <template id="ap-x-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"/></svg></template>
   <div class="ap-grid">
     <section class="ap-page" data-sub="listas" hidden>
       <form class="ap-form ap-create" id="ap-list-form" autocomplete="off">
@@ -1181,20 +1354,20 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
       <div class="hb-today" id="ap-habits-count"></div>
       <div class="hb-grid" id="ap-habits"></div>
     </section>
-    <section class="ap-card" data-sub="notas" hidden>
-      <h3>Notas <span id="ap-notes-count"></span></h3>
-      <p>Lo que Hermes recuerda de ti y usa al conversar. Toca una nota para corregirla.</p>
-      <form class="ap-form" id="ap-note-form" autocomplete="off">
+    <section class="ap-page" data-sub="notas" hidden>
+      <h3 class="ap-head">Notas <span id="ap-notes-count"></span></h3>
+      <p class="ap-hint">Lo que Hermes recuerda de ti y usa al conversar. Toca una nota para corregirla.</p>
+      <form class="ap-form ap-create" id="ap-note-form" autocomplete="off">
         <input id="ap-note-text" maxlength="500" placeholder="Nueva nota" aria-label="Nota">
         <button type="submit" class="primary">Guardar</button>
       </form>
-      <div id="ap-notes"></div>
+      <div class="ap-list" id="ap-notes"></div>
     </section>
-    <section class="ap-card" data-sub="fechas" hidden>
-      <h3>Fechas <span id="ap-dates-count"></span></h3>
-      <p>Hermes avisa un día antes y ese día. Toca un día del calendario para anotar algo en él, o el nombre de una fecha para corregirla. El año es opcional: sirve para saber cuántos cumple.</p>
+    <section class="ap-page" data-sub="fechas" hidden>
+      <h3 class="ap-head">Fechas <span id="ap-dates-count"></span></h3>
+      <p class="ap-hint">Hermes avisa un día antes y ese día. Toca un día del calendario para anotar algo en él, o el nombre de una fecha para corregirla. El año es opcional: sirve para saber cuántos cumple.</p>
       <div id="ap-dates-cal"></div>
-      <form class="ap-form" id="ap-date-form" autocomplete="off">
+      <form class="ap-form ap-create" id="ap-date-form" autocomplete="off">
         <select id="ap-date-kind" aria-label="Tipo"><option value="cumpleaños">Cumpleaños</option><option value="aniversario">Aniversario</option></select>
         <input id="ap-date-name" maxlength="80" placeholder="De quién" aria-label="De quién">
         <input id="ap-date-day" class="narrow" type="number" min="1" max="31" placeholder="Día" aria-label="Día">
@@ -1209,9 +1382,9 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
         <input id="ln-url" type="url" inputmode="url" maxlength="2000" placeholder="Pega un enlace (https://…)" aria-label="Enlace para leer después">
         <button type="submit" class="primary">+ Guardar</button>
       </form>
-      <p class="rc-hint">También puedes mandarle el enlace a Hermes por Telegram. Lo resume el modelo de tu computadora y los domingos te recuerda lo que falta.</p>
-      <div id="ln-list"></div>
-      <details class="ln-done" id="ln-done-box" hidden><summary id="ln-done-title"></summary><div id="ln-done"></div></details>
+      <p class="ap-hint">También puedes mandarle el enlace a Hermes por Telegram. Lo resume el modelo de tu computadora y los domingos te recuerda lo que falta.</p>
+      <div class="ap-list" id="ln-list"></div>
+      <details class="ln-done" id="ln-done-box" hidden><summary id="ln-done-title"></summary><div class="ap-list" id="ln-done"></div></details>
     </section>
     <section class="ap-page" data-sub="pagos" hidden>
       <div class="rc-summary bl-summary" id="bl-summary"></div>
@@ -1222,8 +1395,8 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
         <label class="bl-date">Próximo pago <input id="bl-due" type="date" aria-label="Fecha del próximo pago"></label>
         <button type="submit" class="primary">+ Agregar pago</button>
       </form>
-      <p class="rc-hint">Hermes te avisa por Telegram 3 días antes y el día que vence. Al marcarlo como pagado queda en Gastos. También puedes decirle «pagué la luz 345».</p>
-      <div id="bl-list"></div>
+      <p class="ap-hint">Hermes te avisa por Telegram 3 días antes y el día que vence. Al marcarlo como pagado queda en Gastos. También puedes decirle «pagué la luz 345».</p>
+      <div class="ap-list" id="bl-list"></div>
     </section>
     <section class="ap-page" data-sub="gastos" hidden>
       <div class="rc-head">
@@ -1232,19 +1405,20 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
         <button type="button" class="rc-nav" id="rc-next" aria-label="Mes siguiente">›</button>
       </div>
       <div class="rc-summary" id="rc-summary"></div>
-      <p class="rc-hint">Para agregar un gasto, mándale a Hermes por Telegram la foto del recibo. La lee el modelo de tu computadora: la foto no sale de ahí. Toca un comercio para corregirlo y la foto para verla.</p>
-      <div id="rc-list"></div>
+      <p class="ap-hint">Para agregar un gasto, mándale a Hermes por Telegram la foto del recibo. La lee el modelo de tu computadora: la foto no sale de ahí. Toca un comercio para corregirlo y la foto para verla.</p>
+      <div class="ap-list" id="rc-list"></div>
     </section>
-    <section class="ap-card" data-sub="seguimientos" hidden>
-      <h3>Seguimientos <span id="ap-waiting-count"></span></h3>
-      <p>Lo que quedaron de mandarte o hacer otras personas. Hermes te pregunta a los días si ya llegó. Para agregar uno, dile «estoy esperando que…».</p>
-      <form class="ap-form" id="ap-waiting-form" autocomplete="off">
+    <section class="ap-page" data-sub="seguimientos" hidden>
+      <h3 class="ap-head">Seguimientos <span id="ap-waiting-count"></span></h3>
+      <p class="ap-hint">Lo que quedaron de mandarte o hacer otras personas. Hermes te pregunta a los días si ya llegó. Para agregar uno, dile «estoy esperando que…».</p>
+      <form class="ap-form ap-create" id="ap-waiting-form" autocomplete="off">
         <input id="ap-waiting-text" maxlength="180" placeholder="Qué esperas (que Juan mande el contrato)" aria-label="Qué estás esperando">
         <input id="ap-waiting-days" class="narrow" type="number" min="1" max="60" value="3" aria-label="En cuántos días te pregunto" title="En cuántos días te pregunto">
         <button type="submit" class="primary">Agregar</button>
       </form>
-      <div id="ap-waiting"></div>
+      <div class="ap-list" id="ap-waiting"></div>
     </section>
+    <div class="skeleton ap-loading" aria-hidden="true"><i></i><i></i><i></i></div><span class="sr-only ap-loading" role="status">Cargando los apuntes</span>
   </div>
 </div>
 
@@ -1444,17 +1618,26 @@ window.addEventListener("hashchange", showView);
 /* ---------- Calendario mensual ---------- */
 const CAL_MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 // cal: { year, month (0-11), picked (día del mes o null) }. marks: { día: [{ label, cls }] }. redraw: vuelve a pintar.
+// Al tocar un día o una flecha, redraw vuelve a pintar el calendario: el foco vuelve a la copia nueva de ese control.
+let calRefocus = null;  // { cal, key } del control que se tocó, solo mientras dura el redraw.
 function monthGrid(cal, marks, redraw) {
   const today = new Date();
   const box = text("div", "cal", "");
   const head = text("div", "cal-head", "");
+  const keep = (el, key) => {
+    if (calRefocus && calRefocus.cal === cal && calRefocus.key === key) { calRefocus = null; setTimeout(() => { if (el.isConnected) el.focus(); }, 0); }
+  };
+  const touched = key => { calRefocus = { cal, key }; try { redraw(); } finally { calRefocus = null; } };
   const nav = (label, aria, step) => {
     const b = text("button", "cal-nav", label); b.type = "button"; b.setAttribute("aria-label", aria);
-    b.onclick = () => { const d = new Date(cal.year, cal.month + step, 1); cal.year = d.getFullYear(); cal.month = d.getMonth(); cal.picked = null; redraw(); };
+    const key = step < 0 ? "prev" : "next";
+    b.onclick = () => { const d = new Date(cal.year, cal.month + step, 1); cal.year = d.getFullYear(); cal.month = d.getMonth(); cal.picked = null; touched(key); };
+    keep(b, key);
     return b;
   };
   const now = text("button", "cal-nav", "Hoy"); now.type = "button";
-  now.onclick = () => { cal.year = today.getFullYear(); cal.month = today.getMonth(); cal.picked = today.getDate(); redraw(); };
+  now.onclick = () => { cal.year = today.getFullYear(); cal.month = today.getMonth(); cal.picked = today.getDate(); touched("today"); };
+  keep(now, "today");
   head.append(nav("‹", "Mes anterior", -1), text("b", "", CAL_MONTHS[cal.month] + " " + cal.year), now, nav("›", "Mes siguiente", 1));
   const grid = text("div", "cal-grid", "");
   for (const day of ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]) grid.append(text("div", "cal-wd", day));
@@ -1475,7 +1658,8 @@ function monthGrid(cal, marks, redraw) {
       items.slice(0, 4).forEach(i => dots.append(text("i", i.cls || "", "")));
       cell.append(dots);
     }
-    cell.onclick = () => { cal.picked = day; redraw(); };
+    cell.onclick = () => { cal.picked = day; touched("day:" + day); };
+    keep(cell, "day:" + day);
     grid.append(cell);
   }
   box.append(head, grid);
@@ -2290,11 +2474,17 @@ function apRow(main, detail, check, onRemove, removeLabel) {
   const body = text("div", "grow", main);
   if (detail) body.appendChild(text("small", "", detail));
   row.appendChild(body);
-  if (onRemove) { const x = text("button", "ap-x", "✕"); x.type = "button"; x.setAttribute("aria-label", removeLabel); x.onclick = onRemove; row.appendChild(x); }
+  if (onRemove) { const x = apX(); x.type = "button"; x.setAttribute("aria-label", removeLabel); x.onclick = onRemove; row.appendChild(x); }
   return row;
 }
 function apCheck(on, label, onClick) {
   const b = text("button", "ap-check" + (on ? " on" : ""), ""); b.type = "button"; b.setAttribute("aria-label", label); b.onclick = onClick; return b;
+}
+// Botón ✕ de Apuntes: el dibujo es el SVG de la plantilla (trazo currentColor = --ink-2), no el carácter de la fuente.
+function apX() {
+  const b = text("button", "ap-x", "");
+  b.appendChild($("ap-x-icon").content.firstElementChild.cloneNode(true));
+  return b;
 }
 function apFill(id, rows, empty) {
   const box = $(id); box.textContent = "";
@@ -2314,8 +2504,9 @@ function listItemRow(item, lists) {
     const row = text("div", "ap-row" + (item.done ? " done" : ""), "");
     const name = text("button", "grow ap-item", item.text); name.type = "button";
     name.setAttribute("aria-label", "Editar " + item.text); name.title = "Tocar para editar";
+    apRefocus("item:" + item.id, name);
     name.onclick = () => { editingItem = item.id; editingText = item.text; renderLists(lists); };
-    const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Quitar " + item.text);
+    const remove = apX(); remove.type = "button"; remove.setAttribute("aria-label", "Quitar " + item.text);
     remove.onclick = () => apunte({ action: "list_remove", id: item.id }, true);
     row.append(check, name, remove);
     return row;
@@ -2324,10 +2515,10 @@ function listItemRow(item, lists) {
   const input = document.createElement("input");
   input.maxLength = 100; input.value = editingText; input.setAttribute("aria-label", "Nuevo texto del elemento"); input.enterKeyHint = "done";
   input.oninput = () => { editingText = input.value; };
-  const stop = () => { editingItem = null; editingText = ""; };
+  const stop = () => { editingItem = null; editingText = ""; apFocusBack = "item:" + item.id; };
   input.onkeydown = event => { if (event.key === "Escape") { stop(); renderLists(lists); } };
   const save = text("button", "primary", "Guardar"); save.type = "submit";
-  const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+  const cancel = apX(); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
   cancel.onclick = () => { stop(); renderLists(lists); };
   row.onsubmit = async event => {
     event.preventDefault();
@@ -2372,7 +2563,7 @@ function renderLists(lists) {
       input.maxLength = 100; input.placeholder = "Agregar a " + list.name + "…"; input.dataset.list = list.name;
       input.setAttribute("aria-label", "Agregar a la lista de " + list.name); input.enterKeyHint = "done";
       if (typed[list.name]) input.value = typed[list.name];
-      const add = text("button", "primary", "Agregar"); add.type = "submit";
+      const add = text("button", "ghost", "Agregar"); add.type = "submit";
       form.append(input, add);
       form.onsubmit = async event => {
         event.preventDefault();
@@ -2404,14 +2595,17 @@ function renderLists(lists) {
 let lastApuntes = null;
 let editingNote = null;  // La nota que se está corrigiendo, y lo escrito hasta ahora.
 let editingNoteText = "";
+let apFocusBack = null;  // Al cerrar un editor de Listas, Notas, Fechas, Seguimientos, Gastos o Pagos, el foco vuelve al elemento que se corrigió.
+function apRefocus(key, el) { if (apFocusBack === key) { apFocusBack = null; setTimeout(() => { if (el.isConnected) el.focus(); }, 0); } }
 function noteRow(n) {
   const redraw = () => { if (lastApuntes) renderApuntes(lastApuntes); };
   if (editingNote !== n.id) {
     const row = text("div", "ap-row", "");
     const body = text("button", "grow ap-item", n.text); body.type = "button";
+    apRefocus("note:" + n.id, body);
     body.setAttribute("aria-label", "Editar la nota: " + n.text); body.title = "Tocar para editar";
     body.onclick = () => { editingNote = n.id; editingNoteText = n.text; redraw(); };
-    const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Borrar la nota");
+    const remove = apX(); remove.type = "button"; remove.setAttribute("aria-label", "Borrar la nota");
     remove.onclick = async () => { if (await ask("¿Borrar esta nota? «" + n.text + "»")) apunte({ action: "note_delete", id: n.id }); };
     row.append(body, remove);
     return row;
@@ -2420,9 +2614,9 @@ function noteRow(n) {
   const input = document.createElement("textarea");
   input.maxLength = 500; input.rows = 3; input.value = editingNoteText; input.setAttribute("aria-label", "Nuevo texto de la nota"); input.enterKeyHint = "done";
   input.oninput = () => { editingNoteText = input.value; };
-  const stop = () => { editingNote = null; editingNoteText = ""; };
+  const stop = () => { editingNote = null; editingNoteText = ""; apFocusBack = "note:" + n.id; };
   const save = text("button", "primary", "Guardar"); save.type = "submit";
-  const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+  const cancel = apX(); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
   cancel.onclick = () => { stop(); redraw(); };
   input.onkeydown = event => {
     if (event.key === "Escape") { stop(); redraw(); }
@@ -2478,10 +2672,11 @@ function waitingRow(w) {
       try { toast((await send("/tasks", { action: "done", id: w.id })).message, w.id); loadApuntes(true); } catch (e) { toast(e.message); }
     });
     const body = text("button", "grow ap-item", w.title); body.type = "button";
+    apRefocus("waiting:" + w.id, body);
     body.setAttribute("aria-label", "Editar el seguimiento: " + w.title); body.title = "Tocar para editar";
     if (w.due_at) body.appendChild(text("small", "", "Te pregunto el " + new Date(w.due_at * 1000).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" })));
     body.onclick = () => { editingWaiting = w.id; editingWaitingText = w.title; editingWaitingDate = w.due_at ? isoDay(w.due_at) : ""; redraw(); };
-    const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Borrar el seguimiento");
+    const remove = apX(); remove.type = "button"; remove.setAttribute("aria-label", "Borrar el seguimiento");
     remove.onclick = async () => { if (await ask("¿Borrar el seguimiento «" + w.title + "»?")) apunte({ action: "waiting_delete", id: w.id }); };
     row.append(check, body, remove);
     return row;
@@ -2493,11 +2688,11 @@ function waitingRow(w) {
   const date = document.createElement("input");
   date.type = "date"; date.value = editingWaitingDate; date.setAttribute("aria-label", "Día en que Hermes te pregunta"); date.title = "Día en que Hermes te pregunta";
   date.oninput = () => { editingWaitingDate = date.value; };
-  const stop = () => { editingWaiting = null; editingWaitingText = ""; editingWaitingDate = ""; };
+  const stop = () => { editingWaiting = null; editingWaitingText = ""; editingWaitingDate = ""; apFocusBack = "waiting:" + w.id; };
   const onKey = event => { if (event.key === "Escape") { stop(); redraw(); } };
   input.onkeydown = onKey; date.onkeydown = onKey;
   const save = text("button", "primary", "Guardar"); save.type = "submit";
-  const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+  const cancel = apX(); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
   cancel.onclick = () => { stop(); redraw(); };
   row.onsubmit = async event => {
     event.preventDefault();
@@ -2540,7 +2735,7 @@ function habitCard(h) {
     time.oninput = () => { editingHabitTime = time.value; };
     const stop = () => { editingHabit = null; editingHabitTitle = editingHabitTime = ""; };
     const save = text("button", "primary", "Guardar"); save.type = "submit";
-    const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+    const cancel = apX(); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
     cancel.onclick = () => { stop(); redraw(); };
     const onKey = event => { if (event.key === "Escape") { stop(); redraw(); } };
     title.onkeydown = onKey; time.onkeydown = onKey;
@@ -2554,7 +2749,8 @@ function habitCard(h) {
         await loadApuntes(true);
       } catch (e) { toast(e.message); save.disabled = false; }
     };
-    form.append(title, time, save, cancel);
+    const actions = text("div", "hb-edit-actions", ""); actions.append(save, cancel);
+    form.append(title, time, actions);
     name.append(form);
     setTimeout(() => { if (editingHabit === h.id && !form.contains(document.activeElement)) title.focus(); }, 0);
   } else {
@@ -2636,11 +2832,11 @@ function datePayload(v) {
 function dateRow(x) {
   const redraw = () => { if (lastApuntes) renderApuntes(lastApuntes); };
   if (editingDate === x.id) {
-    const form = text("form", "ap-form dt-edit", ""); form.autocomplete = "off";
+    const form = text("form", "ap-row ap-editing dt-edit", ""); form.autocomplete = "off";
     const fields = dateFields(editingDateFields, v => { editingDateFields = v; });
-    const stop = () => { editingDate = null; editingDateFields = null; };
+    const stop = () => { editingDate = null; editingDateFields = null; apFocusBack = "date:" + x.id; };
     const save = text("button", "primary", "Guardar"); save.type = "submit";
-    const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+    const cancel = apX(); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
     cancel.onclick = () => { stop(); redraw(); };
     form.onkeydown = event => { if (event.key === "Escape") { stop(); redraw(); } };
     form.onsubmit = async event => {
@@ -2658,37 +2854,44 @@ function dateRow(x) {
     setTimeout(() => { if (editingDate === x.id && !form.contains(document.activeElement)) fields.first.focus(); }, 0);
     return form;
   }
-  const row = text("div", "dt-row" + (x.in_days === 0 ? " today" : x.in_days <= 7 ? " soon" : ""), "");
+  const row = text("div", "ap-row dt-row" + (x.in_days === 0 ? " today" : x.in_days <= 7 ? " soon" : ""), "");
   const badge = text("div", "dt-badge", "");
   badge.append(text("b", "", String(Number(x.next.slice(8)))), text("span", "", AP_MONTHS[Number(x.next.slice(5, 7)) - 1].slice(0, 3)));
   const body = text("div", "dt-body", "");
   const title = text("button", "ap-item", dateTitle(x)); title.type = "button";
+  apRefocus("date:" + x.id, title);
   title.title = "Tocar para corregir"; title.setAttribute("aria-label", "Corregir: " + x.label);
   title.onclick = () => { editingDate = x.id; editingDateFields = { kind: x.kind, name: x.name, day: x.day, month: x.month, year: x.year }; redraw(); };
   const when = dateWhen(x);
   const small = text("small", "", "");
   small.append(text("span", "when", when[0]), document.createTextNode(when.length > 1 ? " · " + when.slice(1).join(" · ") : ""));
   body.append(title, small);
-  const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Borrar: " + x.label);
+  const remove = apX(); remove.type = "button"; remove.setAttribute("aria-label", "Borrar: " + x.label);
   remove.onclick = async () => { if (await ask("¿Borrar el " + x.label + "? Hermes dejará de avisarte.", "Borrar")) apunte({ action: "date_delete", id: x.id }); };
   row.append(badge, body, remove);
   return row;
 }
-// Las fechas en el orden en que llegan, agrupadas por mes, empezando por el actual.
+// Las fechas en el orden en que llegan, agrupadas por mes, empezando por el actual: cada mes, su título y una tarjeta con sus filas.
 function renderDates(dates) {
   const box = $("ap-dates"); box.textContent = "";
-  if (!dates.length) { box.appendChild(text("div", "ap-empty card", "Todavía no hay fechas. Anota cumpleaños y aniversarios aquí arriba y Hermes te avisa un día antes y ese día.")); return; }
+  if (!dates.length) {
+    const list = text("div", "ap-list", "");
+    list.appendChild(text("div", "ap-empty", "Todavía no hay fechas. Anota cumpleaños y aniversarios aquí arriba y Hermes te avisa un día antes y ese día."));
+    box.appendChild(list);
+    return;
+  }
   const thisYear = new Date().getFullYear();
-  let group = null, key = "";
+  let list = null, key = "";
   for (const x of dates) {
     const [y, m] = x.next.split("-").map(Number);
     if (y + "-" + m !== key) {
       key = y + "-" + m;
-      group = text("div", "dt-group", "");
-      group.appendChild(text("h4", "", capital(AP_MONTHS[m - 1]) + (y !== thisYear ? " " + y : "")));
+      const group = text("div", "dt-group", "");
+      list = text("div", "ap-list", "");
+      group.append(text("h4", "", capital(AP_MONTHS[m - 1]) + (y !== thisYear ? " " + y : "")), list);
       box.appendChild(group);
     }
-    group.appendChild(dateRow(x));
+    list.appendChild(dateRow(x));
   }
 }
 function renderApuntes(d) {
@@ -2720,20 +2923,29 @@ function linkAgo(ts) {
   return days <= 0 ? "hoy" : days === 1 ? "ayer" : "hace " + days + " días";
 }
 function linkRow(l) {
-  const row = text("div", "ln-row" + (l.read_at ? " read" : ""), "");
+  const row = text("div", "ap-row ln-row" + (l.read_at ? " read" : ""), "");
   const body = text("div", "ln-body", "");
   const a = document.createElement("a");
   a.href = /^https?:/.test(l.url) ? l.url : "#"; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = l.title;
-  a.className = "ln-title";
-  body.append(a, text("small", "", l.site + " · " + linkAgo(l.saved_at)));
+  a.className = "ln-title"; a.title = l.title;  // Un título largo se corta con …: completo al pasar el ratón y al abrirlo.
+  const meta = l.site + " · " + linkAgo(l.saved_at);
+  const small = text("small", "", meta); small.title = meta;
+  body.append(a, small);
   if (l.summary) body.appendChild(text("p", "ln-summary", l.summary));
   const actions = text("div", "bl-actions", "");
-  const toggle = text("button", "bl-paid", l.read_at ? "↩ No leído" : "✓ Leído"); toggle.type = "button";
+  const toggle = text("button", "ghost bl-paid", l.read_at ? "↩ No leído" : "✓ Leído"); toggle.type = "button";
   toggle.setAttribute("aria-label", (l.read_at ? "Volver a para leer: " : "Marcar como leído: ") + l.title);
+  toggle.dataset.focus = "ln" + l.id;
   toggle.onclick = async () => {
-    try { toast((await send("/links", { action: l.read_at ? "unread" : "read", id: l.id })).message); await loadLinks(true); } catch (e) { toast(e.message); }
+    try {
+      toast((await send("/links", { action: l.read_at ? "unread" : "read", id: l.id })).message);
+      await loadLinks(true);
+      // El foco sigue al enlace en su lista nueva; si quedó dentro de «Leídos» cerrado, va a «Leídos (n)».
+      const moved = document.querySelector('[data-focus="ln' + l.id + '"]');
+      if (moved && !moved.closest("details:not([open])")) moved.focus(); else if (!$("ln-done-box").hidden) $("ln-done-title").focus();
+    } catch (e) { toast(e.message); }
   };
-  const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Quitar: " + l.title);
+  const remove = apX(); remove.type = "button"; remove.setAttribute("aria-label", "Quitar: " + l.title);
   remove.onclick = async () => {
     if (!(await ask("¿Quitar «" + l.title + "»?", "Quitar"))) return;
     try { toast((await send("/links", { action: "delete", id: l.id })).message); await loadLinks(true); } catch (e) { toast(e.message); }
@@ -2755,7 +2967,7 @@ async function loadLinks(force) {
     if (!force && serialized === linksSerialized) return;
     linksSerialized = serialized;
     const box = $("ln-list"); box.textContent = "";
-    if (!unread.length) box.appendChild(text("div", "ap-empty card", read.length ? "Ya leíste todo lo que guardaste. 🎉" : "Todavía no tienes enlaces. Pega uno aquí arriba o mándaselo a Hermes."));
+    if (!unread.length) box.appendChild(text("div", "ap-empty", read.length ? "Ya leíste todo lo que guardaste. 🎉" : "Todavía no tienes enlaces. Pega uno aquí arriba o mándaselo a Hermes."));
     unread.forEach(l => box.appendChild(linkRow(l)));
     $("ln-done-box").hidden = !read.length;
     $("ln-done-title").textContent = "Leídos (" + read.length + ")";
@@ -2788,7 +3000,7 @@ function billRow(b) {
   const redraw = () => renderBills();
   if (editingBill === b.id) {
     const v = editingBillFields;
-    const form = text("form", "ap-form rc-edit", ""); form.autocomplete = "off";
+    const form = text("form", "ap-row ap-editing rc-edit", ""); form.autocomplete = "off";
     const name = document.createElement("input"); name.maxLength = 60; name.value = v.name; name.setAttribute("aria-label", "Qué pagas");
     const amount = document.createElement("input"); amount.type = "number"; amount.min = "0.01"; amount.step = "0.01"; amount.value = v.amount || "";
     amount.placeholder = "Variable"; amount.setAttribute("aria-label", "Monto; vacío si cambia cada vez");
@@ -2803,9 +3015,9 @@ function billRow(b) {
     remindLabel.appendChild(remind);
     const read = () => ({ name: name.value, amount: amount.value, currency: currency.value, every_months: every.value, category: category.value, next_due: due.value, remind_days: remind.value });
     [name, amount, currency, every, category, due, remind].forEach(el => { el.oninput = () => { editingBillFields = read(); }; });
-    const stop = () => { editingBill = null; editingBillFields = null; };
+    const stop = () => { editingBill = null; editingBillFields = null; apFocusBack = "bill:" + b.id; };
     const save = text("button", "primary", "Guardar"); save.type = "submit";
-    const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+    const cancel = apX(); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
     cancel.onclick = () => { stop(); redraw(); };
     form.onkeydown = event => { if (event.key === "Escape") { stop(); redraw(); } };
     form.onsubmit = async event => {
@@ -2824,13 +3036,14 @@ function billRow(b) {
     setTimeout(() => { if (editingBill === b.id && !form.contains(document.activeElement)) name.focus(); }, 0);
     return form;
   }
-  const row = text("div", "bl-row" + (b.left < 0 ? " late" : b.left <= 3 ? " soon" : ""), "");
+  const row = text("div", "ap-row dt-row bl-row" + (b.left < 0 ? " late" : b.left <= 3 ? " soon" : ""), "");
   const [y, m, d] = b.next_due.split("-").map(Number);
   const badge = text("div", "dt-badge", "");
   badge.append(text("b", "", String(d)), text("span", "", AP_MONTHS[m - 1].slice(0, 3)));
   const body = text("div", "dt-body", "");
   const title = text("button", "ap-item", b.name); title.type = "button"; title.title = "Tocar para corregir";
   title.setAttribute("aria-label", "Corregir el pago " + b.name);
+  apRefocus("bill:" + b.id, title);
   title.onclick = () => { editingBill = b.id; payingBill = null; editingBillFields = { name: b.name, amount: b.amount, currency: b.currency, every_months: b.every_months, category: b.category, next_due: b.next_due, remind_days: b.remind_days }; redraw(); };
   const small = text("small", "", "");
   const amount = b.amount ? billsMoney(b.amount, b.currency) : "monto variable";
@@ -2846,23 +3059,24 @@ function billRow(b) {
     const input = document.createElement("input"); input.type = "number"; input.min = "0.01"; input.step = "0.01"; input.inputMode = "decimal";
     input.value = b.expected || ""; input.placeholder = "Monto"; input.setAttribute("aria-label", "Cuánto pagaste de " + b.name);
     const ok = text("button", "primary", "Anotar"); ok.type = "submit";
-    const no = text("button", "ap-x", "✕"); no.type = "button"; no.setAttribute("aria-label", "Cancelar");
-    no.onclick = () => { payingBill = null; redraw(); };
+    const no = apX(); no.type = "button"; no.setAttribute("aria-label", "Cancelar");
+    no.onclick = () => { payingBill = null; apFocusBack = "pay:" + b.id; redraw(); };
     form.onsubmit = async event => {
       event.preventDefault();
       const value = parseFloat(input.value);
       if (!(value > 0)) { input.focus(); return; }
       ok.disabled = true;
-      try { toast((await send("/bills", { action: "pay", id: b.id, amount: value })).message); payingBill = null; await loadBills(true); loadReceipts(true); }
+      try { toast((await send("/bills", { action: "pay", id: b.id, amount: value })).message); payingBill = null; apFocusBack = "pay:" + b.id; await loadBills(true); loadReceipts(true); }
       catch (e) { toast(e.message); ok.disabled = false; }
     };
     form.append(input, ok, no);
     actions.appendChild(form);
     setTimeout(() => { if (payingBill === b.id && document.activeElement !== input) { input.focus(); input.select(); } }, 0);
   } else {
-    const pay = text("button", "bl-paid", "✅ Pagado"); pay.type = "button"; pay.setAttribute("aria-label", "Anotar que pagué " + b.name);
+    const pay = text("button", "ghost", "✅ Pagado"); pay.type = "button"; pay.setAttribute("aria-label", "Anotar que pagué " + b.name);
+    apRefocus("pay:" + b.id, pay);
     pay.onclick = () => { payingBill = b.id; editingBill = null; redraw(); };
-    const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Quitar el pago " + b.name);
+    const remove = apX(); remove.type = "button"; remove.setAttribute("aria-label", "Quitar el pago " + b.name);
     remove.onclick = async () => {
       if (!(await ask("¿Quitar " + b.name + "? Hermes deja de avisarte. Lo que ya pagaste sigue en Gastos.", "Quitar"))) return;
       try { toast((await send("/bills", { action: "delete", id: b.id })).message); await loadBills(true); } catch (e) { toast(e.message); }
@@ -2883,7 +3097,7 @@ function renderBills() {
   if (next) summary.appendChild(text("div", "bl-next", "Próximo: " + next.name + ", " + next.when + "."));
   else summary.appendChild(text("div", "bl-next", "Agrega aquí abajo lo que pagas cada mes o cada año."));
   const box = $("bl-list"); box.textContent = "";
-  if (!n) { box.appendChild(text("div", "ap-empty card", "Todavía no tienes pagos. Agrega la luz, el agua, el internet, el teléfono o tus suscripciones.")); }
+  if (!n) { box.appendChild(text("div", "ap-empty", "Todavía no tienes pagos. Agrega la luz, el agua, el internet, el teléfono o tus suscripciones.")); }
   billsData.bills.forEach(b => box.appendChild(billRow(b)));
 }
 async function loadBills(force) {
@@ -2942,7 +3156,7 @@ function receiptRow(r) {
   const redraw = () => renderReceipts();
   if (editingReceipt === r.id) {
     const v = editingReceiptFields;
-    const form = text("form", "ap-form rc-edit", ""); form.autocomplete = "off";
+    const form = text("form", "ap-row ap-editing rc-edit", ""); form.autocomplete = "off";
     const merchant = document.createElement("input"); merchant.maxLength = 80; merchant.value = v.merchant; merchant.setAttribute("aria-label", "Comercio");
     const total = document.createElement("input"); total.type = "number"; total.step = "0.01"; total.min = "0.01"; total.value = v.total; total.setAttribute("aria-label", "Total");
     const currency = document.createElement("select"); currency.setAttribute("aria-label", "Moneda");
@@ -2957,9 +3171,9 @@ function receiptRow(r) {
     warrantyLabel.appendChild(warranty);
     const read = () => ({ merchant: merchant.value, total: total.value, currency: currency.value, day: day.value, category: category.value, warranty_until: warranty.value });
     [merchant, total, currency, day, category, warranty].forEach(el => { el.oninput = () => { editingReceiptFields = read(); }; });
-    const stop = () => { editingReceipt = null; editingReceiptFields = null; };
+    const stop = () => { editingReceipt = null; editingReceiptFields = null; apFocusBack = "receipt:" + r.id; };
     const save = text("button", "primary", "Guardar"); save.type = "submit";
-    const cancel = text("button", "ap-x", "✕"); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
+    const cancel = apX(); cancel.type = "button"; cancel.setAttribute("aria-label", "Cancelar la edición");
     cancel.onclick = () => { stop(); redraw(); };
     form.onkeydown = event => { if (event.key === "Escape") { stop(); redraw(); } };
     form.onsubmit = async event => {
@@ -2980,7 +3194,7 @@ function receiptRow(r) {
     setTimeout(() => { if (editingReceipt === r.id && !form.contains(document.activeElement)) merchant.focus(); }, 0);
     return form;
   }
-  const row = text("div", "rc-row", "");
+  const row = text("div", "ap-row rc-row", "");
   const thumb = text("button", "rc-thumb", r.photo ? "" : "🧾"); thumb.type = "button";
   if (r.photo) { const img = document.createElement("img"); img.src = "/recibo/" + r.id + ".jpg"; img.alt = ""; img.loading = "lazy"; thumb.appendChild(img); }
   thumb.setAttribute("aria-label", "Ver la foto del recibo de " + r.merchant);
@@ -2989,12 +3203,13 @@ function receiptRow(r) {
   thumb.onclick = () => rcPhoto(r, thumb);
   const body = text("div", "rc-body", "");
   const name = text("button", "ap-item", r.merchant); name.type = "button"; name.title = "Tocar para corregir";
+  apRefocus("receipt:" + r.id, name);
   name.setAttribute("aria-label", "Corregir el recibo de " + r.merchant);
   name.onclick = () => { editingReceipt = r.id; editingReceiptFields = { merchant: r.merchant, total: r.total, currency: r.currency, day: r.day, category: r.category, warranty_until: r.warranty_until }; redraw(); };
   const detail = rcDay(r.day) + " · " + r.category + (r.warranty_until && r.warranty_until >= receiptsData.today ? " · 🛡 hasta " + rcDay(r.warranty_until) : "");
   body.append(name, text("small", "", detail));
   const amount = text("div", "rc-amount", rcMoney(r.total, r.currency));
-  const remove = text("button", "ap-x", "✕"); remove.type = "button"; remove.setAttribute("aria-label", "Borrar el recibo de " + r.merchant);
+  const remove = apX(); remove.type = "button"; remove.setAttribute("aria-label", "Borrar el recibo de " + r.merchant);
   remove.onclick = async () => {
     if (!(await ask("¿Borrar el recibo de " + r.merchant + " por " + rcMoney(r.total, r.currency) + "? También se borra su foto.", "Borrar"))) return;
     try { toast((await send("/receipts", { action: "delete", id: r.id })).message); await loadReceipts(true); } catch (e) { toast(e.message); }
@@ -3013,14 +3228,14 @@ function budgetEditor() {
     const input = document.createElement("input"); input.type = "number"; input.min = "0"; input.step = "1"; input.inputMode = "decimal";
     input.placeholder = "Sin límite"; input.value = receiptsData.budgets[c] || "";
     inputs[c] = input;
+    if (Object.keys(inputs).length === 1) apRefocus("budgets:first", input);
     row.append(text("span", "", capital(c)), input);
     form.appendChild(row);
   });
   const buttons = text("div", "rc-budget-buttons", "");
   const save = text("button", "primary", "Guardar"); save.type = "submit";
   const cancel = text("button", "ghost", "Cancelar"); cancel.type = "button";
-  cancel.onclick = () => { editingBudgets = false; renderReceipts(); };
-  buttons.append(cancel, save);
+  cancel.onclick = () => { editingBudgets = false; apFocusBack = "budgets"; renderReceipts(); };  buttons.append(cancel, save);
   form.appendChild(buttons);
   form.onsubmit = async event => {
     event.preventDefault();
@@ -3029,7 +3244,7 @@ function budgetEditor() {
     save.disabled = true;
     try {
       toast((await send("/receipts", { action: "budgets", budgets })).message);
-      editingBudgets = false;
+      editingBudgets = false; apFocusBack = "budgets";
       await loadReceipts(true);
     } catch (e) { toast(e.message); save.disabled = false; }
   };
@@ -3052,7 +3267,8 @@ function renderReceipts() {
     + (budgetTotal ? " · presupuesto " + rcMoney(budgetTotal, "GTQ") : "")));
   if (receiptsData.budget_enabled) {
     const edit = text("button", "ap-link", budgetTotal ? "Cambiar presupuestos" : "Poner presupuestos"); edit.type = "button";
-    edit.onclick = () => { editingBudgets = !editingBudgets; renderReceipts(); };
+    edit.onclick = () => { editingBudgets = !editingBudgets; apFocusBack = editingBudgets ? "budgets:first" : "budgets"; renderReceipts(); };
+    apRefocus("budgets", edit);
     top.appendChild(edit);
   }
   summary.appendChild(top);
@@ -3077,7 +3293,7 @@ function renderReceipts() {
   });
   const box = $("rc-list"); box.textContent = "";
   if (!month.length) {
-    box.appendChild(text("div", "ap-empty card", key === today.slice(0, 7)
+    box.appendChild(text("div", "ap-empty", key === today.slice(0, 7)
       ? "Todavía no hay recibos este mes. Mándale a Hermes por Telegram la foto de uno y aparece aquí."
       : "No hay recibos guardados en este mes."));
     return;
@@ -3098,8 +3314,16 @@ async function loadReceipts(force) {
     renderReceipts();
   } catch {}
 }
-$("rc-prev").addEventListener("click", () => { rcMonth.month--; if (rcMonth.month < 0) { rcMonth.month = 11; rcMonth.year--; } editingReceipt = null; renderReceipts(); });
-$("rc-next").addEventListener("click", () => { rcMonth.month++; if (rcMonth.month > 11) { rcMonth.month = 0; rcMonth.year++; } editingReceipt = null; renderReceipts(); });
+// Si el botón que se usó queda desactivado (primer o último mes a la vista), el foco pasa al otro para no perderse.
+function rcStep(step) {
+  rcMonth.month += step;
+  if (rcMonth.month < 0) { rcMonth.month = 11; rcMonth.year--; } else if (rcMonth.month > 11) { rcMonth.month = 0; rcMonth.year++; }
+  editingReceipt = null; renderReceipts();
+  const used = $(step < 0 ? "rc-prev" : "rc-next"), other = $(step < 0 ? "rc-next" : "rc-prev");
+  if (used.disabled && document.activeElement !== other) other.focus();
+}
+$("rc-prev").addEventListener("click", () => rcStep(-1));
+$("rc-next").addEventListener("click", () => rcStep(1));
 async function loadApuntes(force) {
   loadReceipts(force);
   loadBills(force);
@@ -3108,6 +3332,8 @@ async function loadApuntes(force) {
     const res = await fetch("/extras", { cache: "no-store" });
     if (res.status === 401) { location.href = "/login"; return; }
     const data = await res.json();
+    $("view-apuntes").setAttribute("aria-busy", "false");  // Ya hay datos: se quitan el esqueleto y el anuncio de carga.
+    document.querySelectorAll("#view-apuntes .ap-loading").forEach(el => el.remove());
     const serialized = JSON.stringify({ ...data, now: 0 });
     if (force || serialized !== apuntesSerialized) { apuntesSerialized = serialized; renderApuntes(data); }
   } catch { $("offline").style.display = "block"; }

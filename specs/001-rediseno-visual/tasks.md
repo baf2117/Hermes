@@ -87,44 +87,44 @@ Convenciones de esta lista:
 
 ## Lote B — Apuntes
 
-- [ ] **T11. Marco de Apuntes (título, explicación, subpestañas, aviso de silencio, estado de carga con esqueleto + `.sr-only` + `aria-busy`) y subpestaña Listas. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-15, RF-34, RF-42, RF-47
+- [x] **T11. Marco de Apuntes (título, explicación, subpestañas, aviso de silencio, estado de carga con esqueleto + `.sr-only` + `aria-busy`) y subpestaña Listas. Pantalla nueva: checkpoint visual. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-15, RF-34, RF-42, RF-47
  - Depende de: T10
  - Toca: hermes/status.py (compartido), tests/test_page_texts.py
  - Paralelo: no
  - Checkpoint: visual
  - Hecho cuando: las secciones de Apuntes comunes y Listas sin `@legacy` y el test de tokens en verde; el anuncio de carga de Apuntes en `ACCESIBLES`; el comando de tests está en verde; verificación [P2] de Apuntes → Listas con `medir.js` vacío, las 8 subpestañas alcanzables desplazando su fila sin desplazar la página, estado vacío con su texto de hoy; capturas del checkpoint aprobadas por el usuario.
 
-- [ ] **T12. Apuntes → Hábitos: botón de hoy, semana de 7 días con zonas de 44 px y racha. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-25, RF-34, RF-42, RF-47
+- [x] **T12. Apuntes → Hábitos: botón de hoy, semana de 7 días con zonas de 44 px y racha. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-25, RF-34, RF-42, RF-47
  - Depende de: T11
  - Toca: hermes/status.py (compartido)
  - Paralelo: no
  - Hecho cuando: la sección de Hábitos sin `@legacy` y el test de tokens en verde; el comando de tests está en verde; verificación [P2] de Hábitos con `medir.js` vacío (los 7 días caben a 375 px con zona ≥ 44 px) y su estado vacío.
 
-- [ ] **T13. Apuntes → Notas y Seguimientos. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-24, RF-34, RF-42, RF-47
+- [x] **T13. Apuntes → Notas y Seguimientos. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-24, RF-34, RF-42, RF-47
  - Depende de: T12
  - Toca: hermes/status.py (compartido)
  - Paralelo: no
  - Hecho cuando: sus secciones sin `@legacy` y el test de tokens en verde; el comando de tests está en verde; verificación [P2] de Notas y Seguimientos con `medir.js` vacío, nombres largos sin desbordar y estados vacíos con su texto de hoy.
 
-- [ ] **T14. Apuntes → Fechas: calendario con números de día tabulares, hoy en neutro invertido, distintivos y próximas. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-12, RF-24, RF-34, RF-42, RF-47
+- [x] **T14. Apuntes → Fechas: calendario con números de día tabulares, hoy en neutro invertido, distintivos y próximas. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-12, RF-24, RF-34, RF-42, RF-47
  - Depende de: T13
  - Toca: hermes/status.py (compartido)
  - Paralelo: no
  - Hecho cuando: la sección de Fechas sin `@legacy` y el test de tokens en verde; el comando de tests está en verde; verificación [P2] de Fechas con `medir.js` vacío y el calendario sin desplazamiento horizontal de la página a 375 px.
 
-- [ ] **T15. Apuntes → Gastos: navegación de mes, total e importes tabulares, barras de presupuesto (aviso y peligro) y miniatura de la foto de recibo. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-12, RF-25, RF-34, RF-42, RF-47
+- [x] **T15. Apuntes → Gastos: navegación de mes, total e importes tabulares, barras de presupuesto (aviso y peligro) y miniatura de la foto de recibo. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-12, RF-25, RF-34, RF-42, RF-47
  - Depende de: T14
  - Toca: hermes/status.py (compartido)
  - Paralelo: no
  - Hecho cuando: la sección de Gastos sin `@legacy` y el test de tokens en verde; el comando de tests está en verde; verificación [P2] de Gastos con `medir.js` vacío, importes con cifras tabulares, miniatura con zona ≥ 44 px que abre el diálogo de foto.
 
-- [ ] **T16. Apuntes → Pagos: formulario, próximos en aviso, vencidos en peligro e importes tabulares. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-12, RF-34, RF-42, RF-47
+- [x] **T16. Apuntes → Pagos: formulario, próximos en aviso, vencidos en peligro e importes tabulares. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-12, RF-34, RF-42, RF-47
  - Depende de: T15
  - Toca: hermes/status.py (compartido)
  - Paralelo: no
  - Hecho cuando: la sección de Pagos sin `@legacy` y el test de tokens en verde; el comando de tests está en verde; verificación [P2] de Pagos con `medir.js` vacío, vencidos distinguibles por borde y texto además del color, y estado vacío con su texto de hoy.
 
-- [ ] **T17. Apuntes → Lecturas: formulario y lista con enlaces largos cortados. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-24, RF-34, RF-40, RF-42, RF-47
+- [x] **T17. Apuntes → Lecturas: formulario y lista con enlaces largos cortados. Verificación con la demo en 47823, sin parar Hermes (P2, cambio del 2026-11-18).** RF-24, RF-34, RF-40, RF-42, RF-47
  - Depende de: T16
  - Toca: hermes/status.py (compartido)
  - Paralelo: no

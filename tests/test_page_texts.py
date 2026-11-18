@@ -26,6 +26,7 @@ RENAMES: dict[str, str | None] = {
 # Textos nuevos permitidos: solo para lectores de pantalla (`.sr-only` o `aria-*`), lista cerrada.
 ACCESIBLES: set[str] = {
     "Cargando las tareas",  # T10: anuncio de carga de Tareas, solo para lectores de pantalla (RF-21).
+    "Cargando los apuntes",  # T11: anuncio de carga de Apuntes, solo para lectores de pantalla (RF-47).
 }
 
 # Atributos del HTML cuyo texto se ve o se lee en voz alta.
