@@ -72,6 +72,41 @@ class ServerTests(unittest.TestCase):
         response, _ = self.get("/")
         self.assertIn("img-src 'self'", response.getheader("Content-Security-Policy"))
 
+    def test_csp_only_adds_local_fonts(self):
+        response, _ = self.get("/")
+        self.assertEqual(
+            response.getheader("Content-Security-Policy"),
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; "
+            "img-src 'self' data:; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; "
+            "font-src 'self'",
+        )
+
+    def test_font_is_served_locally(self):
+        response, body = self.get("/fonts/atkinson-hyperlegible-next.woff2")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.getheader("Content-Type"), "font/woff2")
+        self.assertEqual(body[:4], b"wOF2")
+        self.assertEqual(self.get("/fonts/atkinson-hyperlegible-next.woff2", "malicioso.example")[0].status, 403)
+
+    def test_font_route_serves_only_the_listed_file(self):
+        for path in (
+            "/fonts/OFL.txt",
+            "/fonts/atkinson-hyperlegible-next-latin.woff2",
+            "/fonts/../logo.webp",
+            "/fonts/%2e%2e/logo.webp",
+            "/fonts/..%2Flogo.webp",
+            "/fonts/icon-192.png",
+            "/fonts/",
+            "/fonts",
+        ):
+            self.assertEqual(self.get(path)[0].status, 404, path)
+
+    def test_font_is_outside_public_files(self):
+        from hermes.status import FONT_FILES, PUBLIC_FILES
+
+        self.assertEqual(FONT_FILES, {"/fonts/atkinson-hyperlegible-next.woff2": "atkinson-hyperlegible-next-latin.woff2"})
+        self.assertFalse(set(FONT_FILES) & set(PUBLIC_FILES))
+
     def test_query_string_is_ignored(self):
         self.assertEqual(self.get("/?v=2")[0].status, 200)
         self.assertEqual(self.get("/status?x=1")[0].status, 200)
@@ -85,6 +120,53 @@ class ServerTests(unittest.TestCase):
     def test_busy_port_does_not_crash(self):
         with self.assertLogs("hermes.status", level="WARNING"):
             self.assertIsNone(start_status_server(VoiceStatus(), self.port))
+
+
+class PageThemeTests(unittest.TestCase):
+    """Modo claro y oscuro, colores del manifiesto y fuente propia (spec 001, T6)."""
+
+    def head(self):
+        from hermes.status import PAGE
+
+        return PAGE.split("</head>", 1)[0]
+
+    def test_manifest_uses_the_neutral_color(self):
+        from hermes.status import MANIFEST
+
+        data = json.loads(MANIFEST)
+        self.assertEqual((data["theme_color"], data["background_color"]), ("#56646A", "#56646A"))
+        self.assertNotIn(b"#0a0c0f", MANIFEST.lower())
+
+    def test_two_theme_colors_follow_the_mode(self):
+        metas = re.findall(r'<meta name="theme-color"[^>]*>', self.head())
+        self.assertEqual(len(metas), 2, metas)
+        found = {}
+        for meta in metas:
+            media = re.search(r'media="\(prefers-color-scheme: (light|dark)\)"', meta)
+            content = re.search(r'content="(#[0-9A-Fa-f]{6})"', meta)
+            self.assertTrue(media and content, meta)
+            found[media.group(1)] = content.group(1).upper()
+        self.assertEqual(found, {"light": "#F4F6F6", "dark": "#101416"})  # El --bg de cada modo.
+        self.assertNotIn("#0a0c0f", self.head().lower())
+
+    def test_status_bar_follows_the_mode(self):
+        self.assertIn('<meta name="apple-mobile-web-app-status-bar-style" content="default">', self.head())
+
+    def test_black_and_gold_theme_is_gone(self):
+        from hermes.status import PAGE
+
+        self.assertNotIn('class="stage"', PAGE)
+        self.assertNotIn("body.stage", PAGE)
+
+    def test_color_scheme_and_local_font(self):
+        root = re.search(r":root\s*\{([^}]*)\}", self.head()).group(1)
+        self.assertRegex(root, r"color-scheme:\s*light dark")
+        face = re.search(r"@font-face\s*\{([^}]*)\}", self.head())
+        self.assertIsNotNone(face)
+        self.assertIn('url("/fonts/atkinson-hyperlegible-next.woff2") format("woff2")', face.group(1))
+        self.assertRegex(face.group(1), r"font-display:\s*swap")
+        self.assertNotRegex(face.group(1), r"https?:")
+        self.assertNotRegex(self.head(), r"(?<![\w-])color-scheme:\s*dark")  # Sin modo oscuro fijo (p. ej. en .date-row input).
 
 
 class PauseTests(unittest.TestCase):

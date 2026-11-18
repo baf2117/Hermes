@@ -114,6 +114,20 @@ class RemoteServerTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertNotIn(b"hermes-token", body)
 
+    def test_font_needs_an_approved_session(self):
+        from hermes.status import PUBLIC_FILES
+
+        path = "/fonts/atkinson-hyperlegible-next.woff2"
+        response, body = self.request("GET", path)
+        self.assertEqual(response.status, 401)
+        self.assertNotIn(b"wOF2", body)
+        self.assertEqual(PUBLIC_FILES, {"/icon-192.png": "image/png", "/icon-512.png": "image/png"})
+        login = self.request("GET", "/login")[1].decode("utf-8")
+        self.assertNotIn("@font-face", login)
+        cookie = self.session()
+        response, body = self.request("GET", path, headers={"Cookie": cookie})
+        self.assertEqual((response.status, response.getheader("Content-Type"), body[:4]), (200, "font/woff2", b"wOF2"))
+
     def test_login_opens_the_page(self):
         cookie = self.session()
         response, body = self.request("GET", "/", headers={"Cookie": cookie})
