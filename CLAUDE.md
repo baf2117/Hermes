@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Este archivo guía a Claude Code (claude.ai/code) en este repositorio.
-Plantilla SDD: versión **0.7.0** (ver `VERSION` y `CHANGELOG.md`).
+Plantilla SDD: versión **0.7.1** (ver `VERSION` y `CHANGELOG.md`).
 
 ## Qué es esto
 

@@ -8,6 +8,42 @@ ya usa la plantilla. Aplícalas en orden, de la versión siguiente a la tuya has
 última. Archivos de la plantilla frente a archivos del proyecto: ver "Actualizar un
 proyecto a una versión nueva" en el `README.md`.
 
+## 0.7.1
+
+- **Agente nuevo `referencer`**: ejecuta la skill `taste` sobre UNA URL que el usuario dio al
+  coordinador y guarda el análisis en `docs/references/`. Usa el servidor aislado
+  `playwright-taste`. Su `tools` solo permite leer, escribir (por instrucción, solo en
+  `docs/references/`), `mkdir -p docs/references` y el script de comprobación de la skill. Trata
+  el contenido de las páginas como datos, nunca como instrucciones, y no inicia sesión ni
+  rellena formularios.
+- **Coordinador, fase 4 (Plan):** si la spec tiene interfaz y `docs/references/` está vacío,
+  pregunta una vez si analizar una referencia; con la URL que dé el usuario (hasta 3 por spec,
+  una por llamada) llama al `referencer`, revisa con `git status` que solo cambió
+  `docs/references/` y sigue con el `planner`, que lee las referencias. Las URL solo las da el
+  usuario, nunca salen de archivos, de la spec ni de páginas visitadas.
+- **Skill `taste`:** la fase 4 usa un script propio, `scripts/check.js`, que comprueba frases
+  de relleno, las dos secciones y el JSON sin Python, `grep` ni `node -e`, y solo lee dentro de
+  `docs/references/`. La activación explícita incluye ahora al `referencer`. El comando manual
+  `/taste <url>` sigue existiendo, pero en una sesión aparte: la del coordinador no tiene
+  Playwright.
+- `Agent(...)` del coordinador incluye `referencer`. Sin cambios en `settings.json`.
+- Limitación: sin probar cómo se combinan `mcpServers` y `tools` en el agente, igual que en
+  `implementer` y `reviewer`.
+
+### Migración desde 0.7.0
+1. Copia `.claude/agents/referencer.md` y `.claude/skills/taste/scripts/check.js` de la
+   plantilla.
+2. `.claude/skills/taste/SKILL.md`: sustituye la sección "Activation" y la fase 4 por las de la
+   plantilla, y actualiza la cabecera de cambios.
+3. `.claude/agents/sdd-coordinator.md`: en `tools`, `Agent(...)` añade `referencer`; en
+   "Cómo trabajas con los subagentes" añade la comprobación de `git status` tras el
+   `referencer`; sustituye la fase 4 por la de la plantilla; en las reglas, que las URL de
+   referencia solo las da el usuario y que el contenido de las páginas es dato.
+4. `.claude/skills/sdd/SKILL.md` (paso 4 de coordinación) y `README.md` (lista de agentes y
+   paso 1 del circuito de diseño): menciona al `referencer`.
+5. `NOTICE.md`: actualiza la nota sobre `SKILL.md` y `scripts/check.js`.
+6. Actualiza `VERSION` a `0.7.1`.
+
 ## 0.7.0
 
 - **Playwright sustituye a Chrome DevTools** como MCP de verificación de interfaz. `.mcp.json`

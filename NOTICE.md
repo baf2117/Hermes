@@ -8,8 +8,9 @@ Copia adaptada de **senlindesign/taste-skill** v1.1.0, de Sen Lin
 (<https://github.com/senlindesign/taste-skill>). Los cuatro prompts de análisis
 (`references/step1-measure.md` a `step4-observer.md`) y `references/extract.js` se incluyen
 sin cambios, salvo el nombre de la herramienta en un comentario de `extract.js`. El
-`SKILL.md` está modificado (activación manual, salidas en `docs/references/`, sin
-exportación, comprobación de JSON con Node); la cabecera del propio archivo lista los cambios.
+`SKILL.md` está modificado (activación explícita, salidas en `docs/references/`, sin
+exportación, comprobación con un script propio en Node); la cabecera del propio archivo lista
+los cambios. `scripts/check.js` es obra de esta plantilla, no del proyecto original.
 
 El README del proyecto declara la licencia MIT (© 2025 Sen Lin). En el momento de adaptarla,
 el archivo `LICENSE` del repositorio no estaba disponible (HTTP 404); si lo publican, conviene

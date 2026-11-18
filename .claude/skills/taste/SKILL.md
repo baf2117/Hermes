@@ -20,10 +20,11 @@ metadata:
 ---
 
 > **Adapted for the SDD template.** Original: `senlindesign/taste-skill` v1.1.0 (MIT, see
-> `NOTICE.md` at the repo root). Changes from upstream: manual activation only (no
-> auto-trigger on URLs); outputs go to `docs/references/{domain}/` instead of the project
+> `NOTICE.md` at the repo root). Changes from upstream: explicit activation only (the
+> `/taste` command or the SDD `referencer` agent, never auto-trigger on URLs); outputs go to `docs/references/{domain}/` instead of the project
 > root; export targets (Cursor, CLAUDE.md, Bolt…) and their phase were removed, so this
-> skill never writes agent config files; the JSON check uses Node instead of Python;
+> skill never writes agent config files; the Phase 4 check is a bundled Node script (`scripts/check.js`, written for the SDD)
+> instead of grep and Python;
 > tool names use the `playwright-taste` server; a "Responsible use" section was added.
 > The four analysis prompts in `references/` and `references/extract.js` are unchanged
 > except for the tool name in the extractor's header comment.
@@ -43,9 +44,11 @@ choices — and what plausible alternatives it rejected.
 
 ## Activation
 
-Run this skill **only** when the user explicitly types `/taste <url>`. Never start it because
-a URL appears in a request, even a design-related one. If the user mentions a URL and asks
-about design without typing `/taste`, answer normally and mention that `/taste <url>` exists.
+Run this skill **only** when (a) the user explicitly types `/taste <url>`, or (b) the SDD
+`referencer` agent runs it for a URL that the user gave to the coordinator. Never start it
+because a URL appears in a request, a file or a visited page. If the user mentions a URL and
+asks about design without typing `/taste`, answer normally and mention that `/taste <url>`
+exists.
 
 ## Responsible use
 
@@ -254,30 +257,24 @@ If either file exists, overwrite it without asking: the latest analysis wins.
 
 ### Phase 4 — Self-audit (Anti-Slop pass)
 
-Run this grep with the Bash tool — do not scan mentally:
+Run the bundled check script with the Bash tool — do not scan mentally:
 
 ```bash
-grep -icE 'clean|modern|sleek|visually appealing|user-friendly|intuitive|seamless|\belegant\b|minimalist|polished|refined|sophisticated|delightful|stunning|\bbeautiful\b|\bpremium\b' docs/references/{domain}/{domain}.md
+node .claude/skills/taste/scripts/check.js docs/references/{domain}/{domain}
 ```
 
-If the count is **0**, the file passes. If **>0**, show the offending lines with the same
-pattern and `grep -inE`. For each hit: inside a quoted foil ("they could have gone for a
-'clean and modern' look, but…") it is fine; used as a positive descriptor of *this* design it
-is slop — edit the principle, re-save, and re-run the grep until the count is 0.
+It reads only `docs/references/{domain}/{domain}.md` and `.json`, and checks three things:
+filler phrases (clean, modern, sleek, user-friendly, intuitive, seamless, elegant,
+minimalist, polished, refined, sophisticated, delightful, stunning, beautiful, premium), that
+both "Design Map" and "Taste DNA" sections exist, and that the JSON parses. It prints the
+offending lines and exits non-zero when something fails.
 
-Verify both sections exist (must return **2**):
+For each filler hit: inside a quoted foil ("they could have gone for a 'clean and modern'
+look, but…") it is fine; used as a positive descriptor of *this* design it is slop — edit
+the principle, re-save, and re-run the script until it prints `RESULTADO: OK`.
 
-```bash
-grep -c "Design Map\|Taste DNA" docs/references/{domain}/{domain}.md
-```
-
-Validate the JSON with Node (no Python needed):
-
-```bash
-node -e "JSON.parse(require('fs').readFileSync('docs/references/{domain}/{domain}.json','utf8')); console.log('valid')"
-```
-
-If any check fails, fix and re-run before shipping.
+If a check fails for another reason (missing section, invalid JSON), fix the file and re-run
+before shipping.
 
 ### Phase 5 — Report
 

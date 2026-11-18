@@ -46,7 +46,8 @@ Commit → Integración. Un cambio de requisitos (Cambio) reabre el flujo desde 
 El flujo completo lo lleva el agente `sdd-coordinator`
 (`claude --agent sdd-coordinator`): spec, clarificación en bucle, plan, tareas,
 implementación, validación, commit e integración, y te pregunta lo que hay que decidir. Los agentes `planner`,
-`reviewer` e `implementer` hacen el trabajo, y el `brancher` crea la rama de la spec. Si el
+`reviewer` e `implementer` hacen el trabajo, el `brancher` crea la rama de la spec y el
+`referencer` analiza los sitios de referencia de diseño. Si el
 cambio es pequeño y no merece una spec, usa `/features`. Los comandos `/sdd-*` sirven para
 repetir una fase a mano.
 0. **Rama**: al confirmar la carpeta de la spec, si estás en la rama principal con el árbol
@@ -58,7 +59,10 @@ repetir una fase a mano.
    `clarify.md`, el coordinador te las presenta como decisiones y el `planner` las aplica. Se
    repite hasta que el usuario diga basta.
 3. **Aprobación de la spec**: solo el usuario; el `planner` la marca `aprobada`.
-4. **Plan**: el `planner` redacta plan.md. Para hasta que el usuario lo apruebe.
+4. **Plan**: si la spec tiene interfaz y `docs/references/` está vacío, el coordinador te
+   ofrece analizar una referencia y, con la URL que tú des (hasta 3), el `referencer` la
+   analiza con la skill `taste`. Después el `planner` redacta plan.md leyendo esas
+   referencias. Para hasta que el usuario lo apruebe.
 5. **Tareas**: el `planner` redacta tasks.md. Para hasta que el usuario lo apruebe.
 6. **Implementación**: el usuario elige el modo (tarea por tarea o continuo). El
    coordinador llama al `implementer` UNA vez por tarea, en orden. Tras cada una comprueba
