@@ -1,0 +1,17 @@
+# Dependencias de Hermes, con las versiones que usa el entorno de ~/.hermes/venv.
+# Instalar: uv pip install -r requirements.txt --python ~/.hermes/venv/Scripts/python.exe
+# El núcleo (tareas, Telegram, página, correo, calendario) solo usa la biblioteca estándar.
+
+# Respaldos cifrados (hermes/backup.py)
+cryptography==50.0.2
+
+# Voz: entender (faster-whisper, vosk), hablar (piper, kokoro, edge-tts) y audio.
+# Son opcionales: si faltan, Hermes arranca sin esas funciones.
+av==19.0.2
+edge-tts==7.3.1
+faster-whisper==1.2.1
+kokoro-onnx==0.6.1
+numpy==2.5.4
+piper-tts==1.8.0
+sounddevice==0.5.6
+vosk==0.3.45

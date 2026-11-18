@@ -1,8 +1,7 @@
 # CLAUDE.md
 
 Este archivo guía a Claude Code (claude.ai/code) en este repositorio.
-Plantilla SDD: versión **0.7.0** (ver `VERSION` y `CHANGELOG.md`). Quedan [CORCHETES] por
-rellenar; bórralos al completarlos.
+Plantilla SDD: versión **0.7.0** (ver `VERSION` y `CHANGELOG.md`).
 
 ## Qué es esto
 
@@ -30,14 +29,16 @@ página local. Versión 2.0.0 (`hermes/__init__.py`), en uso diario.
 
 Los agentes leen estos comandos de aquí: mantenlos al día.
 
-- **Instalar dependencias:** `[comando]` (no hay `requirements.txt` ni `pyproject.toml`;
-  el entorno está en `~/.hermes/venv`, con Python 3.13)
+- **Instalar dependencias:** `uv pip install -r requirements.txt --python ~/.hermes/venv/Scripts/python.exe`
+  (el entorno está en `~/.hermes/venv`, con Python 3.13, creado con uv y sin pip)
 - **Levantar en local:** `~/.hermes/venv/Scripts/python.exe -m hermes` (http://127.0.0.1:47822).
   En el día a día lo arranca la tarea programada «Hermes». `python -m hermes check` revisa la
   configuración.
 - **Comando de tests:** `~/.hermes/venv/Scripts/python.exe -m unittest discover -s tests`
   (sin `cd`, desde la raíz del proyecto, para coincidir con los permisos del `reviewer`)
-- **Compilar / lint:** [comando] (no hay linter configurado)
+- **Compilar / lint:** no hay linter todavía (pendiente: añadir ruff, con su propia spec).
+  Mientras tanto, añadir `-W error::SyntaxWarning` al comando de tests hace que fallen los
+  avisos de sintaxis (por ejemplo, secuencias `\` inválidas en textos).
 
 ### Flujo SDD
 
@@ -51,8 +52,22 @@ spec: `/features`. Si el proyecto es un fork: `/sync-upstream`.
 
 ## Arquitectura
 
-[Decisiones que no se deducen leyendo el código: cómo fluyen los datos, dónde vive la
-lógica, qué no hay que tocar. Si crece, muévelo a `docs/ARCHITECTURE.md`.]
+- **Arranque:** `hermes/__main__.py` crea cada pieza y la conecta; es el único sitio que
+  sabe de todas. Una función nueva se engancha ahí, no dentro de `assistant.py`.
+- **Mensajes:** Telegram, la voz y la página entregan el texto a `Assistant`
+  (`assistant.py`). Cada función se engancha con `text_hooks` (frases), `command_hooks`
+  (`/comandos`), `button_hooks` (botones `accion:id`) y `summary_hooks` (resumen de la
+  mañana). Lo que nadie reconoce lo interpreta el modelo.
+- **Programado:** `scheduler.py` revisa cada minuto recordatorios y resúmenes; otras
+  funciones se suman con `extra_ticks`.
+- **Página:** `status.py` sirve la página y sus datos con `set_source` (GET) y `set_action`
+  (POST); cada ruta nueva se añade también a las rutas permitidas. Los POST exigen el
+  Origin de la página y el token `X-Hermes-Token`.
+- **Datos:** todo se guarda con `store.py` (SQLite); los módulos no abren la base por su
+  cuenta. Los ajustes viven en el `.env` de `~/.hermes` y se editan con `settings.py`; los
+  marcados `live` se aplican sin reiniciar.
+- **No tocar sin spec:** la seguridad de `status.py` y `remote.py` (Host, Origin, token,
+  sesiones, aprobación por Telegram) y los permisos de solo lectura de `gmail.py`.
 
 ## Referencia del stack
 
@@ -68,12 +83,17 @@ lógica, qué no hay que tocar. Si crece, muévelo a `docs/ARCHITECTURE.md`.]
 ## Convenciones
 
 - Interfaz, mensajes y comentarios en español.
-- [Estilo de código, nombres.]
-- [Ejecución paralela: máximo de implementers a la vez (por defecto 2) y qué recursos
-  comparten los tests (base de datos, puertos, servidor), para marcar `Paralelo: no`.]
-- [Si hay interfaz: responsive, modo oscuro, accesibilidad. El diseño sigue la skill
-  `sdd-design` y queda registrado en `docs/design.md`; las referencias analizadas con
-  `/taste` van en `docs/references/`.]
+- Estilo: `from __future__ import annotations` y tipos en las firmas; identificadores en
+  inglés; docstrings, comentarios y textos en español. Un módulo por función, con su test
+  en `tests/test_<función>.py`. Sin límite fijo de largo de línea.
+- Ejecución paralela: máximo 2 implementers a la vez. Los tests usan SQLite en memoria y
+  puertos libres, así que no comparten recursos. `hermes/status.py` y `hermes/__main__.py`
+  los tocan casi todas las funciones: márcalos `(compartido)` y esas tareas con `Paralelo: no`.
+- Interfaz: todo se ve bien a 375 px (se usa como app en el teléfono), respeta el modo
+  oscuro, los botones llevan `aria-label` y los controles se usan con teclado. Sin JS ni CSS
+  externos: todo va en línea en `status.py` (lo exige la CSP de la página). El diseño sigue
+  la skill `sdd-design` y queda registrado en `docs/design.md`; las referencias analizadas
+  con `/taste` van en `docs/references/`.
 
 ## Personalizaciones de la plantilla
 
@@ -104,14 +124,23 @@ actualizar la plantilla; ver `CHANGELOG.md`).
 
 ## Límites
 
-- ✅ Siempre: [reglas que nunca se rompen, p. ej. idioma de la interfaz y los comentarios].
+- ✅ Siempre:
+  - Cada función nueva lleva su interruptor en Ajustes → Funciones.
+  - Antes de cada commit, se revisa que no vaya ningún secreto.
+  - Tras los tests, se prueba en la copia real de Hermes con datos temporales que luego se
+    borran, y se reinicia.
+  - Con correo, calendario u otros datos reales, se informan solo cantidades, nunca el contenido.
 - ⚠️ Pregunta antes: crear archivos nuevos, cambiar el formato de los datos guardados,
   añadir dependencias.
 - 📦 Al definir el stack o añadir una tecnología nueva, actualiza `.gitignore` con sus
   artefactos (compilados, cachés, ajustes locales). Parte de las plantillas de
   github/gitignore y contrasta con context7.
-- 🚫 Nunca: escribir secretos en el repositorio (van en el `.env`, que no se versiona).
-  [Otras.]
+- 🚫 Nunca:
+  - Escribir secretos en el repositorio (van en el `.env`, que no se versiona).
+  - Hacer push: lo hace el usuario.
+  - Cambiar ajustes del sistema o de seguridad: se le da el comando al usuario.
+  - Descargar o instalar nada sin pedir permiso antes, con nombre, origen y tamaño.
+  - Hacer público el repositorio.
 
 ## Verificación
 
@@ -119,8 +148,9 @@ actualizar la plantilla; ver `CHANGELOG.md`).
 - Si hay interfaz: verifica con el MCP de Playwright en http://127.0.0.1:47822: abre la URL,
   prueba la funcionalidad, revisa la consola y las peticiones fallidas, comprueba la vista
   móvil (`browser_resize` a 375×812) y el modo oscuro (`browser_emulate_media`).
-- [Si hay login: usa un usuario de prueba, nunca credenciales reales; inicia sesión tú en
-  la ventana de Playwright; el perfil se conserva entre sesiones.]
+- Login: se verifica solo en local (http://127.0.0.1:47822), que no pide contraseña. El acceso
+  remoto (Cloudflare Access, contraseña y aprobación por Telegram) nunca se prueba con
+  credenciales reales.
 
 ## Reglas
 
