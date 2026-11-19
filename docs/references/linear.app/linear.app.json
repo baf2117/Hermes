@@ -1,0 +1,128 @@
+{
+  "source": "https://linear.app/",
+  "pages_analyzed": [
+    "https://linear.app/",
+    "https://linear.app/mobile",
+    "https://linear.app/plan",
+    "https://linear.app/build"
+  ],
+  "analyzed_on": "2026-11-17",
+  "tokens": {
+    "spacing": {
+      "scale": [2, 4, 6, 8, 12, 16, 24, 32, 48, 96, 128],
+      "base_unit": 4,
+      "most_frequent": { "8px": 135, "4px": 128, "6px": 76, "12px": 46 },
+      "section_gap": "224px",
+      "method": "gap (flex/grid); headings margin 0"
+    },
+    "typography": {
+      "families": ["Inter Variable", "Berkeley Mono"],
+      "scale": [
+        { "role": "hero (plan, build)", "size": "72px", "weight": "500", "line_height": "72px", "letter_spacing": "-1.584px", "family": "Inter Variable" },
+        { "role": "hero (home)", "size": "64px", "weight": "510", "line_height": "64px", "letter_spacing": "-1.408px", "family": "Inter Variable" },
+        { "role": "section heading", "size": "48px", "weight": "510", "line_height": "48px", "letter_spacing": "-1.056px", "family": "Inter Variable" },
+        { "role": "hero at 375px", "size": "32px", "weight": "590", "line_height": "36px", "letter_spacing": "-0.704px", "family": "Inter Variable" },
+        { "role": "card / feature title", "size": "20px", "weight": "590", "line_height": "26.6px", "letter_spacing": "-0.24px", "family": "Inter Variable" },
+        { "role": "marketing body / h3", "size": "15px", "weight": "400", "line_height": "24px", "family": "Inter Variable" },
+        { "role": "app row title", "size": "14px", "weight": "510", "family": "Inter Variable" },
+        { "role": "app label / property", "size": "13px", "weight": "510", "line_height": "19.5px", "family": "Inter Variable" },
+        { "role": "app meta / group header", "size": "12px", "weight": "400", "family": "Inter Variable" },
+        { "role": "issue IDs, code, gesture captions", "size": "12px", "weight": "400", "family": "Berkeley Mono" }
+      ],
+      "weights": ["400", "510", "590"]
+    },
+    "colors": [
+      { "role": "background", "value": "#08090A" },
+      { "role": "panel / app surface", "value": "#0F1011" },
+      { "role": "bg-secondary (selected row, sheet)", "value": "#1C1C1F" },
+      { "role": "bg-tertiary", "value": "#232326" },
+      { "role": "border-primary", "value": "#23252A" },
+      { "role": "line", "value": "#37393A" },
+      { "role": "text-primary", "value": "#F7F8F8" },
+      { "role": "text-secondary", "value": "#D0D6E0" },
+      { "role": "text-tertiary", "value": "#8A8F98" },
+      { "role": "text-quaternary", "value": "#62666D" },
+      { "role": "accent (token)", "value": "#7170FF" },
+      { "role": "brand / focus ring", "value": "#5E6AD2" },
+      { "role": "primary CTA fill (neutral pill)", "value": "#E5E5E6" },
+      { "role": "status: in progress", "value": "#F2C94C (~approx, glyph only)" },
+      { "role": "status: done / review / canceled", "value": "indigo / #42AF22 / #C52828 (glyph only, 0% area)" }
+    ],
+    "radius": ["4px", "6px", "8px", "12px", "9999px"],
+    "shadows": [
+      "0 0 0 1px rgba(0,0,0,0.2)",
+      "inset 0 0 0 1px rgba(255,255,255,0.05)",
+      "inset 0 0 0 0.5px rgba(255,255,255,0.08)",
+      "0 2px 32px rgba(0,0,0,0.25)"
+    ],
+    "motion": {
+      "hover": "color, background, border-color 100-160ms cubic-bezier(0.25,0.46,0.45,0.94)",
+      "reveal": "opacity 1s cubic-bezier(0.215,0.61,0.355,1); filter 0.2s",
+      "reduced_motion": true,
+      "focus_visible": true
+    },
+    "theme": {
+      "marketing": "forced data-theme=dark; no prefers-color-scheme rules",
+      "light_tokens_present": "[data-theme=light] variants; accent-tint #F1F1FF (light) / #18182F (dark)"
+    },
+    "image_ratios": [
+      { "usage": "hero app screenshot", "ratio": "1.79:1" },
+      { "usage": "wide feature band", "ratio": "1.99:1" },
+      { "usage": "feature screenshot", "ratio": "1.58:1" },
+      { "usage": "mobile feature illustration", "ratio": "1.18:1" }
+    ],
+    "grid": {
+      "max_width": "~1270px content (72px side margins at 1440)",
+      "columns": 2,
+      "gutter": "0-2px (bento) ; app mock 232px sidebar + 1072px panel",
+      "mobile_side_padding": "24px"
+    },
+    "touch_targets_375": { "nav_pills": "32px", "store_buttons": "40px", "menu_button": "64px" }
+  },
+  "taste": [
+    {
+      "name": "State lives in the glyph, not the row",
+      "trigger": "When showing status, priority and labels on hundreds of items in a list",
+      "decision": "Chose 14px glyphs with semantic color and a distinct shape (dashed, empty, half-filled, check, cross) next to neutral text, over colored badges, tinted row backgrounds or colored text",
+      "reason": "Because in a long list a glyph in a fixed column is caught by peripheral vision; painted rows turn the list into a patchwork and color stops meaning anything",
+      "evidence": [
+        "status reds/oranges/greens: 0% painted area on /plan",
+        "/mobile status sheet: 8 states differ by shape as well as hue",
+        "property rows: 14-16px icon + 13px/510 label, gaps 4/6/8px"
+      ]
+    },
+    {
+      "name": "Four greys do the work of four sizes",
+      "trigger": "When ordering title, metadata, date and secondary text inside 32-40px rows",
+      "decision": "Chose four text luminance steps (#F7F8F8, #D0D6E0, #8A8F98, #62666D) at 12-15px over a wider type scale or heavier weights",
+      "reason": "Because changing size changes row height and breaks the list rhythm; dimming keeps the row compact and still says what to read first",
+      "evidence": [
+        "text color counts 192 / 131 / 115 / 81 on /",
+        "12/13/14/15px make up ~85% of text nodes",
+        "only three structural weights: 400 / 510 / 590"
+      ]
+    },
+    {
+      "name": "No shadow on what does not float",
+      "trigger": "When separating sidebar, panel, cards and chips on a near-black page",
+      "decision": "Chose a luminance ladder (#08090A > #0F1011 > #1C1C1F > #232326) plus 1px rings at 0.05-0.08 white over the soft drop shadow on every card that comparable SaaS sites use",
+      "reason": "Because on a dark ground a drop shadow is barely visible and muddies edges; lighter reads as nearer instantly, so the shadow is kept for what truly sits on top",
+      "evidence": [
+        "rings: 0 0 0 1px rgba(0,0,0,.2) x8, inset rgba(255,255,255,.05) x4",
+        "only floating 400x520 panel gets 0 2px 32px rgba(0,0,0,.25)",
+        "5-layer stacks peak at 0.07 opacity: imperceptible"
+      ]
+    },
+    {
+      "name": "On the phone, choices go to the thumb in a sheet",
+      "trigger": "When moving status changes and snoozing to mobile",
+      "decision": "Chose a bottom sheet with a grabber, full-width rows (icon + label left, value right in tertiary grey) and a check on the current item over dropdowns, popovers or inline chips",
+      "reason": "Because the reachable zone on a phone is the bottom of the screen and a full-width row is a large target that needs no precision; the right-aligned value lets you decide without opening anything else",
+      "evidence": [
+        "/mobile Status sheet: 8 rows, check on the current state",
+        "/mobile Snooze sheet: 4 rows with time/date right-aligned in #8A8F98",
+        "gesture caption 'swipe left to delete' set in Berkeley Mono"
+      ]
+    }
+  ]
+}

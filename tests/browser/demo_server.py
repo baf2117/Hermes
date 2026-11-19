@@ -48,7 +48,7 @@ CATEGORIES = (
 )
 COLORS = {"estudios": "#5a6fd6", "viajes": "#c2702d", "familia": "#a2457a"}
 LONG = (
-    "Revisar con calma el contrato de arrendamiento de la bodega de la zona 12 antes de la reunión con el "
+    "Revisar con calma el contrato de arrendamiento de la bodega del almacén 7 antes de la reunión con el "
     "abogado y anotar todas las cláusulas que no queden claras"
 )
 
@@ -79,7 +79,7 @@ def build(folder: Path, port: int, without_font: bool) -> tuple[Any, Any]:
         "TELEGRAM_BOT_TOKEN=demostracion\n"
         f"HERMES_CATEGORIES={', '.join(CATEGORIES)}\n"
         f"HERMES_CATEGORY_COLORS={', '.join(f'{k}:{v}' for k, v in COLORS.items())}\n"
-        "HERMES_WEATHER=14.63,-90.51\n",
+        "HERMES_WEATHER=0.0,0.0\n",  # Coordenadas ficticias (no es la ubicación de nadie).
         encoding="utf-8",
     )
     config = Config(

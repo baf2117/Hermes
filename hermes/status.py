@@ -923,7 +923,7 @@ th:first-child, td:first-child { padding-left:0; text-align:left; white-space:no
 .hb-today:empty { display:none; }
 .hb-today b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
 .hb-bar { max-width:420px; height:6px; margin-top:var(--sp-2); overflow:hidden; background:var(--surface-soft); border-radius:var(--r-full); }
-.hb-bar i { display:block; height:100%; background:var(--accent); border-radius:var(--r-full); }
+.hb-bar i { display:block; height:100%; background:var(--ink-3); border-radius:var(--r-full); }
 .hb-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap:var(--sp-4); align-items:start; }
 .hb-grid > .ap-empty.card { grid-column:1 / -1; max-width:var(--w-col); }
 .hb-card { display:flex; flex-direction:column; gap:var(--sp-3); min-width:0; padding:var(--sp-3); background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); }
@@ -1337,7 +1337,7 @@ dialog#rc-photo { width:min(560px, calc(100vw - 2 * var(--sp-4))); overflow:hidd
 #rc-photo-items ul { margin:var(--sp-2) 0 0; padding-left:var(--sp-5); color:var(--ink-2); font-size:var(--fs-sm); }
 #rc-photo .ask-actions { padding:var(--sp-3); }
 @media (hover:hover) and (pointer:fine) {
-  .ed-head .linkish:not(:disabled):hover, .ed-steps .linkish:not(:disabled):hover { color:var(--accent); }
+  .ed-head .linkish:not(:disabled):hover, .ed-steps .linkish:not(:disabled):hover { color:var(--ink); }
   .seg-ctl input:not(:checked):hover + span { color:var(--ink); }
 }
 @media (pointer:coarse), (max-width:640px) {

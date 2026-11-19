@@ -135,8 +135,8 @@ para llegar a 3:1 en los campos dentro de tarjeta (decisión del usuario, 2026-1
 ## Tipografía
 - **Familia:** Atkinson Hyperlegible Next (Braille Institute, SIL OFL 1.1), una sola para todo:
   distingue I/l/1, O/0 y rn/m, lo que más se lee de pie (ids `#123`, importes, horas, fechas).
-  **Pendiente de descarga en T4** (woff2 variable, subconjunto latín, pesos 400/500/600, servida por
-  `/fonts/…`). Si no tiene cifras tabulares o los glifos del español, alternativa: Public Sans.
+  Descargada del repositorio oficial (commit 7925f50, SIL OFL 1.1): woff2 variable, subconjunto
+  latín, pesos 400/500/600, servida con sesión en `/fonts/atkinson-hyperlegible-next.woff2`.
 - **Respaldo (RF-36):** la del sistema, con `font-display: swap`. Los anchos no dependen de la
   métrica (`min-width:0`, `overflow-wrap:anywhere`); ✓ ✕ 🔁 caen a la fuente del sistema.
 
@@ -317,6 +317,6 @@ Previstas en el plan (4.10). Las que surjan al implementar se añaden aquí y se
 | E2 | `.chip-color` | `color` | Solo variantes atenuadas (RF-8) | Muestra el color guardado tal cual, sin vista previa: es lo que el usuario elige (RF-8) | Aprobada por el usuario (2026-11-18) |
 | E3 | `.ripple`, `.orb[data-state="pensando"] .disc` | `animation` | > 300 ms, en bucle con keyframes (RF-31) | Comunica el estado de la voz mientras dura; ciclos de 1,5 a 4,2 s, solo `transform` y `opacity`; con reducir movimiento, sin ondas ni escala | Aprobada por el usuario (2026-11-18) |
 | E4 | `.talk-btn[data-state="grabando"]`, `.talk-btn[data-state="pensando"] .i-wait` | `animation` | Pulso en bucle (1,2 s) y giro (1 s, `linear`) (RF-31) | Indican grabación y espera; con reducir movimiento, sin pulso y el icono de espera quieto con opacidad | Aprobada por el usuario (2026-11-18) |
-| E5 | archivos `logo.webp`, `icon-192.png`, `icon-512.png` | — | Acento en más del ~20 % de la superficie | El icono es la marca: fondo de color de marca a sangre (iOS rellena de negro lo transparente) | Aprobada por el usuario (2026-11-18) |
+| E5 | archivos `logo.webp`, `icon-192.png`, `icon-512.png`; SVG en línea de la marca de la cabecera `.brand-mark` (relleno `--accent`, la H en `--accent-ink`) | — | Acento en más del ~20 % de la superficie | El icono es la marca: fondo de color de marca a sangre (iOS rellena de negro lo transparente). La marca de la cabecera repite el icono de la app (acento a sangre) para que Hermes se reconozca igual en la pantalla de inicio y en la página | Aprobada por el usuario (2026-11-18) para los archivos; `.brand-mark`: aceptada por delegación y confirmada por el usuario (2026-11-18) |
 | E6 | archivos `logo.webp`, `icon-192.png`, `icon-512.png`, `docs/logo.svg` | — | Tono `#1F7E90` y blanco `#F4F6F6` fijos, que no son tokens CSS | Un único archivo debe verse en claro y en oscuro: tono medio del acento (4,72:1 sobre `--surface` claro y 3,64:1 sobre `--surface` oscuro, medido en T23). Blanco de marca `#F4F6F6` (el `--bg` claro, fijo en los archivos) para el monograma: 4,36:1 sobre `#1F7E90`, ≥ 3:1 de icono (propuesta de T22, aceptada en nombre del usuario por su delegación del 2026-11-18) | Aprobada por el usuario (2026-11-18) |
 | E7 | `.cal-day`, `.ed-steps .linkish`, `.ed-steps .icon-btn` | `width`, `min-height` | Área táctil de 44 px (RF-25) | Solo con el texto al 200 % a 375 px (~188 px útiles): siete columnas de 44 px no caben en ~173 px, así que el calendario mensual (Tareas y Fechas) y los pasos del editor priorizan no desbordar ni solaparse (RF-40); fuera de ese caso siguen las reglas normales | Aprobada por el usuario (2026-11-18) |

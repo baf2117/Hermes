@@ -1,0 +1,106 @@
+{
+  "source": "https://www.raycast.com/",
+  "analyzed_on": "2026-11-17",
+  "pages_analyzed": 1,
+  "tokens": {
+    "spacing": {
+      "scale": [2, 4, 8, 12, 16, 24, 224],
+      "base_unit": 4,
+      "notes": "Component spacing 4-24px (8px x285, 12px x138, 24px x128); section containers use 224px vertical padding; keycap internals 14.5px"
+    },
+    "typography": {
+      "families": ["Inter", "Segoe UI Variable / SF Pro Text (system, inside product mockups)", "GeistMono"],
+      "scale": [
+        { "role": "hero", "size": "64px", "weight": "600", "line_height": "70.4px", "family": "Inter" },
+        { "role": "section-heading", "size": "32px", "weight": "500", "line_height": "38.4px", "letter_spacing": "-0.8px", "family": "Inter" },
+        { "role": "subheading", "size": "24px", "weight": "500", "family": "Inter" },
+        { "role": "card-heading", "size": "20px", "weight": "500", "letter_spacing": "0.2px", "family": "Inter" },
+        { "role": "lead / feature title", "size": "18px", "weight": "400", "letter_spacing": "0.2px", "family": "Inter" },
+        { "role": "body", "size": "16px", "weight": "400", "family": "Inter" },
+        { "role": "nav / button / card copy", "size": "14px", "weight": "500", "line_height": "22.4px", "letter_spacing": "0.2px", "family": "Inter" },
+        { "role": "small button", "size": "13px", "weight": "500", "family": "Inter" },
+        { "role": "kbd / meta", "size": "11px", "weight": "400", "family": "Segoe UI Variable" }
+      ],
+      "weights": { "500": 370, "400": 315, "600": 91, "700": 4 }
+    },
+    "colors": [
+      { "role": "background", "value": "#07080A" },
+      { "role": "surface-gradient", "value": "linear-gradient(45deg, #0C0D0F, #07080A)" },
+      { "role": "surface-tint", "value": "rgba(255,255,255,0.02 / 0.03 / 0.05 / 0.10)" },
+      { "role": "border-hairline", "value": "rgba(255,255,255,0.06)" },
+      { "role": "text-primary", "value": "#FFFFFF" },
+      { "role": "text-secondary", "value": "rgba(255,255,255,0.6)" },
+      { "role": "text-muted", "value": "#9C9C9D" },
+      { "role": "text-tertiary", "value": "#6A6B6C" },
+      { "role": "text-disabled", "value": "#434345" },
+      { "role": "button-primary-bg", "value": "#E6E6E6" },
+      { "role": "button-primary-text", "value": "#2F3031" },
+      { "role": "brand-accent (logo, artwork, link underline only)", "value": "#FF6363" },
+      { "role": "focus-ring", "value": "rgba(255,255,255,0.5)" }
+    ],
+    "radius": ["4px", "6px", "8px", "11px", "12px", "16px", "100%"],
+    "radius_roles": {
+      "16px": "floating navbar",
+      "12px": "feature card",
+      "11px": "keycap",
+      "8px": "primary button",
+      "6px": "nav link, kbd chip",
+      "4px": "small button",
+      "100%": "avatars, dots"
+    },
+    "shadows": [
+      "card: inset 0 1px 0 rgba(255,255,255,0.10) + border 0.8px rgba(255,255,255,0.06)",
+      "navbar: inset 0 1px 1px rgba(255,255,255,0.15) + border 0.8px rgba(255,255,255,0.06) + backdrop-filter blur(5px)",
+      "primary button: 0 0 0 2px rgba(0,0,0,0.5), 0 0 14px rgba(255,255,255,0.19), inset 0 -1px 0.4px rgba(0,0,0,0.2), inset 0 1px 0.4px #FFFFFF",
+      "kbd: inset 0 0 0 1px rgba(255,255,255,0.2)",
+      "focus: 0 0 0 2px rgba(255,255,255,0.5)"
+    ],
+    "motion": {
+      "properties": ["transform", "opacity", "background-color", "box-shadow"],
+      "durations": ["0.1s", "0.2s", "0.3s"],
+      "easing": ["ease-out", "ease-in-out"],
+      "reduced_motion": true
+    },
+    "image_ratios": [
+      { "usage": "feature background", "ratio": "16:9" },
+      { "usage": "extension card", "ratio": "1:1" },
+      { "usage": "app icon (16-22px)", "ratio": "1:1" }
+    ],
+    "grid": { "max_width": "1204px", "columns": 2, "gutter": "~40px", "section_padding": "224px 24px" },
+    "color_scheme": "dark only"
+  },
+  "taste": [
+    {
+      "name": "Accent Off the Controls",
+      "type": "restraint",
+      "trigger": "When a strong red brand meets a near-black page where red would pop on any control",
+      "decision": "Chose to keep red for the logo, hero artwork and one link underline, with a light grey #E6E6E6 primary button and a white 50% focus ring, over red CTAs and red focus states",
+      "reason": "Because on near-black the brightest object wins: a light button out-shouts any hue, and keeping red rare lets it mean the brand instead of 'press here'",
+      "evidence": ["accent candidates are all greys", "button bg #E6E6E6, text #2F3031", "focus box-shadow 0 0 0 2px rgba(255,255,255,0.5)", "#FF6363 only in logo and link underline"]
+    },
+    {
+      "name": "Light Draws the Edges",
+      "type": "craft",
+      "trigger": "When separating cards and the navbar from a #07080A page where black drop shadows disappear",
+      "decision": "Chose a 0.8px rgba(255,255,255,0.06) border plus a 1px inset top highlight and a 45deg #0C0D0F to #07080A gradient over drop shadows or solid grey panels",
+      "reason": "Because a thin bright top edge reads as a lit bevel, so the eye finds the container without it lifting off the page",
+      "evidence": ["card radius 12px, border 0.06, inset 0 1px 0.10", "navbar radius 16px, inset 0.15, blur 5px", "white surface tints 0.02-0.10 cover ~34% of painted area"]
+    },
+    {
+      "name": "Rank by Brightness, Not by Hue",
+      "type": "system",
+      "trigger": "When ordering titles, body, meta and disabled text on a dark ground",
+      "decision": "Chose a 5-step luminance ladder (#FFFFFF, 0.6 white, #9C9C9D, #6A6B6C, #434345) over colored secondary text",
+      "reason": "Because readers scan a dark interface by brightness first, so importance is read at a glance and no color is spent on hierarchy",
+      "evidence": ["text node counts 471 / 105 / 95 / 49 / 35", "card copy 14px/500 #9C9C9D under 18px white titles"]
+    },
+    {
+      "name": "Demonstrate the Shortcut",
+      "type": "craft",
+      "trigger": "When explaining a keyboard-first product",
+      "decision": "Chose rendered keycaps (11px radius, 4-layer shadow) and inline kbd chips (11px text, 6px radius, inset ring) over icons or prose about shortcuts",
+      "reason": "Because seeing the exact key to press removes a translation step; the page shows the interaction instead of describing it",
+      "evidence": ["11px radius x158 with matching 4-layer shadow x158", "kbd color rgba(255,255,255,0.6), inset ring rgba(255,255,255,0.2)"]
+    }
+  ]
+}
